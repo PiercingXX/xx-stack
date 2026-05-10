@@ -1,0 +1,367 @@
+{
+  "platformRegistry": {
+    "path": "runtime/platforms.json",
+    "description": "Editable inventory of AI platforms used for agent routing and delegation."
+  },
+  "agent": {
+    "build": {
+      "description": "Primary execution agent. Implements features using the currently validated primary self-hosted coding alias from the platform registry (coder-main), then runs quality gates before handoff.",
+      "mode": "primary",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.2,
+      "steps": 18,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "*"
+        ],
+        "deny": [
+          "supervisor_abort_session"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "project"
+      },
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "plan": {
+      "description": "Primary planning agent. Deep analysis and architecture trade-offs using the currently validated primary self-hosted coding alias from the platform registry (coder-main).",
+      "mode": "primary",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 14,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "route_*",
+          "list_*",
+          "check_health",
+          "search_tools",
+          "agent_*",
+          "task_*",
+          "supervisor_status"
+        ],
+        "deny": [
+          "task_suspend",
+          "supervisor_abort_session"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "project"
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "planning": {
+      "description": "Compatibility alias for plan tasks that reference the legacy 'planning' agent type.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 12,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "fast-build": {
+      "description": "Primary fast lane for small, obvious implementation tasks. Use when speed matters more than orchestration depth.",
+      "mode": "primary",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.25,
+      "steps": 12,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "architect": {
+      "description": "System architecture specialist. Produces failure-aware designs and implementation plans using the configured reasoning lanes and validated fallbacks.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.15,
+      "steps": 16,
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "reviewer": {
+      "description": "Code review specialist. Focuses on production bugs, security gaps, and missing tests.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 12,
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "qa-lead": {
+      "description": "QA verification specialist. Validates critical user journeys and regression risk before ship.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.15,
+      "steps": 12,
+      "permission": {
+        "edit": "ask",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "completion-judge": {
+      "description": "Independent completion gatekeeper. Validates contract criteria and evidence before allowing completion.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0,
+      "steps": 14,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "supervisor_record_completion_check",
+          "supervisor_status",
+          "agent_memory_get",
+          "agent_memory_snapshot_status",
+          "search_tools",
+          "list_*",
+          "route_*",
+          "task_*"
+        ],
+        "deny": [
+          "supervisor_complete_session",
+          "supervisor_abort_session"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "project"
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "research": {
+      "description": "Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the configured reasoning lanes and validated fallbacks.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.1,
+      "steps": 12,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "route_*",
+          "list_*",
+          "check_health",
+          "search_tools",
+          "agent_memory_*",
+          "task_*"
+        ],
+        "deny": [
+          "supervisor_abort_session"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "local"
+      },
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "researcher": {
+      "description": "Compatibility alias for research tasks that reference the legacy 'researcher' agent type.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.1,
+      "steps": 12,
+      "permission": {
+        "edit": "deny",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "release-manager": {
+      "description": "Release orchestration specialist. Runs deploy checks, CI gates, and post-deploy verification.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 16,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "incident-commander": {
+      "description": "Incident response specialist. Drives triage, rollback, and postmortem workflows.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 14,
+      "permission": {
+        "edit": "ask",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "execution-orchestrator": {
+      "description": "Deterministic plan-exec wrapper. Handles bounded review/update workflows directly and executes complex orchestration in the same lane with bounded reliability checks.",
+      "mode": "primary",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.05,
+      "steps": 28,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "*"
+        ],
+        "deny": [
+          "task_create"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "project"
+      }
+    },
+    "performance-engineer": {
+      "description": "Performance and regression specialist using the configured reasoning lanes and validated fallbacks.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.1,
+      "steps": 14,
+      "permission": {
+        "edit": "ask",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "reasoning-fast": {
+      "description": "Lower-latency reasoning lane for medium-complexity planning tasks using the primary primary self-hosted alias and validated fallbacks.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 10,
+      "permission": {
+        "edit": "deny",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "rust-rewrite": {
+      "description": "Autonomous one-shot rewrite lane for full app migrations to Rust, with compile/test auto-repair loops.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-main",
+      "temperature": 0.1,
+      "steps": 40,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "model-trainer": {
+      "description": "Autonomous model training and knowledge injection lane with strategy auto-selection and hard evaluation gates.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.1,
+      "steps": 32,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "deep-thinker": {
+      "description": "Deep reasoning specialist on the strongest reasoning tier available from the live registry. Produces decision-grade architecture, risk, and optimization plans.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.15,
+      "steps": 16,
+      "permission": {
+        "edit": "ask",
+        "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "design-engineer": {
+      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 138 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
+      "mode": "subagent",
+      "model": "self-hosted-api/coder-deep",
+      "temperature": 0.25,
+      "steps": 20,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    }
+  },
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  }
+}

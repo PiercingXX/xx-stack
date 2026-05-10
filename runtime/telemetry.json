@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "outputFile": ".xx-stack/analytics/skill-runs.jsonl",
+  "retentionDays": 30,
+  "fields": ["ts", "skill", "outcome", "durationMs"]
+}

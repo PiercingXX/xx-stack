@@ -1,0 +1,37 @@
+# xx-stack repo-local context exclusions
+#
+# Use this file to keep agent search, generated context, and repo scans
+# focused on source-of-truth surfaces. Semantics follow .gitignore.
+
+# Dependencies and package manager caches
+**/node_modules/
+**/.pnpm-store/
+**/.npm/
+
+# Build and coverage outputs
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/.turbo/
+
+# Generated artifacts and logs
+**/*.log
+**/tmp/
+**/.cache/
+
+# Python caches
+**/__pycache__/
+**/*.pyc
+
+# Local editor and OS noise
+**/.DS_Store
+**/.idea/
+
+# Large or derived runtime state
+**/.xx-stack/session/
+**/.xx-stack/cache/
+
+# Vendored or compiled server artifacts are usually not the source of truth
+mcp-server/node_modules/
+mcp-server/dist/

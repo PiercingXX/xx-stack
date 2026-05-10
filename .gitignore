@@ -1,0 +1,31 @@
+# Dependencies and package manager caches
+**/node_modules/
+**/.pnpm-store/
+**/.npm/
+
+# Build and coverage outputs
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/.turbo/
+
+# Generated artifacts and logs
+**/*.log
+**/tmp/
+**/.cache/
+
+# Python caches
+**/__pycache__/
+**/*.pyc
+
+# Local editor and OS noise
+**/.DS_Store
+**/.idea/
+
+# Local runtime state
+**/.xx-stack/session/
+**/.xx-stack/cache/
+
+# Setup-script backups
+**/*.bak.*

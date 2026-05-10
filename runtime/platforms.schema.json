@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "xx-stack platform registry",
+  "type": "object",
+  "required": [
+    "version",
+    "selectionPolicy",
+    "tiers"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "selectionPolicy": {
+      "type": "object"
+    },
+    "tiers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "priority",
+          "hosts"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "usageGuidance": {
+            "type": "string"
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "label",
+                "provider",
+                "endpoint",
+                "hardware",
+                "models"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "networkScope": {
+                  "type": "string"
+                },
+                "connectionNotes": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "costProfile": {
+                  "type": "string"
+                },
+                "routingPolicy": {
+                  "type": "object"
+                },
+                "hardware": {
+                  "type": "object"
+                },
+                "models": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "roles": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "priority": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

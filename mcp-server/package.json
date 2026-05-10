@@ -1,0 +1,48 @@
+{
+  "name": "@xx-stack/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for xx-stack platform routing — exposes multi-provider inventory, health checks, and task routing",
+  "main": "dist/index.js",
+  "bin": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test dist/*.test.js",
+    "design-pack:catalog": "node ../scripts/generate-design-catalog.mjs",
+    "design-pack:verify-layout": "node ../scripts/verify-repo-layout.mjs",
+    "design-pack:golden": "node ../scripts/evaluate-golden-tasks.mjs",
+    "design-pack:html-gate": "node ../scripts/quality-gate-html.mjs",
+    "stack:catalog": "npm run design-pack:catalog",
+    "stack:verify-layout": "npm run design-pack:verify-layout",
+    "stack:golden": "npm run design-pack:golden",
+    "stack:html-gate": "npm run design-pack:html-gate",
+    "reliability:harness": "npm run build && node dist/reliability-harness.js",
+    "harness:ci": "npm run build && node dist/reliability-harness.js && node dist/check-regression.js",
+    "harness:watch": "while true; do npm run harness:ci; sleep 30; done",
+    "harness:fork-governance": "npm run build && node dist/fork-governance.js check-drift",
+    "artifact:record": "npm run build && node dist/fork-governance.js log-artifact",
+    "logs:tail": "tail -f ~/.config/xx-stack/xx-stack-logs/mcp-server.jsonl | jq .",
+    "tune": "npm run build && node dist/tune-reliability.js",
+    "monitor:memory": "npm run build && node dist/monitor-memory.js",
+    "monitor:memory:json": "npm run build && node dist/monitor-memory.js --json"
+  },
+  "keywords": [
+    "mcp",
+    "routing",
+    "agents",
+    "self-hosted",
+    "compatibility",
+    "runtime"
+  ],
+  "author": "xx-stack contributors",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "typescript": "^6.0.3"
+  }
+}

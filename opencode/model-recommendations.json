@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "profiles": [
+    {
+      "match": {
+        "provider": "self-hosted-api"
+      },
+      "recommendedModels": [
+        {
+          "name": "coder-main",
+          "reason": "Default implementation alias for coding, review, planning, and release work."
+        },
+        {
+          "name": "coder-deep",
+          "reason": "Reasoning-oriented alias for architecture, synthesis, and heavier delegated analysis."
+        },
+        {
+          "name": "coder-fast",
+          "reason": "Lower-latency alias for quick fixes and lightweight verification."
+        }
+      ]
+    },
+    {
+      "match": {
+        "provider": "local-catalog-api"
+      },
+      "recommendedModels": [
+        {
+          "name": "coder-fast",
+          "reason": "Local fallback alias for short verification loops and offline work."
+        },
+        {
+          "name": "coder-main",
+          "reason": "General-purpose local fallback alias when the primary remote lane is unavailable."
+        }
+      ]
+    },
+    {
+      "match": {
+        "provider": "compatibility-api"
+      },
+      "recommendedModels": [
+        {
+          "name": "compat-main",
+          "reason": "Compatibility bridge alias for legacy clients, migrations, and overflow fallback."
+        }
+      ]
+    },
+    {
+      "match": {
+        "provider": "cloud-api"
+      },
+      "recommendedModels": [
+        {
+          "name": "cloud-main",
+          "reason": "External fallback alias for capability gaps, burst demand, or temporary self-hosted outage."
+        }
+      ]
+    }
+  ]
+}

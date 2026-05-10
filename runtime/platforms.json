@@ -1,0 +1,344 @@
+{
+  "$schema": "./platforms.schema.json",
+  "version": 2,
+  "selectionPolicy": {
+    "defaultOrder": [
+      "primary",
+      "reasoning",
+      "local",
+      "overflow",
+      "compatibility",
+      "cloud"
+    ],
+    "rules": [
+      {
+        "name": "Prefer the primary lane for implementation and release work",
+        "when": "implementation, coding, planning, orchestration, review, and release work",
+        "preferTier": "primary"
+      },
+      {
+        "name": "Prefer the reasoning lane for architecture and deep analysis",
+        "when": "architecture, investigation, long-context synthesis, and deep reasoning",
+        "preferTier": "reasoning"
+      },
+      {
+        "name": "Prefer local fallback for quick verification and offline loops",
+        "when": "quick local checks, short edits, and offline fallback",
+        "preferTier": "local"
+      },
+      {
+        "name": "Use cloud only as explicit fallback",
+        "when": "self-hosted and local tiers cannot satisfy capability, availability, or reliability requirements",
+        "preferTier": "cloud"
+      }
+    ]
+  },
+  "tiers": [
+    {
+      "id": "primary",
+      "label": "Primary Self-Hosted Lane",
+      "priority": 1,
+      "usageGuidance": "Use for implementation, review, planning, orchestration, and release work.",
+      "hosts": [
+        {
+          "id": "primary-self-hosted",
+          "label": "Primary self-hosted API",
+          "provider": "self-hosted-api",
+          "endpoint": "https://primary-agent.example.invalid/v1",
+          "networkScope": "private-network",
+          "enabled": true,
+          "primary": true,
+          "connectionNotes": "Replace this example endpoint with your primary coding/runtime host.",
+          "executionPolicy": {
+            "maxParallelSlices": 2,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 15,
+            "scheduling": "serial-per-model"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "implementation",
+              "review",
+              "planning",
+              "orchestration",
+              "release"
+            ]
+          },
+          "hardware": {
+            "summary": "Example primary host",
+            "detected": {
+              "gpuCount": 2,
+              "totalGpuVramGb": 32,
+              "systemRamGb": 128
+            }
+          },
+          "models": [
+            {
+              "name": "coder-main",
+              "roles": [
+                "implementation",
+                "review",
+                "planning",
+                "orchestration",
+                "coding"
+              ],
+              "priority": "high",
+              "contextWindow": 131072,
+              "estimatedVramGb": 28,
+              "supportsToolUse": true,
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reasoning",
+      "label": "Reasoning Lane",
+      "priority": 2,
+      "usageGuidance": "Use for architecture, synthesis, long-context work, and heavy delegated analysis.",
+      "hosts": [
+        {
+          "id": "reasoning-self-hosted",
+          "label": "Reasoning self-hosted API",
+          "provider": "self-hosted-api",
+          "endpoint": "https://reasoning-agent.example.invalid/v1",
+          "networkScope": "private-network",
+          "enabled": true,
+          "primary": true,
+          "connectionNotes": "Replace this example endpoint with your reasoning-oriented host.",
+          "executionPolicy": {
+            "maxParallelSlices": 2,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 10,
+            "scheduling": "serial-per-model"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "architecture",
+              "research",
+              "deep-reasoning",
+              "long-context",
+              "parallel-subagent"
+            ]
+          },
+          "hardware": {
+            "summary": "Example reasoning host",
+            "detected": {
+              "gpuCount": 2,
+              "totalGpuVramGb": 64,
+              "systemRamGb": 128
+            }
+          },
+          "models": [
+            {
+              "name": "coder-deep",
+              "roles": [
+                "architecture",
+                "research",
+                "deep-reasoning",
+                "long-context",
+                "parallel-overflow"
+              ],
+              "priority": "high",
+              "supportsToolUse": true,
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "label": "Local Fallback",
+      "priority": 3,
+      "usageGuidance": "Fallback lane for quick verification, short edits, and offline work.",
+      "hosts": [
+        {
+          "id": "local-fallback",
+          "label": "Local catalog-backed endpoint",
+          "provider": "local-catalog-api",
+          "endpoint": "http://local-agent.example.invalid",
+          "networkScope": "loopback",
+          "primary": true,
+          "connectionNotes": "Replace this example endpoint with your local runtime if you use one.",
+          "capabilities": {
+            "endpointFamily": "catalog",
+            "supportsResidentModelInspection": true
+          },
+          "executionPolicy": {
+            "maxParallelSlices": 2,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 25,
+            "scheduling": "serial-per-model"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "quick-verify",
+              "small-fix",
+              "offline-fallback"
+            ]
+          },
+          "hardware": {
+            "summary": "Example local runtime",
+            "detected": {
+              "gpuCount": 1,
+              "totalGpuVramGb": 24,
+              "systemRamGb": 64
+            }
+          },
+          "models": [
+            {
+              "name": "coder-fast",
+              "roles": [
+                "quick-verify",
+                "small-fix",
+                "fallback"
+              ],
+              "priority": "high",
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            },
+            {
+              "name": "coder-main",
+              "roles": [
+                "coding",
+                "fallback",
+                "general"
+              ],
+              "priority": "medium",
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "overflow",
+      "label": "Overflow Fallback",
+      "priority": 4,
+      "usageGuidance": "Operational overflow lane for delegated work, parallel spillover, and backup reasoning.",
+      "hosts": [
+        {
+          "id": "overflow-fallback",
+          "label": "Overflow self-hosted API",
+          "provider": "self-hosted-api",
+          "endpoint": "https://overflow-agent.example.invalid/v1",
+          "networkScope": "private-network",
+          "connectionNotes": "Replace this example endpoint with your overflow runtime if you use one.",
+          "executionPolicy": {
+            "maxParallelSlices": 3,
+            "maxConcurrentModels": 2,
+            "contextReservePercent": 20,
+            "scheduling": "parallel"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "overflow",
+              "backup-reasoning",
+              "parallel-subagent"
+            ]
+          },
+          "hardware": {
+            "summary": "Example overflow host",
+            "detected": {
+              "gpuCount": 2,
+              "totalGpuVramGb": 32
+            }
+          },
+          "models": [
+            {
+              "name": "coder-fast",
+              "roles": [
+                "overflow",
+                "quick-fallback"
+              ],
+              "priority": "high"
+            },
+            {
+              "name": "coder-main",
+              "roles": [
+                "coding",
+                "analysis",
+                "fallback"
+              ],
+              "priority": "medium"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "compatibility",
+      "label": "Compatibility Bridge",
+      "priority": 5,
+      "usageGuidance": "Legacy or bridge endpoint kept only for migrations, overflow, or client compatibility.",
+      "hosts": [
+        {
+          "id": "compatibility-bridge",
+          "label": "Compatibility API endpoint",
+          "provider": "compatibility-api",
+          "endpoint": "https://compatibility-agent.example.invalid/v1",
+          "networkScope": "private-network",
+          "connectionNotes": "Replace or remove this example endpoint if you do not need a bridge tier.",
+          "executionPolicy": {
+            "maxParallelSlices": 1,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 20,
+            "scheduling": "serial-per-model"
+          },
+          "hardware": {
+            "summary": "Example compatibility host"
+          },
+          "models": [
+            {
+              "name": "compat-main",
+              "roles": [
+                "legacy-fallback",
+                "compatibility"
+              ],
+              "priority": "medium",
+              "supportsToolUse": true,
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cloud",
+      "label": "Cloud Fallback",
+      "priority": 6,
+      "usageGuidance": "Use only when local and self-hosted tiers cannot satisfy capability, availability, or reliability constraints.",
+      "hosts": [
+        {
+          "id": "cloud-fallback",
+          "label": "Cloud API endpoint",
+          "provider": "cloud-api",
+          "endpoint": "https://cloud-agent.example.invalid/v1",
+          "networkScope": "internet",
+          "executionPolicy": {
+            "maxParallelSlices": 4,
+            "scheduling": "parallel"
+          },
+          "hardware": {
+            "summary": "External cloud fallback"
+          },
+          "models": [
+            {
+              "name": "cloud-main",
+              "roles": [
+                "compatibility-fallback"
+              ],
+              "priority": "low"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
