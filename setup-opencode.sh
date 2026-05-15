@@ -186,50 +186,71 @@ fi
 # ─── Workspace install ────────────────────────────────────────────────────────
 
 TARGET_DIR="$(cd "$TARGET_PATH" && pwd -P)"
+SKIP_LEGACY_HOST_LINK=0
+SKIP_DESIGN_PACK_LINKS=0
 
 if [[ ! -d "$TARGET_DIR" ]]; then
   echo "Error: target directory not found: $TARGET_DIR"
   exit 1
 fi
 
+if [[ "$TARGET_DIR" == "$STACK_DIR" ]]; then
+  SKIP_LEGACY_HOST_LINK=1
+  SKIP_DESIGN_PACK_LINKS=1
+fi
+
 LEGACY_HOST_LINK="$TARGET_DIR/.opencode"
 
 # Legacy host symlink
-if [[ -e "$LEGACY_HOST_LINK" || -L "$LEGACY_HOST_LINK" ]]; then
-  if [[ $FORCE -ne 1 ]]; then
-    echo "[xx-stack] $LEGACY_HOST_LINK already exists — skipping (use --force to overwrite)"
+if [[ $SKIP_LEGACY_HOST_LINK -eq 0 ]]; then
+  if [[ -e "$LEGACY_HOST_LINK" || -L "$LEGACY_HOST_LINK" ]]; then
+    if [[ $FORCE -ne 1 ]]; then
+      echo "[xx-stack] $LEGACY_HOST_LINK already exists — skipping (use --force to overwrite)"
+    else
+      rm -rf "$LEGACY_HOST_LINK"
+      ln -s "$RUNTIME_DIR" "$LEGACY_HOST_LINK"
+      echo "[xx-stack] Linked: $LEGACY_HOST_LINK -> $RUNTIME_DIR"
+    fi
   else
-    rm -rf "$LEGACY_HOST_LINK"
     ln -s "$RUNTIME_DIR" "$LEGACY_HOST_LINK"
     echo "[xx-stack] Linked: $LEGACY_HOST_LINK -> $RUNTIME_DIR"
   fi
 else
-  ln -s "$RUNTIME_DIR" "$LEGACY_HOST_LINK"
-  echo "[xx-stack] Linked: $LEGACY_HOST_LINK -> $RUNTIME_DIR"
+  echo "[xx-stack] Skipped .opencode symlink for the source repo target."
 fi
 
 # Design pack symlinks
-for entry in design-systems design-skills DESIGN-CATALOG.md; do
-  src="$DESIGN_PACK_DIR/$entry"
-  dst="$TARGET_DIR/$entry"
+if [[ $SKIP_DESIGN_PACK_LINKS -eq 0 ]]; then
+  for entry in design-systems design-skills DESIGN-CATALOG.md; do
+    src="$DESIGN_PACK_DIR/$entry"
+    dst="$TARGET_DIR/$entry"
 
-  if [[ ! -e "$src" ]]; then
-    echo "[xx-stack] Warning: design pack source not found, skipping: $src"
-    continue
-  fi
-
-  if [[ -e "$dst" || -L "$dst" ]]; then
-    if [[ $FORCE -ne 1 ]]; then
-      echo "[xx-stack] $dst already exists — skipping (use --force to overwrite)"
+    if [[ ! -e "$src" ]]; then
+      echo "[xx-stack] Warning: design pack source not found, skipping: $src"
       continue
     fi
-    rm -rf "$dst"
-  fi
 
-  ln -s "$src" "$dst"
-  echo "[xx-stack] Linked: $dst -> $src"
-done
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      if [[ $FORCE -ne 1 ]]; then
+        echo "[xx-stack] $dst already exists — skipping (use --force to overwrite)"
+        continue
+      fi
+      rm -rf "$dst"
+    fi
+
+    ln -s "$src" "$dst"
+    echo "[xx-stack] Linked: $dst -> $src"
+  done
+else
+  echo "[xx-stack] Skipped design pack symlinks for the source repo target."
+fi
 
 echo "[xx-stack] Legacy host workspace ready: $TARGET_DIR"
-echo "[xx-stack] Agents and skills discoverable via .opencode -> $RUNTIME_DIR"
-echo "[xx-stack] Design pack symlinked at project root."
+if [[ $SKIP_LEGACY_HOST_LINK -eq 1 ]]; then
+  echo "[xx-stack] Source repo target uses runtime in place; no .opencode link created."
+else
+  echo "[xx-stack] Agents and skills discoverable via .opencode -> $RUNTIME_DIR"
+fi
+if [[ $SKIP_DESIGN_PACK_LINKS -eq 0 ]]; then
+  echo "[xx-stack] Design pack symlinked at project root."
+fi

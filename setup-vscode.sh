@@ -198,10 +198,17 @@ WORKSPACE_AGENTS_DIR="$WORKSPACE_CONFIG_DIR/agents"
 WORKSPACE_PROMPTS_DIR="$WORKSPACE_CONFIG_DIR/prompts"
 MCP_CONFIG_PATH="$WORKSPACE_CONFIG_DIR/mcp.json"
 GLOBAL_AGENT_SENTINEL="$USER_PROMPTS_DIR/execution-orchestrator.agent.md"
+MCP_CONFIG_ARG="$MCP_JS"
+SKIP_DESIGN_PACK_LINKS=0
 
 if [[ ! -d "$TARGET_DIR" ]]; then
   echo "Error: target directory not found: $TARGET_DIR"
   exit 1
+fi
+
+if [[ "$TARGET_DIR" == "$STACK_DIR" ]]; then
+  MCP_CONFIG_ARG='${workspaceFolder}/mcp-server/dist/index.js'
+  SKIP_DESIGN_PACK_LINKS=1
 fi
 
 mkdir -p "$WORKSPACE_CONFIG_DIR"
@@ -232,7 +239,7 @@ NODE
   fi
 fi
 
-write_mcp_config "$MCP_CONFIG_PATH" "$MCP_JS"
+write_mcp_config "$MCP_CONFIG_PATH" "$MCP_CONFIG_ARG"
 
 if [[ -f "$GLOBAL_AGENT_SENTINEL" ]]; then
   echo "[xx-stack] Global xx-stack prompt install detected; skipping workspace agent/prompt sync to avoid duplicates."
@@ -244,27 +251,29 @@ else
 fi
 
 # Design pack symlinks at target root
-DESIGN_PACK_DIR="$STACK_DIR/packs/design"
-for entry in design-systems design-skills DESIGN-CATALOG.md; do
-  src="$DESIGN_PACK_DIR/$entry"
-  dst="$TARGET_DIR/$entry"
+if [[ $SKIP_DESIGN_PACK_LINKS -eq 0 ]]; then
+  DESIGN_PACK_DIR="$STACK_DIR/packs/design"
+  for entry in design-systems design-skills DESIGN-CATALOG.md; do
+    src="$DESIGN_PACK_DIR/$entry"
+    dst="$TARGET_DIR/$entry"
 
-  if [[ ! -e "$src" ]]; then
-    echo "[xx-stack] Warning: design pack source not found, skipping: $src"
-    continue
-  fi
-
-  if [[ -e "$dst" || -L "$dst" ]]; then
-    if [[ $FORCE -ne 1 ]]; then
-      echo "[xx-stack] $dst already exists — skipping (use --force to overwrite)"
+    if [[ ! -e "$src" ]]; then
+      echo "[xx-stack] Warning: design pack source not found, skipping: $src"
       continue
     fi
-    rm -rf "$dst"
-  fi
 
-  ln -s "$src" "$dst"
-  echo "[xx-stack] Linked: $dst -> $src"
-done
+    if [[ -e "$dst" || -L "$dst" ]]; then
+      if [[ $FORCE -ne 1 ]]; then
+        echo "[xx-stack] $dst already exists — skipping (use --force to overwrite)"
+        continue
+      fi
+      rm -rf "$dst"
+    fi
+
+    ln -s "$src" "$dst"
+    echo "[xx-stack] Linked: $dst -> $src"
+  done
+fi
 
 echo "[xx-stack] Linked editor workspace: $TARGET_DIR"
 echo "[xx-stack] Wrote: $MCP_CONFIG_PATH"
@@ -274,5 +283,9 @@ else
   echo "[xx-stack] Synced: $WORKSPACE_AGENTS_DIR"
   echo "[xx-stack] Synced: $WORKSPACE_PROMPTS_DIR"
 fi
-echo "[xx-stack] Design pack symlinked at project root."
+if [[ $SKIP_DESIGN_PACK_LINKS -eq 1 ]]; then
+  echo "[xx-stack] Skipped design pack symlinks for the source repo target."
+else
+  echo "[xx-stack] Design pack symlinked at project root."
+fi
 echo "[xx-stack] Ready. Reload the editor window in the target workspace."
