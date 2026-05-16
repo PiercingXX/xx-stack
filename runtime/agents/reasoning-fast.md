@@ -1,8 +1,7 @@
 ---
 name: reasoning-fast
-description: Lower-latency reasoning lane for medium-complexity planning tasks using the primary primary self-hosted alias and validated fallbacks.
+description: Lower-latency reasoning lane for medium-complexity planning tasks using the caller's current host model unless the host explicitly routes deeper.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 10
 permission:

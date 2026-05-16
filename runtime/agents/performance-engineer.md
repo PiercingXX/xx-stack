@@ -1,8 +1,7 @@
 ---
 name: performance-engineer
-description: Performance and cost/perf specialist. Detects regressions and proposes optimization plans.
+description: Performance and cost/perf specialist. Detects regressions and proposes optimization plans using the caller's current host model unless the host routes elsewhere.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.1
 steps: 14
 permission:

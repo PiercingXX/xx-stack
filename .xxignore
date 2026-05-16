@@ -31,6 +31,7 @@
 # Large or derived runtime state
 **/.xx-stack/session/
 **/.xx-stack/cache/
+**/.xx-stack/loops/
 
 # Vendored or compiled server artifacts are usually not the source of truth
 mcp-server/node_modules/

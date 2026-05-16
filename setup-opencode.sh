@@ -28,6 +28,7 @@ Notes:
   - Existing symlinks/files at destination are skipped unless --force is used.
   - Global install does not link the design pack; use workspace mode for that.
   - Existing user config is merged where possible instead of blindly replaced.
+  - Repo-managed agent profiles are migrated to host-native execution by clearing legacy per-agent model pins when the stack no longer declares one.
 USAGE
 }
 
@@ -128,16 +129,51 @@ const next = typeof userConfig === "object" && userConfig !== null && !Array.isA
 const repoAgents = typeof repoConfig.agent === "object" && repoConfig.agent !== null ? repoConfig.agent : {};
 const userAgents = typeof next.agent === "object" && next.agent !== null ? next.agent : {};
 
-next.agent = {
-  ...userAgents,
-  ...repoAgents,
+const asRecord = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
+const mergeAgent = (userAgent, repoAgent) => {
+  const user = asRecord(userAgent);
+  const repo = asRecord(repoAgent);
+
+  const merged = {
+    ...user,
+    ...repo,
+    toolPolicy: {
+      ...asRecord(user.toolPolicy),
+      ...asRecord(repo.toolPolicy),
+    },
+    memory: {
+      ...asRecord(user.memory),
+      ...asRecord(repo.memory),
+    },
+    coordinator: {
+      ...asRecord(user.coordinator),
+      ...asRecord(repo.coordinator),
+    },
+    permission: {
+      ...asRecord(user.permission),
+      ...asRecord(repo.permission),
+      skill: {
+        ...asRecord(asRecord(user.permission).skill),
+        ...asRecord(asRecord(repo.permission).skill),
+      },
+    },
+    options: {
+      ...asRecord(user.options),
+      ...asRecord(repo.options),
+    },
+  };
+
+  if (!("model" in repo)) {
+    delete merged.model;
+  }
+
+  return merged;
 };
 
-next.platformRegistry = {
-  ...(typeof next.platformRegistry === "object" && next.platformRegistry !== null ? next.platformRegistry : {}),
-  ...(typeof repoConfig.platformRegistry === "object" && repoConfig.platformRegistry !== null ? repoConfig.platformRegistry : {}),
-  path: "platforms.json",
-};
+next.agent = { ...userAgents };
+for (const [agentId, repoAgent] of Object.entries(repoAgents)) {
+  next.agent[agentId] = mergeAgent(userAgents[agentId], repoAgent);
+}
 
 if (typeof next.$schema !== "string" && typeof repoConfig.$schema === "string") {
   next.$schema = repoConfig.$schema;

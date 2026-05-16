@@ -2,7 +2,6 @@
 name: incident-commander
 description: Incident response lead. Coordinates triage, containment, rollback, and postmortem.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 14
 permission:

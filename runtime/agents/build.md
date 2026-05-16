@@ -1,8 +1,7 @@
 ---
 name: build
-description: Primary execution agent. Implements features on the validated primary self-hosted coding lane first, then runs quality gates before handoff.
+description: Primary execution agent. Uses the caller's current host model by default, then runs quality gates before handoff.
 mode: primary
-model: self-hosted-api/coder-main
 temperature: 0.2
 steps: 18
 permission:

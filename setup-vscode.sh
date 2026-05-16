@@ -13,10 +13,12 @@ What it does:
      $HOME/.config/Code/User/prompts/
   2. In workspace mode, creates/updates the editor workspace MCP file at <target>/.vscode/mcp.json
      by merging an xx-stack server entry into the existing file.
-  3. In workspace mode, syncs agents and prompts into canonical workspace paths
+  3. In workspace mode, creates <target>/.github/copilot-instructions.md when missing
+    so the workspace inherits the canonical xx-stack runtime guidance in VS Code.
+  4. In workspace mode, syncs agents and prompts into canonical workspace paths
     only when xx-stack is not already installed globally. If a global install is
     detected, workspace prompt copies are skipped to avoid duplicate agents.
-  4. In workspace mode, symlinks design pack content at the target project root:
+  5. In workspace mode, symlinks design pack content at the target project root:
      <target>/design-systems/   -> <xx-stack>/packs/design/design-systems/
      <target>/design-skills/    -> <xx-stack>/packs/design/design-skills/
      <target>/DESIGN-CATALOG.md -> <xx-stack>/packs/design/DESIGN-CATALOG.md
@@ -29,6 +31,7 @@ Options:
 Notes:
   - Existing workspace files are backed up to *.bak.<timestamp> unless --force is used.
   - Global install does not configure MCP or link the design pack; use workspace mode for those.
+  - Existing .github/copilot-instructions.md is preserved unless --force is used.
 USAGE
 }
 
@@ -78,6 +81,7 @@ fi
 
 STACK_DIR="$(cd "$(dirname "$0")" && pwd -P)"
 MCP_JS="$STACK_DIR/mcp-server/dist/index.js"
+SYNC_VSCODE_AGENTS_JS="$STACK_DIR/scripts/sync-vscode-agents.mjs"
 USER_PROMPTS_DIR="$HOME/.config/Code/User/prompts"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
@@ -134,13 +138,12 @@ ensure_mcp_server() {
   popd >/dev/null
 }
 
-write_mcp_config() {
+render_mcp_config() {
   local config_path="$1"
   local mcp_js_path="$2"
 
   node --input-type=module - "$config_path" "$mcp_js_path" <<'NODE'
 import fs from "node:fs";
-import path from "node:path";
 
 const [configPath, mcpJsPath] = process.argv.slice(2);
 let existing = {};
@@ -166,13 +169,16 @@ servers["xx-stack-platform-routing"] = {
 };
 
 next.servers = servers;
-
-fs.mkdirSync(path.dirname(configPath), { recursive: true });
-fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+process.stdout.write(JSON.stringify(next, null, 2));
 NODE
 }
 
 ensure_mcp_server
+
+if [[ -f "$SYNC_VSCODE_AGENTS_JS" ]]; then
+  echo "[xx-stack] Syncing VS Code agent mirrors from runtime agents..."
+  node "$SYNC_VSCODE_AGENTS_JS"
+fi
 
 if [[ ! -f "$MCP_JS" ]]; then
   echo "Error: $MCP_JS is missing."
@@ -196,10 +202,14 @@ TARGET_DIR="$(cd "$TARGET_PATH" && pwd -P)"
 WORKSPACE_CONFIG_DIR="$TARGET_DIR/.vscode"
 WORKSPACE_AGENTS_DIR="$WORKSPACE_CONFIG_DIR/agents"
 WORKSPACE_PROMPTS_DIR="$WORKSPACE_CONFIG_DIR/prompts"
+WORKSPACE_GITHUB_DIR="$TARGET_DIR/.github"
 MCP_CONFIG_PATH="$WORKSPACE_CONFIG_DIR/mcp.json"
+COPILOT_INSTRUCTIONS_PATH="$WORKSPACE_GITHUB_DIR/copilot-instructions.md"
+STACK_COPILOT_INSTRUCTIONS_PATH="$STACK_DIR/.github/copilot-instructions.md"
 GLOBAL_AGENT_SENTINEL="$USER_PROMPTS_DIR/execution-orchestrator.agent.md"
 MCP_CONFIG_ARG="$MCP_JS"
 SKIP_DESIGN_PACK_LINKS=0
+SKIP_COPILOT_INSTRUCTIONS_LINK=0
 
 if [[ ! -d "$TARGET_DIR" ]]; then
   echo "Error: target directory not found: $TARGET_DIR"
@@ -209,14 +219,10 @@ fi
 if [[ "$TARGET_DIR" == "$STACK_DIR" ]]; then
   MCP_CONFIG_ARG='${workspaceFolder}/mcp-server/dist/index.js'
   SKIP_DESIGN_PACK_LINKS=1
+  SKIP_COPILOT_INSTRUCTIONS_LINK=1
 fi
 
 mkdir -p "$WORKSPACE_CONFIG_DIR"
-
-if [[ -f "$MCP_CONFIG_PATH" && $FORCE -ne 1 ]]; then
-  cp "$MCP_CONFIG_PATH" "$MCP_CONFIG_PATH.bak.$STAMP"
-  echo "[xx-stack] Backed up existing MCP config to $MCP_CONFIG_PATH.bak.$STAMP"
-fi
 
 if [[ -f "$MCP_CONFIG_PATH" ]]; then
   if ! node --input-type=module - "$MCP_CONFIG_PATH" <<'NODE'
@@ -239,7 +245,46 @@ NODE
   fi
 fi
 
-write_mcp_config "$MCP_CONFIG_PATH" "$MCP_CONFIG_ARG"
+NEXT_MCP_CONFIG="$(render_mcp_config "$MCP_CONFIG_PATH" "$MCP_CONFIG_ARG")"
+CURRENT_MCP_CONFIG=""
+MCP_CONFIG_UPDATED=0
+
+if [[ -f "$MCP_CONFIG_PATH" ]]; then
+  CURRENT_MCP_CONFIG="$(cat "$MCP_CONFIG_PATH")"
+fi
+
+if [[ "$CURRENT_MCP_CONFIG" != "$NEXT_MCP_CONFIG" ]]; then
+  if [[ -f "$MCP_CONFIG_PATH" && $FORCE -ne 1 ]]; then
+    cp "$MCP_CONFIG_PATH" "$MCP_CONFIG_PATH.bak.$STAMP"
+    echo "[xx-stack] Backed up existing MCP config to $MCP_CONFIG_PATH.bak.$STAMP"
+  fi
+
+  printf '%s\n' "$NEXT_MCP_CONFIG" > "$MCP_CONFIG_PATH"
+  MCP_CONFIG_UPDATED=1
+else
+  echo "[xx-stack] MCP config already up to date."
+fi
+
+mkdir -p "$WORKSPACE_GITHUB_DIR"
+
+if [[ $SKIP_COPILOT_INSTRUCTIONS_LINK -eq 0 ]]; then
+  if [[ ! -f "$STACK_COPILOT_INSTRUCTIONS_PATH" ]]; then
+    echo "[xx-stack] Warning: canonical VS Code instructions file not found, skipping: $STACK_COPILOT_INSTRUCTIONS_PATH"
+  elif [[ -e "$COPILOT_INSTRUCTIONS_PATH" || -L "$COPILOT_INSTRUCTIONS_PATH" ]]; then
+    if [[ $FORCE -ne 1 ]]; then
+      echo "[xx-stack] $COPILOT_INSTRUCTIONS_PATH already exists — skipping (use --force to overwrite)"
+    else
+      rm -rf "$COPILOT_INSTRUCTIONS_PATH"
+      ln -s "$STACK_COPILOT_INSTRUCTIONS_PATH" "$COPILOT_INSTRUCTIONS_PATH"
+      echo "[xx-stack] Linked: $COPILOT_INSTRUCTIONS_PATH -> $STACK_COPILOT_INSTRUCTIONS_PATH"
+    fi
+  else
+    ln -s "$STACK_COPILOT_INSTRUCTIONS_PATH" "$COPILOT_INSTRUCTIONS_PATH"
+    echo "[xx-stack] Linked: $COPILOT_INSTRUCTIONS_PATH -> $STACK_COPILOT_INSTRUCTIONS_PATH"
+  fi
+else
+  echo "[xx-stack] Using repo-local VS Code instructions file."
+fi
 
 if [[ -f "$GLOBAL_AGENT_SENTINEL" ]]; then
   echo "[xx-stack] Global xx-stack prompt install detected; skipping workspace agent/prompt sync to avoid duplicates."
@@ -276,7 +321,16 @@ if [[ $SKIP_DESIGN_PACK_LINKS -eq 0 ]]; then
 fi
 
 echo "[xx-stack] Linked editor workspace: $TARGET_DIR"
-echo "[xx-stack] Wrote: $MCP_CONFIG_PATH"
+if [[ $MCP_CONFIG_UPDATED -eq 1 ]]; then
+  echo "[xx-stack] Wrote: $MCP_CONFIG_PATH"
+else
+  echo "[xx-stack] Verified: $MCP_CONFIG_PATH"
+fi
+if [[ $SKIP_COPILOT_INSTRUCTIONS_LINK -eq 0 ]]; then
+  echo "[xx-stack] VS Code instructions path: $COPILOT_INSTRUCTIONS_PATH"
+else
+  echo "[xx-stack] VS Code instructions path: $STACK_COPILOT_INSTRUCTIONS_PATH"
+fi
 if [[ -f "$GLOBAL_AGENT_SENTINEL" ]]; then
   echo "[xx-stack] Using global agents/prompts from: $USER_PROMPTS_DIR"
 else

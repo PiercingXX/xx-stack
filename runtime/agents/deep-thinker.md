@@ -1,8 +1,7 @@
 ---
 name: deep-thinker
-description: Deep reasoning specialist on the strongest reasoning tier available from the live registry. Produces decision-grade architecture, risk, and optimization plans.
+description: Deep reasoning specialist. Produces decision-grade architecture, risk, and optimization plans using the caller's current host model unless the host explicitly routes to a deeper lane.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.15
 steps: 16
 permission:

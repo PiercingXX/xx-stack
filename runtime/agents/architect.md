@@ -1,8 +1,7 @@
 ---
 name: architect
-description: System architecture specialist. Produces failure-aware designs and implementation plans using the configured reasoning lanes and validated fallbacks.
+description: System architecture specialist. Produces failure-aware designs and implementation plans using the caller's current host model unless the host routes elsewhere.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.15
 steps: 16
 permission:

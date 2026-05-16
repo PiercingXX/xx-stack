@@ -2,7 +2,6 @@
 name: planning
 description: Compatibility alias for plan tasks that reference the legacy 'planning' agent type. Delegates to plan agent behavior.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 12
 permission:

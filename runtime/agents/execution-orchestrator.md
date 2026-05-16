@@ -1,14 +1,13 @@
 ---
 name: execution-orchestrator
-description: Deterministic wrapper for plan-exec workflows. Handles bounded review/update tasks directly and executes complex orchestration in the same lane with bounded reliability checks.
+description: Deterministic wrapper for plan-exec workflows. Uses the caller's current host model by default and routes only when the task or host requires it.
 mode: primary
-model: self-hosted-api/coder-main
 temperature: 0.05
 steps: 28
 permission:
   edit: allow
   bash: allow
-  skill: "*"
+  skill: allow
 ---
 
 # Execution Orchestrator
@@ -167,6 +166,18 @@ Persist this contract in a concrete artifact before implementation:
 
 For `complex-orchestration`, if `supervisor_start_session` is available, start a supervised session before the first implementation slice and carry the session ID through the rest of the loop. If supervisor tools are unavailable in the active host, continue with the same contract manually and state that supervision is degraded.
 
+## Autonomous Outer Loop Mode
+
+When the caller names a todo or plan file and says this agent is running inside an unattended outer loop:
+
+- Treat the todo or plan file as the disk-backed source of truth for remaining work.
+- Treat the completion contract as mandatory; do not keep the only slice state in the working response.
+- Update the todo or plan file and the active contract every iteration so the next loop can resume from disk.
+- If task tools exist, create a persistent task record at loop start and update it as slices complete or block.
+- Do not ask the user for progress updates or midstream confirmation while actionable tasks remain unless a hard blocker prevents safe execution.
+- If the caller requests explicit loop-state markers, emit them exactly as requested.
+- Only emit a final completion signal when the todo or plan file shows no remaining actionable items and deterministic evidence exists.
+
 For `bounded-review-update`, the contract is fixed:
 
 1. Enumerate full requested set
@@ -227,7 +238,7 @@ Complex-orchestration contract must include:
 - warning if bounded-review-update does not apply
 
 Execution loop requirements:
-- keep explicit slice state in the working response or contract artifact
+- keep explicit slice state in a contract artifact or other disk-backed state; do not rely solely on the working response when a todo or plan file is present
 - do not stop after routing or after the first successful slice if requested work remains
 - when supervisor tools exist, use `supervisor_start_session` before implementation and `supervisor_complete_session` only after evidence and judge pass
 - when delegating, merge worker results back into the active loop before deciding whether another slice is needed

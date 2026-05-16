@@ -28,6 +28,7 @@
 # Local runtime state
 **/.xx-stack/session/
 **/.xx-stack/cache/
+**/.xx-stack/loops/
 
 # Setup-script backups
 **/*.bak.*

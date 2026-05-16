@@ -2,7 +2,6 @@
 name: model-trainer
 description: Autonomous model training and knowledge injection specialist with strategy auto-selection (RAG, fine-tune, hybrid) and hard evaluation gates.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.1
 steps: 32
 permission:

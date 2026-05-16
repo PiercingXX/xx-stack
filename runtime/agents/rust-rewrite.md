@@ -2,7 +2,6 @@
 name: rust-rewrite
 description: Autonomous migration specialist that performs full one-shot rewrites of existing applications into Rust, including iterative compile/test repair loops.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 40
 permission:

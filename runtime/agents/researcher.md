@@ -2,7 +2,6 @@
 name: researcher
 description: Compatibility alias for research tasks that reference the legacy 'researcher' agent type. Delegates to research agent behavior.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.1
 steps: 12
 permission:

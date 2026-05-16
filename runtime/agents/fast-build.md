@@ -1,8 +1,7 @@
 ---
 name: fast-build
-description: Top-level fast lane for small, obvious implementation tasks. Optimized for speed with a mandatory stabilization pass.
+description: Top-level fast lane for small, obvious implementation tasks. Uses the caller's current host model by default with a mandatory stabilization pass.
 mode: primary
-model: self-hosted-api/coder-main
 temperature: 0.25
 steps: 12
 permission:

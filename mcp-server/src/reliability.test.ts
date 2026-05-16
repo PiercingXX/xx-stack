@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { chmod, mkdtemp, readFile, readdir, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 import {
   __testExports,
@@ -16,6 +18,8 @@ import {
   shouldRequireCompletionValidation,
   shouldDedupeContinuation,
 } from "./index.js";
+
+const execFileAsync = promisify(execFile);
 
 test("computeBackoffMs grows exponentially and caps", () => {
   const reliability = {
@@ -772,5 +776,508 @@ test("specialist prompts prefer accountable delegation over automatic transfer",
     assert.match(prompt, /Use accountable delegation/i);
     assert.match(prompt, /Only use true handoff/i);
     assert.doesNotMatch(prompt, /Transfer automatically/);
+  }
+});
+
+test("canonical runtime and adapter agents do not hardcode model pins", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const runtimeAgentsDir = join(repoRoot, "runtime", "agents");
+  const adapterAgentsDir = join(repoRoot, "adapters", "agents");
+
+  const [runtimeAgentFiles, adapterAgentFiles] = await Promise.all([
+    readdir(runtimeAgentsDir),
+    readdir(adapterAgentsDir),
+  ]);
+
+  for (const fileName of runtimeAgentFiles.filter((entry) => entry.endsWith(".md"))) {
+    const content = await readFile(join(runtimeAgentsDir, fileName), "utf-8");
+    assert.doesNotMatch(content, /^model:/m, `runtime agent ${fileName} should inherit the host model`);
+  }
+
+  for (const fileName of adapterAgentFiles.filter((entry) => entry.endsWith(".md"))) {
+    const content = await readFile(join(adapterAgentsDir, fileName), "utf-8");
+    assert.doesNotMatch(content, /^model:/m, `adapter agent ${fileName} should inherit the host model`);
+  }
+});
+
+test("runtime agents use host-compatible skill permission syntax", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const runtimeAgentsDir = join(repoRoot, "runtime", "agents");
+  const runtimeAgentFiles = await readdir(runtimeAgentsDir);
+
+  for (const fileName of runtimeAgentFiles.filter((entry) => entry.endsWith(".md"))) {
+    const content = await readFile(join(runtimeAgentsDir, fileName), "utf-8");
+    assert.doesNotMatch(content, /^\s*skill:\s+"\*"\s*$/m, `runtime agent ${fileName} should use host-compatible skill permission syntax`);
+  }
+});
+
+test("runtime config leaves model selection to the host by default", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const configPath = join(repoRoot, "runtime", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf-8"));
+  const agents = config.agent ?? {};
+
+  for (const [agentId, profile] of Object.entries(agents)) {
+    assert.ok(!(profile && typeof profile === "object" && "model" in profile), `agent ${agentId} should not hardcode model selection`);
+  }
+});
+
+test("execution-orchestrator prompts require disk-backed outer-loop behavior", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const runtimePath = join(repoRoot, "runtime", "agents", "execution-orchestrator.md");
+  const adapterPath = join(repoRoot, "adapters", "agents", "execution-orchestrator.agent.md");
+
+  const [runtimePrompt, adapterPrompt] = await Promise.all([
+    readFile(runtimePath, "utf-8"),
+    readFile(adapterPath, "utf-8"),
+  ]);
+
+  for (const prompt of [runtimePrompt, adapterPrompt]) {
+    assert.match(prompt, /disk-backed source of truth/i);
+    assert.match(prompt, /create a persistent task record/i);
+    assert.match(prompt, /do not ask the user for progress updates/i);
+  }
+});
+
+test("execution-orchestrator profile allows durable task creation and strict coordinator contracts", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const configPath = join(repoRoot, "runtime", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf-8"));
+  const profile = config.agent?.["execution-orchestrator"];
+
+  assert.ok(profile, "execution-orchestrator profile should exist");
+  assert.ok(!profile.toolPolicy?.deny?.includes("task_create"), "task_create should not be denied");
+  assert.equal(profile.coordinator?.strictWorkerContract, true);
+  assert.equal(profile.coordinator?.requireStructuredResults, true);
+});
+
+test("repo ships canonical VS Code workspace instructions and MCP wiring", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const instructionsPath = join(repoRoot, ".github", "copilot-instructions.md");
+  const mcpPath = join(repoRoot, ".vscode", "mcp.json");
+
+  const [instructions, mcpRaw] = await Promise.all([
+    readFile(instructionsPath, "utf-8"),
+    readFile(mcpPath, "utf-8"),
+  ]);
+  const mcp = JSON.parse(mcpRaw);
+
+  assert.match(instructions, /runtime\/agents\/\*\.md/);
+  assert.match(instructions, /runtime\/shared_instructions\.md/);
+  assert.match(instructions, /setup-vscode\.sh <target-project>/);
+  assert.match(instructions, /Global prompt install alone is not enough/i);
+  assert.equal(mcp.servers?.["xx-stack-platform-routing"]?.type, "stdio");
+  assert.deepEqual(mcp.servers?.["xx-stack-platform-routing"]?.args, [
+    "${workspaceFolder}/mcp-server/dist/index.js",
+  ]);
+});
+
+test("VS Code adapter agents stay synced with canonical runtime agents", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const syncScriptPath = join(repoRoot, "scripts", "sync-vscode-agents.mjs");
+
+  await execFileAsync(process.execPath, [syncScriptPath, "--check"], { cwd: repoRoot });
+});
+
+test("run-agent-loop retries until completion promise is emitted", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-loop-"));
+  try {
+    const todoPath = join(dir, "TODO.md");
+    const counterPath = join(dir, "counter.txt");
+    const dummyRunnerPath = join(dir, "dummy-runner.mjs");
+    const stateDir = join(dir, ".xx-stack", "loops", "todo");
+    const loopScriptPath = join(repoRoot, "scripts", "run-agent-loop.mjs");
+
+    await writeFile(todoPath, "- [ ] first task\n- [ ] second task\n", "utf-8");
+    await writeFile(dummyRunnerPath, `import { readFile, writeFile } from "node:fs/promises";
+const [, , todoPath, counterPath] = process.argv;
+let counter = 0;
+try {
+  counter = Number.parseInt(await readFile(counterPath, "utf-8"), 10) || 0;
+} catch {}
+counter += 1;
+await writeFile(counterPath, String(counter), "utf-8");
+let todo = await readFile(todoPath, "utf-8");
+if (counter === 1) {
+  todo = todo.replace("- [ ] first task", "- [x] first task");
+  await writeFile(todoPath, todo, "utf-8");
+  process.stdout.write("first slice complete\\n<loop-state>CONTINUE</loop-state>\\n");
+} else {
+  todo = todo.replace("- [ ] second task", "- [x] second task");
+  await writeFile(todoPath, todo, "utf-8");
+  process.stdout.write("<promise>DONE</promise>\\n<loop-state>DONE</loop-state>\\n");
+}
+`, "utf-8");
+
+    const runnerCommand = `'${process.execPath.replace(/'/g, `'\\''`)}' '${dummyRunnerPath.replace(/'/g, `'\\''`)}' '${todoPath.replace(/'/g, `'\\''`)}' '${counterPath.replace(/'/g, `'\\''`)}'`;
+
+    await execFileAsync(process.execPath, [
+      loopScriptPath,
+      "--runner",
+      runnerCommand,
+      "--todo",
+      todoPath,
+      "--cwd",
+      dir,
+      "--state-dir",
+      stateDir,
+      "--max-iterations",
+      "5",
+      "--max-stalled",
+      "2",
+    ], { cwd: repoRoot });
+
+    const todo = await readFile(todoPath, "utf-8");
+    const manifest = JSON.parse(await readFile(join(stateDir, "loop-manifest.json"), "utf-8"));
+
+    assert.match(todo, /- \[x\] first task/);
+    assert.match(todo, /- \[x\] second task/);
+    assert.equal(manifest.status, "completed");
+    assert.equal(manifest.iteration, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run-agent-loop fails fast when runner preflight does not prove the host is healthy", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-loop-preflight-"));
+  try {
+    const todoPath = join(dir, "TODO.md");
+    const stateDir = join(dir, ".xx-stack", "loops", "todo");
+    const loopScriptPath = join(repoRoot, "scripts", "run-agent-loop.mjs");
+    const runnerPath = join(dir, "runner.mjs");
+    const preflightPath = join(dir, "preflight.mjs");
+    const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+    await writeFile(todoPath, "- [ ] first task\n", "utf-8");
+    await writeFile(runnerPath, 'process.stdout.write("<promise>DONE</promise>\\n");\n', "utf-8");
+    await writeFile(preflightPath, 'process.stdout.write("NOT_READY\\n");\n', "utf-8");
+
+    const runnerCommand = `${shellQuote(process.execPath)} ${shellQuote(runnerPath)}`;
+    const preflightCommand = `${shellQuote(process.execPath)} ${shellQuote(preflightPath)}`;
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        loopScriptPath,
+        "--runner",
+        runnerCommand,
+        "--runner-preflight",
+        preflightCommand,
+        "--preflight-input",
+        "Respond with exactly PONG.",
+        "--preflight-success",
+        "PONG",
+        "--preflight-timeout-ms",
+        "500",
+        "--todo",
+        todoPath,
+        "--cwd",
+        dir,
+        "--state-dir",
+        stateDir,
+      ], { cwd: repoRoot }),
+      (error: NodeJS.ErrnoException) => Number(error.code) === 5,
+    );
+
+    const manifest = JSON.parse(await readFile(join(stateDir, "loop-manifest.json"), "utf-8"));
+    const todo = await readFile(todoPath, "utf-8");
+    const outerState = await readFile(join(stateDir, "OUTER_LOOP_STATE.md"), "utf-8");
+
+    assert.equal(manifest.status, "runner-unhealthy");
+    assert.equal(manifest.iteration, 0);
+    assert.equal(manifest.preflight?.healthy, false);
+    assert.equal(manifest.preflight?.timedOut, false);
+    assert.equal(manifest.history.length, 0);
+    assert.match(todo, /- \[ \] first task/);
+    assert.match(outerState, /## Runner Health/);
+    assert.match(outerState, /status: failed/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run-agent-loop times out hung runner invocations instead of blocking forever", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-loop-timeout-"));
+  try {
+    const todoPath = join(dir, "TODO.md");
+    const stateDir = join(dir, ".xx-stack", "loops", "todo");
+    const loopScriptPath = join(repoRoot, "scripts", "run-agent-loop.mjs");
+    const hangingRunnerPath = join(dir, "hanging-runner.mjs");
+    const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+    await writeFile(todoPath, "- [ ] first task\n", "utf-8");
+    await writeFile(hangingRunnerPath, 'setTimeout(() => {}, 10000);\n', "utf-8");
+
+    const runnerCommand = `${shellQuote(process.execPath)} ${shellQuote(hangingRunnerPath)}`;
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        loopScriptPath,
+        "--runner",
+        runnerCommand,
+        "--runner-timeout-ms",
+        "200",
+        "--todo",
+        todoPath,
+        "--cwd",
+        dir,
+        "--state-dir",
+        stateDir,
+        "--max-iterations",
+        "2",
+        "--max-stalled",
+        "2",
+      ], { cwd: repoRoot }),
+      (error: NodeJS.ErrnoException) => Number(error.code) === 3,
+    );
+
+    const manifest = JSON.parse(await readFile(join(stateDir, "loop-manifest.json"), "utf-8"));
+    const stderrLog = await readFile(join(stateDir, "logs", "iteration-002-stderr.log"), "utf-8");
+    const outerState = await readFile(join(stateDir, "OUTER_LOOP_STATE.md"), "utf-8");
+
+    assert.equal(manifest.status, "stalled");
+    assert.equal(manifest.iteration, 2);
+    assert.equal(manifest.history.length, 2);
+    assert.ok(manifest.history.every((entry: { timedOut?: boolean }) => entry.timedOut === true));
+    assert.match(stderrLog, /Process timed out after 200ms/);
+    assert.match(outerState, /runner-timeout: 200ms/);
+    assert.match(outerState, /timed-out: yes/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run-opencode-loop wires preflight and stdin bridging for OpenCode runners", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-opencode-loop-"));
+  try {
+    const todoPath = join(dir, "TODO.md");
+    const stateDir = join(dir, ".xx-stack", "loops", "todo");
+    const loopScriptPath = join(repoRoot, "scripts", "run-opencode-loop.mjs");
+    const fakeOpenCodePath = join(dir, "fake-opencode");
+    const hostConfigPath = join(dir, "host-config.json");
+
+    await writeFile(todoPath, "- [ ] first task\n", "utf-8");
+    await writeFile(hostConfigPath, JSON.stringify({
+      provider: {
+        "ollama-local": {
+          npm: "@ai-sdk/openai-compatible",
+          name: "Test Provider",
+          options: {
+            baseURL: "http://127.0.0.1:11434/v1",
+          },
+        },
+      },
+    }, null, 2), "utf-8");
+    await writeFile(fakeOpenCodePath, `#!/usr/bin/env node
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+
+const args = process.argv.slice(2);
+if (args[0] !== "run") {
+  process.exit(2);
+}
+
+let agent = "";
+let dir = process.cwd();
+let prompt = "";
+
+for (let index = 1; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === "--agent") {
+    agent = args[index + 1] ?? "";
+    index += 1;
+    continue;
+  }
+  if (arg === "--dir") {
+    dir = args[index + 1] ?? dir;
+    index += 1;
+    continue;
+  }
+  if (["--model", "--format", "--variant"].includes(arg)) {
+    index += 1;
+    continue;
+  }
+  if (arg.startsWith("--")) {
+    continue;
+  }
+  prompt = arg;
+}
+
+await appendFile(dir + "/fake-opencode.log", JSON.stringify({ agent, prompt, home: process.env.HOME ?? "" }) + "\\n", "utf-8");
+
+if (agent === "ping") {
+  process.stdout.write("PONG\\n");
+  process.exit(0);
+}
+
+if (agent === "execution-orchestrator") {
+  if (prompt.includes("Reply with the exact file contents and nothing else.")) {
+    const match = prompt.match(/Use tools to read the file at (.+)\./);
+    if (!match) {
+      process.stderr.write("missing probe path\\n");
+      process.exit(1);
+    }
+    process.stdout.write(await readFile(match[1], "utf-8"));
+    process.exit(0);
+  }
+  const todoPath = dir + "/TODO.md";
+  const todo = await readFile(todoPath, "utf-8");
+  await writeFile(todoPath, todo.replace("- [ ] first task", "- [x] first task"), "utf-8");
+  process.stdout.write("<promise>DONE</promise>\\n<loop-state>DONE</loop-state>\\n");
+  process.exit(0);
+}
+
+process.stderr.write("unexpected agent: " + agent + "\\n");
+process.exit(1);
+`, "utf-8");
+    await chmod(fakeOpenCodePath, 0o755);
+
+    await execFileAsync(process.execPath, [
+      loopScriptPath,
+      "--todo",
+      todoPath,
+      "--cwd",
+      dir,
+      "--state-dir",
+      stateDir,
+      "--host-config",
+      hostConfigPath,
+      "--opencode-bin",
+      fakeOpenCodePath,
+      "--runner-timeout-ms",
+      "2000",
+      "--preflight-timeout-ms",
+      "2000",
+    ], { cwd: repoRoot });
+
+    const todo = await readFile(todoPath, "utf-8");
+    const manifest = JSON.parse(await readFile(join(stateDir, "loop-manifest.json"), "utf-8"));
+    const calls = await readFile(join(dir, "fake-opencode.log"), "utf-8");
+
+    assert.match(todo, /- \[x\] first task/);
+    assert.equal(manifest.status, "completed");
+    assert.equal(manifest.iteration, 1);
+    assert.equal(manifest.preflight?.healthy, true);
+    assert.match(calls, /"agent":"ping"/);
+    assert.match(calls, /"agent":"execution-orchestrator"/);
+    assert.match(calls, /Run the OpenCode transport preflight\./);
+    assert.match(calls, /Reply with the exact file contents and nothing else\./);
+    assert.match(calls, /Finish the entire todo plan/);
+    assert.match(calls, /"home":".*opencode-home"/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("run-opencode-loop fails fast when OpenCode cannot complete a tool loop", async () => {
+  const repoRoot = resolve(process.cwd(), "..");
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-opencode-loop-unsupported-"));
+  try {
+    const todoPath = join(dir, "TODO.md");
+    const stateDir = join(dir, ".xx-stack", "loops", "todo");
+    const loopScriptPath = join(repoRoot, "scripts", "run-opencode-loop.mjs");
+    const fakeOpenCodePath = join(dir, "fake-opencode");
+    const hostConfigPath = join(dir, "host-config.json");
+
+    await writeFile(todoPath, "- [ ] first task\n", "utf-8");
+    await writeFile(hostConfigPath, JSON.stringify({
+      provider: {
+        "ollama-local": {
+          npm: "@ai-sdk/openai-compatible",
+          name: "Test Provider",
+          options: {
+            baseURL: "http://127.0.0.1:11434/v1",
+          },
+        },
+      },
+    }, null, 2), "utf-8");
+    await writeFile(fakeOpenCodePath, `#!/usr/bin/env node
+import { appendFile } from "node:fs/promises";
+
+const args = process.argv.slice(2);
+if (args[0] !== "run") {
+  process.exit(2);
+}
+
+let agent = "";
+let dir = process.cwd();
+let prompt = "";
+
+for (let index = 1; index < args.length; index += 1) {
+  const arg = args[index];
+  if (arg === "--agent") {
+    agent = args[index + 1] ?? "";
+    index += 1;
+    continue;
+  }
+  if (arg === "--dir") {
+    dir = args[index + 1] ?? dir;
+    index += 1;
+    continue;
+  }
+  if (["--model", "--format", "--variant"].includes(arg)) {
+    index += 1;
+    continue;
+  }
+  if (arg.startsWith("--")) {
+    continue;
+  }
+  prompt = arg;
+}
+
+await appendFile(dir + "/fake-opencode.log", JSON.stringify({ agent, prompt, home: process.env.HOME ?? "" }) + "\\n", "utf-8");
+
+if (agent === "ping") {
+  process.stdout.write("PONG\\n");
+  process.exit(0);
+}
+
+if (agent === "execution-orchestrator" && prompt.includes("Reply with the exact file contents and nothing else.")) {
+  process.stdout.write('{"tool":"read","path":"probe.txt"}\\n');
+  process.exit(0);
+}
+
+process.stderr.write("unexpected agent or prompt\\n");
+process.exit(1);
+`, "utf-8");
+    await chmod(fakeOpenCodePath, 0o755);
+
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        loopScriptPath,
+        "--todo",
+        todoPath,
+        "--cwd",
+        dir,
+        "--state-dir",
+        stateDir,
+        "--host-config",
+        hostConfigPath,
+        "--opencode-bin",
+        fakeOpenCodePath,
+        "--runner-timeout-ms",
+        "2000",
+        "--preflight-timeout-ms",
+        "2000",
+      ], { cwd: repoRoot }),
+      (error: NodeJS.ErrnoException) => Number(error.code) === 5,
+    );
+
+    const todo = await readFile(todoPath, "utf-8");
+    const manifest = JSON.parse(await readFile(join(stateDir, "loop-manifest.json"), "utf-8"));
+    const preflightStderr = await readFile(join(stateDir, "logs", "preflight-stderr.log"), "utf-8");
+    const calls = await readFile(join(dir, "fake-opencode.log"), "utf-8");
+
+    assert.match(todo, /- \[ \] first task/);
+    assert.equal(manifest.status, "runner-unhealthy");
+    assert.equal(manifest.preflight?.healthy, false);
+    assert.match(preflightStderr, /TOOL_LOOP_UNSUPPORTED/);
+    assert.match(calls, /Run the OpenCode transport preflight\./);
+    assert.match(calls, /Reply with the exact file contents and nothing else\./);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });

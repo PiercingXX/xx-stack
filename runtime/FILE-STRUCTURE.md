@@ -13,12 +13,22 @@ This file is a navigation map, not a full product overview.
 - `runtime/config.json` for agent registry and policy
 - `runtime/shared_instructions.md` for shared runtime behavior
 - `runtime/SKILLS.md` for skill conventions and inventory
+- `runtime/AUTONOMOUS_TODO_LOOP.md` for unattended todo execution guidance
 
 ## Stack Core
 
 `runtime/`
 - canonical runtime agents and skills
 - shared runtime docs and registry files
+
+`scripts/run-agent-loop.mjs`
+- generic outer-loop runner for unattended todo or plan execution
+
+`scripts/run-opencode-loop.mjs`
+- OpenCode-specific unattended wrapper with built-in preflight wiring
+
+`scripts/opencode-stdin-runner.mjs`
+- bridge that turns stdin prompts into a single `opencode run [message]` invocation
 
 `adapters/`
 - adapter-specific agent and prompt mirrors

@@ -2,13 +2,12 @@
 name: completion-judge
 description: Independent completion gatekeeper. Verifies contract criteria and rejects incomplete or weakly evidenced completion claims.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.0
 steps: 14
 permission:
   edit: deny
   bash: ask
-  skill: "*"
+  skill: allow
 ---
 
 # Completion Judge

@@ -2,7 +2,6 @@
 name: reviewer
 description: Code review specialist. Focuses on production bugs, security gaps, and missing tests.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 12
 permission:

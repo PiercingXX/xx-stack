@@ -5,9 +5,8 @@
   },
   "agent": {
     "build": {
-      "description": "Primary execution agent. Implements features using the currently validated primary self-hosted coding alias from the platform registry (coder-main), then runs quality gates before handoff.",
+      "description": "Primary execution agent. Uses the caller's current host model by default, then runs quality gates before handoff.",
       "mode": "primary",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.2,
       "steps": 18,
       "requiredMcpServers": [
@@ -34,9 +33,8 @@
       }
     },
     "plan": {
-      "description": "Primary planning agent. Deep analysis and architecture trade-offs using the currently validated primary self-hosted coding alias from the platform registry (coder-main).",
+      "description": "Primary planning agent. Uses the caller's current host model by default and escalates only when deeper reasoning is actually needed.",
       "mode": "primary",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 14,
       "requiredMcpServers": [
@@ -72,7 +70,6 @@
     "planning": {
       "description": "Compatibility alias for plan tasks that reference the legacy 'planning' agent type.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 12,
       "permission": {
@@ -84,9 +81,8 @@
       }
     },
     "fast-build": {
-      "description": "Primary fast lane for small, obvious implementation tasks. Use when speed matters more than orchestration depth.",
+      "description": "Primary fast lane for small, obvious implementation tasks. Uses the caller's current host model by default.",
       "mode": "primary",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.25,
       "steps": 12,
       "permission": {
@@ -98,9 +94,8 @@
       }
     },
     "architect": {
-      "description": "System architecture specialist. Produces failure-aware designs and implementation plans using the configured reasoning lanes and validated fallbacks.",
+      "description": "System architecture specialist. Produces failure-aware designs and implementation plans using the caller's current host model unless the host routes elsewhere.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.15,
       "steps": 16,
       "permission": {
@@ -114,7 +109,6 @@
     "reviewer": {
       "description": "Code review specialist. Focuses on production bugs, security gaps, and missing tests.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 12,
       "permission": {
@@ -128,7 +122,6 @@
     "qa-lead": {
       "description": "QA verification specialist. Validates critical user journeys and regression risk before ship.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.15,
       "steps": 12,
       "permission": {
@@ -142,7 +135,6 @@
     "completion-judge": {
       "description": "Independent completion gatekeeper. Validates contract criteria and evidence before allowing completion.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0,
       "steps": 14,
       "requiredMcpServers": [
@@ -177,9 +169,8 @@
       }
     },
     "research": {
-      "description": "Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the configured reasoning lanes and validated fallbacks.",
+      "description": "Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the caller's current host model unless a routed lane is explicitly chosen.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.1,
       "steps": 12,
       "requiredMcpServers": [
@@ -213,7 +204,6 @@
     "researcher": {
       "description": "Compatibility alias for research tasks that reference the legacy 'researcher' agent type.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.1,
       "steps": 12,
       "permission": {
@@ -227,7 +217,6 @@
     "release-manager": {
       "description": "Release orchestration specialist. Runs deploy checks, CI gates, and post-deploy verification.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 16,
       "permission": {
@@ -241,7 +230,6 @@
     "incident-commander": {
       "description": "Incident response specialist. Drives triage, rollback, and postmortem workflows.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 14,
       "permission": {
@@ -253,9 +241,8 @@
       }
     },
     "execution-orchestrator": {
-      "description": "Deterministic plan-exec wrapper. Handles bounded review/update workflows directly and executes complex orchestration in the same lane with bounded reliability checks.",
+      "description": "Deterministic plan-exec wrapper. Uses the caller's current host model by default and routes only when the task or host requires it.",
       "mode": "primary",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.05,
       "steps": 28,
       "requiredMcpServers": [
@@ -266,18 +253,21 @@
           "*"
         ],
         "deny": [
-          "task_create"
+          "supervisor_abort_session"
         ]
       },
       "memory": {
         "enabled": true,
         "scope": "project"
+      },
+      "coordinator": {
+        "strictWorkerContract": true,
+        "requireStructuredResults": true
       }
     },
     "performance-engineer": {
-      "description": "Performance and regression specialist using the configured reasoning lanes and validated fallbacks.",
+      "description": "Performance and regression specialist using the caller's current host model unless the host explicitly routes to a different lane.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.1,
       "steps": 14,
       "permission": {
@@ -289,9 +279,8 @@
       }
     },
     "reasoning-fast": {
-      "description": "Lower-latency reasoning lane for medium-complexity planning tasks using the primary primary self-hosted alias and validated fallbacks.",
+      "description": "Lower-latency reasoning lane for medium-complexity planning tasks using the caller's current host model unless the host explicitly routes deeper.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 10,
       "permission": {
@@ -305,7 +294,6 @@
     "rust-rewrite": {
       "description": "Autonomous one-shot rewrite lane for full app migrations to Rust, with compile/test auto-repair loops.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-main",
       "temperature": 0.1,
       "steps": 40,
       "permission": {
@@ -319,7 +307,6 @@
     "model-trainer": {
       "description": "Autonomous model training and knowledge injection lane with strategy auto-selection and hard evaluation gates.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.1,
       "steps": 32,
       "permission": {
@@ -331,9 +318,8 @@
       }
     },
     "deep-thinker": {
-      "description": "Deep reasoning specialist on the strongest reasoning tier available from the live registry. Produces decision-grade architecture, risk, and optimization plans.",
+      "description": "Deep reasoning specialist. Produces decision-grade architecture, risk, and optimization plans using the caller's current host model unless the host explicitly routes to a deeper lane.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.15,
       "steps": 16,
       "permission": {
@@ -347,7 +333,6 @@
     "design-engineer": {
       "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 138 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
       "mode": "subagent",
-      "model": "self-hosted-api/coder-deep",
       "temperature": 0.25,
       "steps": 20,
       "permission": {
@@ -356,6 +341,18 @@
         "skill": {
           "*": "allow"
         }
+      }
+    },
+    "ping": {
+      "description": "Minimal OpenCode runner health probe. Returns the requested text exactly and performs no other work.",
+      "mode": "primary",
+      "temperature": 0,
+      "steps": 2,
+      "permission": {
+        "read": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "skill": "deny"
       }
     }
   },

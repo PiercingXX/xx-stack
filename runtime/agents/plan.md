@@ -1,8 +1,7 @@
 ---
 name: plan
-description: Primary planning agent. Handles day-to-day planning and delivery trade-offs on the primary execution lane first, with deep-lane escalation only when the task needs longer-context synthesis.
+description: Primary planning agent. Uses the caller's current host model by default and escalates only when deeper reasoning is actually needed.
 mode: primary
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 14
 permission:

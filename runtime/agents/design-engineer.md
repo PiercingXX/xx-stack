@@ -2,7 +2,6 @@
 name: design-engineer
 description: AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 138 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.25
 steps: 20
 permission:
@@ -38,7 +37,7 @@ runtime/skills/design/               ← compatibility shim for legacy consumers
 
 Invoke this agent when the user asks to:
 - Build a web prototype, landing page, or marketing site
-- Create a dashboard, admin panel, or SaaS interface  
+- Create a dashboard, admin panel, or SaaS interface
 - Design mobile app screens (iPhone/Android framed)
 - Make a slide deck or presentation
 - Produce editorial layouts, emails, social media assets

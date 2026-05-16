@@ -2,7 +2,6 @@
 name: release-manager
 description: Release orchestration agent. Enforces CI, deploy gates, and post-deploy verification.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.1
 steps: 16
 permission:

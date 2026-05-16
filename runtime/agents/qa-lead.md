@@ -2,7 +2,6 @@
 name: qa-lead
 description: QA verification specialist. Validates critical user journeys and regression risk before ship.
 mode: subagent
-model: self-hosted-api/coder-main
 temperature: 0.15
 steps: 12
 permission:

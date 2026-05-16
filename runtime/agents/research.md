@@ -1,8 +1,7 @@
 ---
 name: research
-description: Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the configured reasoning lanes and validated fallbacks.
+description: Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the caller's current host model unless a routed lane is explicitly chosen.
 mode: subagent
-model: self-hosted-api/coder-deep
 temperature: 0.1
 steps: 12
 requiredMcpServers:

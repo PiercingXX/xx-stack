@@ -14,6 +14,16 @@ These conventions apply to every agent in xx-stack.
 - The user interacts through a chat interface.
 - Treat the current message as the active task. Do not revive prior-turn objectives unless the user restates them.
 
+## 1.5) Host-Native Model Strategy
+
+xx-stack is host-agnostic by default.
+
+- Use the current host or caller model by default instead of assuming a local or self-hosted lane.
+- Treat model selection as a host concern first and a stack-routing concern second.
+- Use routing tools, explicit model overrides, or host-specific lane changes only when the task needs capabilities the current caller model cannot provide.
+- Host adapters should preserve host-wide defaults, but clear legacy repo-managed per-agent model pins when the stack no longer declares one.
+- When reporting runtime status, distinguish between caller-native execution and routed execution.
+
 ---
 
 ## 2) Agent Roster
