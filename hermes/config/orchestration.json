@@ -1,0 +1,141 @@
+{
+  "version": 3,
+  "policy": {
+    "self_hosted_first": true,
+    "primary_lane_order": [
+      "sglang",
+      "ollama",
+      "cloud"
+    ],
+    "cloud_enabled_by_default": false,
+    "require_manual_cloud_escalation": true,
+    "preferred_cloud_model": "gpt-5.3-codex",
+    "fallback_cloud_model": "gpt-5.4"
+  },
+  "execution": {
+    "request_timeout_seconds": 180,
+    "health_check_timeout_seconds": 8,
+    "max_parallel_subagents": 4,
+    "default_subagent_preset": "general",
+    "use_capability_cache_for_subagents": true,
+    "capability_cache_file": "logs/capability-cache.json",
+    "auto_refresh_capability_cache": true,
+    "capability_cache_max_age_seconds": 600,
+    "reuse_tool_probe_for_same_model": true,
+    "require_tool_call_for_subagents": true,
+    "allow_cloud_subagent_delegation": true,
+    "subagents_allow_cloud_default": false,
+    "cloud_subagent_profiles": [
+      "hardware-constrained",
+      "specialized-model"
+    ],
+    "routing_log_file": "logs/routing.jsonl",
+    "routing_presets": {
+      "general": {
+        "description": "skippy sglang first, then skippy ollama, then premium GitHub cloud gpt-5.3-codex only if self-hosted lanes are unavailable or unsuitable.",
+        "task_profile": "hardware-constrained",
+        "required_model": "",
+        "reason_code": "SUBAGENT_GENERAL"
+      },
+      "coding": {
+        "description": "Default coding preset with self-hosted-first routing (sglang then ollama) and gpt-5.3-codex cloud fallback only when necessary.",
+        "task_profile": "hardware-constrained",
+        "required_model": "",
+        "reason_code": "SUBAGENT_CODING"
+      },
+      "review": {
+        "description": "Review/refactor preset with self-hosted-first routing and premium GitHub cloud fallback only when necessary.",
+        "task_profile": "hardware-constrained",
+        "required_model": "",
+        "reason_code": "SUBAGENT_REVIEW"
+      },
+      "long-context": {
+        "description": "Large context or capacity-heavy tasks; sglang lane serves 262k context, cloud allowed only after self-hosted exhaustion.",
+        "task_profile": "hardware-constrained",
+        "required_model": "",
+        "reason_code": "SUBAGENT_LONG_CONTEXT"
+      },
+      "reasoning": {
+        "description": "Explicit premium cloud preset; prefer self-hosted first, then require gpt-5.3-codex with gpt-5.4 as alternate.",
+        "task_profile": "specialized-model",
+        "required_model": "gpt-5.3-codex",
+        "reason_code": "SUBAGENT_REASONING"
+      }
+    },
+    "subagent_profile_orders": {
+      "default": [
+        "sglang",
+        "ollama",
+        "cloud"
+      ],
+      "hardware-constrained": [
+        "sglang",
+        "ollama",
+        "cloud"
+      ],
+      "specialized-model": [
+        "sglang",
+        "ollama",
+        "cloud"
+      ]
+    },
+    "allow_shell_execution": false,
+    "allowed_command_prefixes": [
+      "pwd",
+      "ls",
+      "cat",
+      "rg",
+      "find",
+      "git status",
+      "git diff",
+      "git log",
+      "python3 -m pytest",
+      "npm test"
+    ]
+  },
+  "proxy": {
+    "bind_host": "127.0.0.1",
+    "port": 8180,
+    "auth_token_env": "HERMES_PROXY_TOKEN",
+    "allow_cloud": false,
+    "log_prompts": false
+  },
+  "lanes": {
+    "sglang": {
+      "name": "skippy-sglang-5090",
+      "role": "self_hosted",
+      "priority": 100,
+      "endpoint_type": "openai_compatible",
+      "base_url": "http://skippy-debian-5090:30000/v1",
+      "model": "qwen3-coder-next",
+      "enabled": true
+    },
+    "ollama": {
+      "name": "skippy-ollama-5090",
+      "role": "self_hosted",
+      "priority": 70,
+      "endpoint_type": "openai_compatible",
+      "base_url": "http://skippy-debian-5090:11434/v1",
+      "model": "qwen3-coder:30b",
+      "enabled": false
+    },
+    "cloud": {
+      "name": "github-premium-cloud",
+      "role": "cloud",
+      "priority": 50,
+      "endpoint_type": "hermes_cli",
+      "provider": "github-copilot",
+      "base_url": "github-premium://local-hermes-cli",
+      "model": "gpt-5.3-codex",
+      "fallback_models": [
+        "gpt-5.4"
+      ],
+      "catalog_models": [
+        "gpt-5.3-codex",
+        "gpt-5.4"
+      ],
+      "chat_probe_on_models_failure": true,
+      "enabled": true
+    }
+  }
+}

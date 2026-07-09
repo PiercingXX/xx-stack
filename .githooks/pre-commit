@@ -1,0 +1,14 @@
+#!/bin/bash
+# Pre-commit hook to verify VS Code agent mirrors are in sync with runtime agents
+
+echo "[xx-stack] Checking VS Code agent mirror sync..."
+
+if ! node scripts/sync-vscode-agents.mjs --check; then
+    echo ""
+    echo "ERROR: VS Code agent mirrors are out of sync with runtime agents."
+    echo "Please run: node scripts/sync-vscode-agents.mjs"
+    echo "Then add the updated files and commit again."
+    exit 1
+fi
+
+echo "[xx-stack] Agent mirrors are in sync."

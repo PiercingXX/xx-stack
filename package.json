@@ -1,0 +1,41 @@
+{
+  "name": "xx-stack",
+  "version": "0.1.0",
+  "description": "xx-stack - A platform for autonomous AI agents and MCP routing",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "mcp-server"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "eslint . --ext .ts --ignore-path .gitignore",
+    "lint:fix": "eslint . --ext .ts --ignore-path .gitignore --fix",
+    "typecheck": "tsc --noEmit",
+    "layout:verify": "node scripts/verify-repo-layout.mjs",
+    "agents:sync": "node scripts/sync-vscode-agents.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "design:catalog": "node scripts/generate-design-catalog.mjs",
+    "design:golden": "node scripts/evaluate-golden-tasks.mjs",
+    "design:html-gate": "node scripts/quality-gate-html.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "agents",
+    "autonomous",
+    "routing",
+    "self-hosted"
+  ],
+  "author": "xx-stack contributors",
+  "license": "SEE LICENSE IN LICENSE",
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@typescript-eslint/eslint-plugin": "^8.26.0",
+    "@typescript-eslint/parser": "^8.26.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.5.3",
+    "typescript": "~6.0.3"
+  }
+}

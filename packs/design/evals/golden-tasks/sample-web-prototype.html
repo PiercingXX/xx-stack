@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sample Web Prototype</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --fg: #111827;
+      --muted: #64748b;
+      --accent: #0f766e;
+      --surface: #ffffff;
+      --border: #d1d5db;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 20px 64px; }
+    .hero, .features, .cta { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; margin-bottom: 20px; }
+    .hero h1 { margin-top: 0; }
+    .features-grid { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+    .btn { display: inline-block; padding: 10px 14px; border-radius: 10px; text-decoration: none; background: var(--accent); color: #fff; }
+    @media (max-width: 900px) {
+      .features-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-label="Hero section">
+      <h1>Build Better Artifacts Faster</h1>
+      <p>Use brand tokens and workflow templates to generate consistent UI outputs.</p>
+      <a class="btn" href="#start">Start Building</a>
+    </section>
+
+    <section class="features" id="features" aria-label="Feature section">
+      <h2>Features</h2>
+      <div class="features-grid">
+        <article class="card"><h3>Brand tokens</h3><p>Mapped from design systems.</p></article>
+        <article class="card"><h3>Skill profiles</h3><p>Reusable quality gates.</p></article>
+        <article class="card"><h3>Artifact checks</h3><p>Deterministic and fast.</p></article>
+      </div>
+    </section>
+
+    <section class="cta" id="start" aria-label="Call to action section">
+      <h2>Ship with Confidence</h2>
+      <p>Run gates before handoff and catch issues early.</p>
+      <button class="btn" type="button">Run Quality Gates</button>
+    </section>
+  </main>
+</body>
+</html>
