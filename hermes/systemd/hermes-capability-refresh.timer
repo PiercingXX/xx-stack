@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic Hermes capability cache refresh
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

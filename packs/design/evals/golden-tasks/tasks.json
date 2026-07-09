@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "description": "Golden-task rubric for major agents. Provide one response file per task in packs/design/evals/golden-tasks/responses/<task-id>.md",
+  "authoringConventions": [
+    "Do NOT write change-detector tests. A test is a change-detector if it fails whenever data expected to change gets updated (model names, version numbers, enumeration counts, catalog snapshots). These add no behavioral coverage and break on every routine source update.",
+    "Do write invariant tests. Assert relationships between pieces of data (e.g. 'every skill folder has a SKILL.md'), not specific current values (e.g. 'there are 21 skills').",
+    "Bad: assert skillCount == 21. Good: assert every folder in runtime/skills/ contains SKILL.md.",
+    "Bad: assert agentModel == 'self-hosted-api/coder-main'. Good: assert agent frontmatter has a non-empty model field.",
+    "When a new skill or agent is added, invariant tests pass automatically. Change-detector tests require manual updates and block CI for no gain."
+  ],
+  "tasks": [
+    {
+      "id": "build-minimal-slice",
+      "agent": "build",
+      "prompt": "Implement a minimal safe change and report deterministic verification evidence.",
+      "requiredHeadings": [
+        "## Build Result"
+      ],
+      "requiredRegex": [
+        {
+          "pattern": "^PASS$",
+          "flags": "m",
+          "message": "missing standalone PASS verdict"
+        }
+      ],
+      "minimumWordCount": 10,
+      "minimumNonEmptyLines": 6,
+      "mustInclude": [
+        "PASS",
+        "Syntax",
+        "Lint",
+        "Tests",
+        "Review"
+      ],
+      "mustNotInclude": [
+        "I did not run tests",
+        "untested"
+      ]
+    },
+    {
+      "id": "plan-executable-package",
+      "agent": "plan",
+      "prompt": "Produce an executable plan package with assumptions, ordered slices, and risks.",
+      "requiredHeadings": [
+        "## Plan Package"
+      ],
+      "orderedSubstrings": [
+        "assumptions",
+        "dependencies",
+        "risks",
+        "ordered slices",
+        "verification"
+      ],
+      "minimumWordCount": 15,
+      "minimumNonEmptyLines": 8,
+      "mustInclude": [
+        "assumptions",
+        "dependencies",
+        "risks",
+        "ordered",
+        "verification"
+      ],
+      "mustNotInclude": [
+        "TBD",
+        "I guess"
+      ]
+    },
+    {
+      "id": "orchestrator-route-and-gate",
+      "agent": "execution-orchestrator",
+      "prompt": "Route a mixed task to suitable subagents, stay accountable for completion, and enforce evidence plus judge gates before finishing.",
+      "requiredHeadings": [
+        "## Orchestration Report"
+      ],
+      "orderedSubstrings": [
+        "route",
+        "gate",
+        "evidence",
+        "continue"
+      ],
+      "minimumWordCount": 35,
+      "minimumNonEmptyLines": 8,
+      "mustInclude": [
+        "route",
+        "gate",
+        "evidence",
+        "completion-judge",
+        "supervisor_record_completion_check",
+        "continue"
+      ],
+      "mustNotInclude": [
+        "skip gate",
+        "best effort",
+        "handoff",
+        "end the response"
+      ]
+    },
+    {
+      "id": "design-engineer-brand-artifact",
+      "agent": "design-engineer",
+      "prompt": "Generate a brand-aligned artifact using design system tokens, workflow skill, and self-critique.",
+      "requiredHeadings": [
+        "## Design Engineer Output"
+      ],
+      "minimumWordCount": 12,
+      "minimumNonEmptyLines": 5,
+      "mustInclude": [
+        "design-systems",
+        "template.html",
+        "self-critique",
+        ":root",
+        "score"
+      ],
+      "mustNotInclude": [
+        "purple gradient",
+        "invented metrics"
+      ]
+    },
+    {
+      "id": "reviewer-severity-report",
+      "agent": "reviewer",
+      "prompt": "Review code and return findings sorted by severity with concrete remediation.",
+      "requiredHeadings": [
+        "## Review Findings"
+      ],
+      "orderedSubstrings": [
+        "BLOCKER",
+        "HIGH",
+        "MEDIUM",
+        "Summary"
+      ],
+      "requiredRegex": [
+        {
+          "pattern": "file:\\s+[^\\s]+",
+          "flags": "i",
+          "message": "missing concrete file references"
+        }
+      ],
+      "minimumWordCount": 15,
+      "minimumNonEmptyLines": 8,
+      "mustInclude": [
+        "BLOCKER",
+        "HIGH",
+        "MEDIUM",
+        "Summary",
+        "file"
+      ],
+      "mustNotInclude": [
+        "looks good",
+        "no issues found"
+      ]
+    }
+  ]
+}

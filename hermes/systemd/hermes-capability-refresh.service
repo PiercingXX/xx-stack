@@ -1,0 +1,10 @@
+[Unit]
+Description=Hermes capability cache refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Paths assume the repo is cloned at /media/Working-Storage/GitHub/XX-Stack — adjust if it lives elsewhere.
+Type=oneshot
+WorkingDirectory=/media/Working-Storage/GitHub/XX-Stack/hermes
+ExecStart=/media/Working-Storage/GitHub/XX-Stack/hermes/scripts/refresh_capability_cache.sh

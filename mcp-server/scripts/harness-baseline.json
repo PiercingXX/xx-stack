@@ -1,0 +1,10 @@
+{
+  "timeout_recovery_backoff":        { "maxDurationMs": 50 },
+  "fallback_exhaustion_pruning_guard": { "maxDurationMs": 50 },
+  "continuation_dedup":              { "maxDurationMs": 50 },
+  "atomic_state_write":              { "maxDurationMs": 200 },
+  "recovery_timing_budget":          { "maxDurationMs": 10 },
+  "blocked_after_exhaustion":        { "maxDurationMs": 10 },
+  "breaker_reset_and_reuse":         { "maxDurationMs": 10 },
+  "recovery_inflight_autorelease":   { "maxDurationMs": 10 }
+}
