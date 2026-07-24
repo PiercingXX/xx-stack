@@ -11,7 +11,7 @@ unavailable or unsuitable.
 
 ## Topology
 
-All self-hosted inference runs on the AI rig `skippy-debian-5090` (Debian, 4x RTX 5090),
+All self-hosted inference runs on the AI rig `skippy-debian-5090` (Debian, 8x RTX 5090),
 reached over Tailscale (MagicDNS name `skippy-debian-5090`):
 
 | Lane key | Name | Endpoint | Runtime | Priority | Role |
@@ -121,7 +121,7 @@ python3 scripts/hermes_orchestrator.py subagents \
 
 Subagent slices run concurrently on the selected lane via a thread pool
 (`execution.max_parallel_subagents`, default 4). sglang batches concurrent
-requests across the 4x 5090s, so parallel slices are close to free relative to
+requests across the 8x 5090s, so parallel slices are close to free relative to
 sequential execution.
 
 ## Local proxy mode (serve)

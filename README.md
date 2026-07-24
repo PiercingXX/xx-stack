@@ -197,7 +197,7 @@ git config core.hooksPath .githooks
 ## A note on the examples
 
 The registries and docs reference a machine called `skippy-debian-5090` — a
-4×RTX 5090 Debian box reached over Tailscale. **That is the author's hardware,
+8×RTX 5090 Debian box reached over Tailscale. **That is the author's hardware,
 included as a worked example, not a requirement.** Replace those hosts with your
 own (or delete them) in:
 

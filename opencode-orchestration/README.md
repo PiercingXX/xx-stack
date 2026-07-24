@@ -42,7 +42,7 @@ Its job is to keep work local when possible, expand to Tailscale-reachable self-
 The intended operating model is:
 
 1. local workstation first
-2. remote self-hosted hosts over Tailscale second (currently Skippy, a quad RTX 5090 Debian rig running sglang)
+2. remote self-hosted hosts over Tailscale second (currently Skippy, an 8x RTX 5090 Debian rig running sglang)
 3. cloud never, unless explicitly opted in via `selectionPolicy.cloudEscalation.optIn` or `XX_STACK_ALLOW_CLOUD=1`
 
 The shipped platform registry now uses Tailscale-first tier IDs such as `tailscale-openai-compatible` and `tailscale-ollama`.
