@@ -1,178 +1,34 @@
 {
   "$schema": "./platforms.schema.json",
   "version": 2,
+  "_generated": "Generated from inventory.json by xx-stack/scripts/generate-registries.mjs. Do not hand-edit; run `npm run inventory:sync`.",
   "selectionPolicy": {
     "defaultOrder": [
-      "primary",
-      "reasoning",
       "local",
-      "overflow",
-      "compatibility",
+      "tailscale-openai-compatible",
+      "tailscale-ollama",
       "cloud"
     ],
     "cloudEscalation": {
       "optIn": false,
-      "note": "Cloud tier is strictly opt-in. While optIn is false, routing and fallback never select cloud hosts, even when all self-hosted tiers are unreachable. Set optIn to true or export XX_STACK_ALLOW_CLOUD=1 to enable cloud escalation."
+      "note": "Cloud is strictly opt-in. While optIn is false, routing and fallback never select cloud hosts, even when every self-hosted lane is unreachable. Set optIn to true or export XX_STACK_ALLOW_CLOUD=1 to enable it."
     },
-    "rules": [
-      {
-        "name": "Prefer the primary lane for implementation and release work",
-        "when": "implementation, coding, planning, orchestration, review, and release work",
-        "preferTier": "primary"
-      },
-      {
-        "name": "Prefer the reasoning lane for architecture and deep analysis",
-        "when": "architecture, investigation, long-context synthesis, and deep reasoning",
-        "preferTier": "reasoning"
-      },
-      {
-        "name": "Prefer local fallback for quick verification and offline loops",
-        "when": "quick local checks, short edits, and offline fallback",
-        "preferTier": "local"
-      },
-      {
-        "name": "Use overflow for delegated subagents and parallel spillover",
-        "when": "parallel subagent reasoning, delegated research, overflow analysis, non-blocking long-context slices",
-        "preferTier": "overflow"
-      },
-      {
-        "name": "Use cloud only as explicit opt-in fallback",
-        "when": "cloud escalation is explicitly opted in AND self-hosted tiers cannot satisfy capability, availability, or reliability requirements",
-        "preferTier": "cloud"
-      }
-    ]
+    "rules": []
   },
   "tiers": [
     {
-      "id": "primary",
-      "label": "Primary Self-Hosted Lane",
-      "priority": 1,
-      "usageGuidance": "Use for implementation, review, planning, orchestration, and release work.",
-      "hosts": [
-        {
-          "id": "primary-self-hosted",
-          "label": "Primary self-hosted API",
-          "provider": "self-hosted-api",
-          "endpoint": "https://primary-agent.example.invalid/v1",
-          "networkScope": "private-network",
-          "enabled": true,
-          "primary": true,
-          "connectionNotes": "Replace this example endpoint with your primary coding/runtime host.",
-          "executionPolicy": {
-            "maxParallelSlices": 2,
-            "maxConcurrentModels": 1,
-            "contextReservePercent": 15,
-            "scheduling": "serial-per-model"
-          },
-          "delegationPolicy": {
-            "preferredTaskTypes": [
-              "implementation",
-              "review",
-              "planning",
-              "orchestration",
-              "release"
-            ]
-          },
-          "hardware": {
-            "summary": "Example primary host",
-            "detected": {
-              "gpuCount": 2,
-              "totalGpuVramGb": 32,
-              "systemRamGb": 128
-            }
-          },
-          "models": [
-            {
-              "name": "coder-main",
-              "roles": [
-                "implementation",
-                "review",
-                "planning",
-                "orchestration",
-                "coding"
-              ],
-              "priority": "high",
-              "contextWindow": 131072,
-              "estimatedVramGb": 28,
-              "supportsToolUse": true,
-              "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "reasoning",
-      "label": "Reasoning Lane",
-      "priority": 2,
-      "usageGuidance": "Use for architecture, synthesis, long-context work, and heavy delegated analysis.",
-      "hosts": [
-        {
-          "id": "reasoning-self-hosted",
-          "label": "Reasoning self-hosted API",
-          "provider": "self-hosted-api",
-          "endpoint": "https://reasoning-agent.example.invalid/v1",
-          "networkScope": "private-network",
-          "enabled": true,
-          "primary": true,
-          "connectionNotes": "Replace this example endpoint with your reasoning-oriented host.",
-          "executionPolicy": {
-            "maxParallelSlices": 2,
-            "maxConcurrentModels": 1,
-            "contextReservePercent": 10,
-            "scheduling": "serial-per-model"
-          },
-          "delegationPolicy": {
-            "preferredTaskTypes": [
-              "architecture",
-              "research",
-              "deep-reasoning",
-              "long-context",
-              "parallel-subagent"
-            ]
-          },
-          "hardware": {
-            "summary": "Example reasoning host",
-            "detected": {
-              "gpuCount": 2,
-              "totalGpuVramGb": 64,
-              "systemRamGb": 128
-            }
-          },
-          "models": [
-            {
-              "name": "coder-deep",
-              "roles": [
-                "architecture",
-                "research",
-                "deep-reasoning",
-                "long-context",
-                "parallel-overflow"
-              ],
-              "priority": "high",
-              "supportsToolUse": true,
-              "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
-            }
-          ]
-        }
-      ]
-    },
-    {
       "id": "local",
-      "label": "Local Fallback",
-      "priority": 3,
-      "usageGuidance": "Fallback lane for quick verification, short edits, and offline work.",
+      "label": "local",
+      "priority": 1,
       "hosts": [
         {
-          "id": "local-fallback",
-          "label": "Local catalog-backed endpoint",
-          "provider": "local-catalog-api",
-          "endpoint": "http://local-agent.example.invalid",
-          "networkScope": "loopback",
+          "id": "local-workstation-ollama",
+          "label": "This workstation (ollama lane)",
+          "provider": "ollama-local",
+          "endpoint": "http://127.0.0.1:11434",
+          "networkScope": "localhost",
+          "enabled": true,
           "primary": true,
-          "connectionNotes": "Replace this example endpoint with your local runtime if you use one.",
           "capabilities": {
             "endpointFamily": "ollama",
             "supportsResidentModelInspection": true
@@ -183,45 +39,62 @@
             "contextReservePercent": 25,
             "scheduling": "serial-per-model"
           },
+          "connectionNotes": "Ollama's default port. This is the one lane enabled out of the box — if `ollama serve` is running, the stack works with no edits.",
           "delegationPolicy": {
             "preferredTaskTypes": [
               "quick-verify",
               "small-fix",
+              "interactive-coding",
               "offline-fallback"
             ]
           },
           "hardware": {
-            "summary": "Example local runtime",
-            "detected": {
-              "gpuCount": 1,
-              "totalGpuVramGb": 24,
-              "systemRamGb": 64
-            }
+            "summary": "Detected during setup",
+            "cpu": "Detected during setup",
+            "ram": "Detected during setup",
+            "gpu": [],
+            "limits": [
+              "Best for low-latency coding and iterative execution"
+            ]
           },
-          "models": [
-            {
-              "name": "coder-fast",
-              "roles": [
-                "quick-verify",
-                "small-fix",
-                "fallback"
-              ],
-              "priority": "high",
-              "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
-            },
-            {
-              "name": "coder-main",
-              "roles": [
-                "coding",
-                "fallback",
-                "general"
-              ],
-              "priority": "medium",
-              "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
-            }
-          ]
+          "models": []
+        },
+        {
+          "id": "local-workstation-llama-cpp",
+          "label": "This workstation (llama-cpp lane)",
+          "provider": "llama-cpp-local",
+          "endpoint": "http://127.0.0.1:8080",
+          "networkScope": "localhost",
+          "enabled": false,
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false
+          },
+          "executionPolicy": {
+            "maxParallelSlices": 2,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 25,
+            "scheduling": "serial-per-model"
+          },
+          "connectionNotes": "Enable if you run llama-server locally on :8080.",
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "quick-verify",
+              "small-fix",
+              "interactive-coding",
+              "offline-fallback"
+            ]
+          },
+          "hardware": {
+            "summary": "Detected during setup",
+            "cpu": "Detected during setup",
+            "ram": "Detected during setup",
+            "gpu": [],
+            "limits": [
+              "Best for low-latency coding and iterative execution"
+            ]
+          },
+          "models": []
         },
         {
           "id": "hermes-proxy",
@@ -230,7 +103,6 @@
           "endpoint": "http://127.0.0.1:8180",
           "networkScope": "loopback",
           "enabled": false,
-          "connectionNotes": "OpenAI-compatible loopback proxy exposed by hermes-orchestration. Start it with `python3 hermes-orchestration/scripts/hermes_orchestrator.py serve` and export HERMES_PROXY_TOKEN. Hermes applies its own self-hosted-first lane policy behind this single endpoint, so routing here delegates lane selection to Hermes rather than picking a backend directly. Set enabled=true once the proxy is running; check readiness with `curl http://127.0.0.1:8180/healthz`.",
           "capabilities": {
             "endpointFamily": "openai-compatible",
             "supportsResidentModelInspection": false
@@ -241,16 +113,7 @@
             "contextReservePercent": 20,
             "scheduling": "parallel-batched"
           },
-          "delegationPolicy": {
-            "preferredTaskTypes": [
-              "delegated-self-hosted-routing",
-              "long-context synthesis across self-hosted lanes",
-              "parallel subagent slices"
-            ],
-            "avoidTaskTypes": [
-              "work that must pin one specific backend"
-            ]
-          },
+          "connectionNotes": "OpenAI-compatible loopback proxy exposed by hermes-orchestration. Start it with `python3 hermes-orchestration/scripts/hermes_orchestrator.py serve` and export HERMES_PROXY_TOKEN. Enabling it delegates lane selection to Hermes instead of routing to a backend directly. Leave disabled if you would rather address machines directly — the two approaches are alternatives, not layers.",
           "models": [
             {
               "name": "hermes-auto",
@@ -263,133 +126,142 @@
               "priority": "medium",
               "toolCallReliability": "unverified",
               "jsonModeReliability": "unverified",
-              "notes": "Virtual model name \u2014 Hermes selects the real backend per its own lane policy."
+              "notes": "Virtual model name — Hermes resolves the real backend per its own lane policy."
             }
           ]
         }
       ]
     },
     {
-      "id": "overflow",
-      "label": "Overflow Fallback",
-      "priority": 4,
-      "usageGuidance": "Operational overflow lane for delegated work, parallel spillover, and backup reasoning.",
+      "id": "tailscale-openai-compatible",
+      "label": "tailscale-openai-compatible",
+      "priority": 2,
       "hosts": [
         {
-          "id": "overflow-fallback",
-          "label": "Overflow self-hosted API",
-          "provider": "self-hosted-api",
-          "endpoint": "https://overflow-agent.example.invalid/v1",
-          "networkScope": "private-network",
-          "connectionNotes": "Replace this example endpoint with your overflow runtime if you use one.",
+          "id": "example-gpu-box-sglang",
+          "label": "Example remote GPU box (sglang lane)",
+          "provider": "sglang-remote",
+          "endpoint": "http://example-gpu-box:30000",
+          "networkScope": "tailscale",
+          "enabled": false,
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false
+          },
           "executionPolicy": {
-            "maxParallelSlices": 3,
+            "maxParallelSlices": 4,
             "maxConcurrentModels": 2,
             "contextReservePercent": 20,
-            "scheduling": "parallel"
+            "scheduling": "throughput"
           },
+          "connectionNotes": "DELETE THIS MACHINE or replace it with a real one. Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the box) or firewall them to the tailnet. Example. sglang batches concurrent requests across GPUs, so parallel slices are cheap relative to sequential execution.",
           "delegationPolicy": {
             "preferredTaskTypes": [
-              "overflow",
-              "backup-reasoning",
-              "parallel-subagent"
+              "planning",
+              "architecture",
+              "multi-step reasoning",
+              "broad research"
+            ],
+            "avoidTaskTypes": [
+              "tight edit-run-edit loops",
+              "low-latency interactive coding"
             ]
           },
           "hardware": {
-            "summary": "Example overflow host",
+            "summary": "Example remote inference host",
+            "gpu": [
+              {
+                "name": "NVIDIA RTX 4090",
+                "count": 2,
+                "vramGb": 24
+              }
+            ],
             "detected": {
               "gpuCount": 2,
-              "totalGpuVramGb": 32
-            }
-          },
-          "models": [
-            {
-              "name": "coder-fast",
-              "roles": [
-                "overflow",
-                "quick-fallback"
-              ],
-              "priority": "high"
+              "totalGpuVramGb": 48
             },
-            {
-              "name": "coder-main",
-              "roles": [
-                "coding",
-                "analysis",
-                "fallback"
-              ],
-              "priority": "medium"
-            }
-          ]
+            "limits": [
+              "Prefer the OpenAI-compatible lane for long-context and high-throughput work"
+            ]
+          },
+          "models": []
         }
       ]
     },
     {
-      "id": "compatibility",
-      "label": "Compatibility Bridge",
-      "priority": 5,
-      "usageGuidance": "Legacy or bridge endpoint kept only for migrations, overflow, or client compatibility.",
+      "id": "tailscale-ollama",
+      "label": "tailscale-ollama",
+      "priority": 3,
       "hosts": [
         {
-          "id": "compatibility-bridge",
-          "label": "Compatibility API endpoint",
-          "provider": "compatibility-api",
-          "endpoint": "https://compatibility-agent.example.invalid/v1",
-          "networkScope": "private-network",
-          "connectionNotes": "Replace or remove this example endpoint if you do not need a bridge tier.",
+          "id": "example-gpu-box-ollama",
+          "label": "Example remote GPU box (ollama lane)",
+          "provider": "ollama",
+          "endpoint": "http://example-gpu-box:11434",
+          "networkScope": "tailscale",
+          "enabled": false,
+          "capabilities": {
+            "endpointFamily": "ollama",
+            "supportsResidentModelInspection": true
+          },
           "executionPolicy": {
-            "maxParallelSlices": 1,
-            "maxConcurrentModels": 1,
+            "maxParallelSlices": 4,
+            "maxConcurrentModels": 2,
             "contextReservePercent": 20,
-            "scheduling": "serial-per-model"
+            "scheduling": "throughput"
+          },
+          "connectionNotes": "DELETE THIS MACHINE or replace it with a real one. Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the box) or firewall them to the tailnet. Example compatibility lane. Ollama binds to 127.0.0.1 by default and is not reachable over Tailscale until you set OLLAMA_HOST on the box and restart it.",
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "planning",
+              "architecture",
+              "multi-step reasoning",
+              "broad research"
+            ],
+            "avoidTaskTypes": [
+              "tight edit-run-edit loops",
+              "low-latency interactive coding"
+            ]
           },
           "hardware": {
-            "summary": "Example compatibility host"
+            "summary": "Example remote inference host",
+            "gpu": [
+              {
+                "name": "NVIDIA RTX 4090",
+                "count": 2,
+                "vramGb": 24
+              }
+            ],
+            "detected": {
+              "gpuCount": 2,
+              "totalGpuVramGb": 48
+            },
+            "limits": [
+              "Prefer the OpenAI-compatible lane for long-context and high-throughput work"
+            ]
           },
-          "models": [
-            {
-              "name": "compat-main",
-              "roles": [
-                "legacy-fallback",
-                "compatibility"
-              ],
-              "priority": "medium",
-              "supportsToolUse": true,
-              "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
-            }
-          ]
+          "models": []
         }
       ]
     },
     {
       "id": "cloud",
-      "label": "Cloud Fallback",
-      "priority": 6,
-      "usageGuidance": "Use only when local and self-hosted tiers cannot satisfy capability, availability, or reliability constraints.",
+      "label": "cloud",
+      "priority": 4,
       "hosts": [
         {
-          "id": "cloud-fallback",
-          "label": "Cloud API endpoint",
-          "provider": "cloud-api",
-          "endpoint": "https://cloud-agent.example.invalid/v1",
+          "id": "openai-compatible-template",
+          "label": "Generic OpenAI-compatible cloud endpoint",
+          "provider": "openai-compatible",
+          "endpoint": "https://example.invalid/v1",
           "networkScope": "internet",
-          "executionPolicy": {
-            "maxParallelSlices": 4,
-            "scheduling": "parallel"
+          "enabled": false,
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false
           },
-          "hardware": {
-            "summary": "External cloud fallback"
-          },
-          "models": [
-            {
-              "name": "cloud-main",
-              "roles": [
-                "compatibility-fallback"
-              ],
-              "priority": "low"
-            }
-          ]
+          "connectionNotes": "Template. Replace endpoint and models with a real provider if you opt in to cloud.",
+          "models": []
         }
       ]
     }

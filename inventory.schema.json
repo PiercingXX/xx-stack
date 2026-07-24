@@ -1,0 +1,239 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/piercingxx/xx-stack/inventory.schema.json",
+  "title": "xx-stack inventory",
+  "description": "Single source of truth for hardware, network reachability, and installed inference runtimes. Consumed by xx-stack/scripts/generate-registries.mjs, which fans it out to the TypeScript platform registries and the Hermes lane config.",
+  "type": "object",
+  "required": ["version", "policy", "machines"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "_readme": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form notes for humans. Ignored by the generator."
+    },
+
+    "policy": {
+      "type": "object",
+      "required": ["laneOrder", "cloudEscalation"],
+      "additionalProperties": false,
+      "properties": {
+        "selfHostedFirst": { "type": "boolean", "default": true },
+        "cloudEscalation": {
+          "type": "object",
+          "required": ["optIn"],
+          "additionalProperties": false,
+          "properties": {
+            "optIn": {
+              "type": "boolean",
+              "description": "Fail-safe. While false, routing never selects a cloud host even when every self-hosted lane is unreachable."
+            },
+            "note": { "type": "string" }
+          }
+        },
+        "laneOrder": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Tier ids in preference order, e.g. local, tailscale-openai-compatible, tailscale-ollama, cloud."
+        },
+        "rules": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+
+    "machines": {
+      "type": "array",
+      "description": "Physical or virtual machines you own. Describe each ONCE; every runtime installed on it becomes a separate lane automatically.",
+      "items": { "$ref": "#/definitions/machine" }
+    },
+
+    "aggregators": {
+      "type": "array",
+      "description": "Meta-endpoints that route to other lanes themselves (currently the Hermes loopback proxy) rather than serving a model directly.",
+      "items": { "$ref": "#/definitions/aggregator" }
+    },
+
+    "cloud": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "providers": { "type": "array", "items": { "$ref": "#/definitions/cloudProvider" } },
+        "hermesCli": {
+          "type": "object",
+          "description": "A cloud lane Hermes reaches through a local CLI rather than an HTTP endpoint.",
+          "required": ["id", "provider", "endpointType", "baseUrl", "model"],
+          "properties": {
+            "id": { "type": "string" },
+            "provider": { "type": "string" },
+            "endpointType": { "const": "hermes_cli" },
+            "baseUrl": { "type": "string" },
+            "model": { "type": "string" },
+            "fallbackModels": { "type": "array", "items": { "type": "string" } },
+            "hermesPriority": { "type": "integer" },
+            "enabled": { "type": "boolean" },
+            "notes": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "network": {
+      "type": "object",
+      "required": ["scope", "address"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "enum": ["localhost", "loopback", "tailscale", "lan", "internet"],
+          "description": "Drives which tier the machine's runtimes land in and whether Hermes dials it."
+        },
+        "address": {
+          "type": "string",
+          "description": "Hostname or IP. Prefer a Tailscale MagicDNS name over a raw tailnet IP so the config stays portable and does not leak your addressing."
+        },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string" },
+        "cpu": { "type": "string" },
+        "ram": { "type": "string" },
+        "gpu": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "count"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 },
+              "vramGb": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "detected": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gpuCount": { "type": "integer", "minimum": 0 },
+            "totalGpuVramGb": { "type": "number", "minimum": 0 },
+            "systemRamGb": { "type": "number", "minimum": 0 }
+          }
+        },
+        "limits": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxParallelSlices": { "type": "integer", "minimum": 1 },
+        "maxConcurrentModels": { "type": "integer", "minimum": 1 },
+        "contextReservePercent": { "type": "number", "minimum": 0, "maximum": 100 },
+        "scheduling": { "enum": ["serial-per-model", "throughput", "parallel-batched"] }
+      }
+    },
+
+    "delegation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "preferredTaskTypes": { "type": "array", "items": { "type": "string" } },
+        "avoidTaskTypes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "model": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": { "type": "string" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "priority": { "enum": ["high", "medium", "low"] },
+        "contextWindow": { "type": "integer", "minimum": 1 },
+        "supportsToolUse": { "type": "boolean" },
+        "toolCallReliability": { "enum": ["validated", "unverified", "unreliable"] },
+        "jsonModeReliability": { "enum": ["validated", "unverified", "unreliable"] },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "runtime": {
+      "type": "object",
+      "required": ["kind", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["ollama", "sglang", "llama-cpp", "vllm", "localai"],
+          "description": "Inference server installed on this machine. Determines API family, provider id, and lane family."
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "enabled": { "type": "boolean", "default": true },
+        "primary": { "type": "boolean" },
+        "reachable": { "type": "boolean" },
+        "hermesPriority": {
+          "type": "integer",
+          "description": "Higher wins in Hermes lane ordering. Ignored by the TypeScript registry, which orders by tier."
+        },
+        "notes": { "type": "string" },
+        "models": { "type": "array", "items": { "$ref": "#/definitions/model" } }
+      }
+    },
+
+    "machine": {
+      "type": "object",
+      "required": ["id", "label", "network", "runtimes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "label": { "type": "string" },
+        "network": { "$ref": "#/definitions/network" },
+        "hardware": { "$ref": "#/definitions/hardware" },
+        "execution": { "$ref": "#/definitions/execution" },
+        "delegation": { "$ref": "#/definitions/delegation" },
+        "runtimes": { "type": "array", "items": { "$ref": "#/definitions/runtime" }, "minItems": 1 }
+      }
+    },
+
+    "aggregator": {
+      "type": "object",
+      "required": ["id", "label", "kind", "network", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "kind": { "enum": ["hermes"] },
+        "network": { "$ref": "#/definitions/network" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "enabled": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "execution": { "$ref": "#/definitions/execution" },
+        "models": { "type": "array", "items": { "$ref": "#/definitions/model" } }
+      }
+    },
+
+    "cloudProvider": {
+      "type": "object",
+      "required": ["id", "label", "provider", "endpoint"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "provider": { "type": "string" },
+        "endpoint": { "type": "string" },
+        "enabled": { "type": "boolean", "default": false },
+        "notes": { "type": "string" },
+        "models": { "type": "array", "items": { "$ref": "#/definitions/model" } }
+      }
+    }
+  }
+}

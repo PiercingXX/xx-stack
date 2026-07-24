@@ -83,6 +83,84 @@ You get back a routing decision, including the cloud gate refusing to engage:
 That is the core loop: describe work, get a lane. Everything else in this repo
 exists to make that decision better or to act on it.
 
+### Describe your hardware once
+
+`inventory.json` is the **single source of truth** for your machines, how they're
+reached, and what's installed on them. Nothing else needs editing:
+
+```bash
+cp inventory.example.json inventory.json
+$EDITOR inventory.json
+npm run inventory:sync
+```
+
+That one command regenerates every consumer config:
+
+```
+inventory.json  ─┬─>  xx-stack/runtime/platforms.json                 (shipped example)
+                 ├─>  opencode-orchestration/opencode/platforms.json  (live registry)
+                 └─>  hermes-orchestration/config/orchestration.json  (lanes block)
+```
+
+You describe a **machine** once — its hardware, how it's reached, and which
+inference servers run on it. Each runtime becomes its own lane automatically,
+inheriting the machine's hardware and execution policy:
+
+```jsonc
+{
+  "id": "gpu-box",
+  "network": { "scope": "tailscale", "address": "gpu-box" },
+  "hardware": { "gpu": [{ "name": "NVIDIA RTX 5090", "count": 8, "vramGb": 32 }] },
+  "runtimes": [
+    { "kind": "sglang", "port": 30000, "enabled": true,  "hermesPriority": 100 },
+    { "kind": "ollama", "port": 11434, "enabled": false, "hermesPriority": 70  }
+  ]
+}
+```
+
+That single block produces two hosts in the TypeScript registry *and* two Hermes
+lanes, all pointing at the same addresses. Previously that machine's GPU spec was
+written twice and its endpoints a third time, in two different config languages.
+
+Supported `kind` values: `ollama`, `sglang`, `llama-cpp`, `vllm`, `localai`.
+Cloud providers live under `cloud`, disabled, and stay unreachable until you set
+`policy.cloudEscalation.optIn`. `npm run inventory:check` (part of `npm run
+verify`, and enforced in CI) fails if any generated file has drifted.
+
+The generated files carry a `_generated` banner — edit `inventory.json` instead.
+
+### Or let it find your machines for you
+
+If your boxes are on a Tailscale network, don't write them out by hand:
+
+```bash
+npm run inventory:scan                # probe the tailnet, show what it found
+npm run inventory:scan -- --write     # merge findings into inventory.json
+npm run inventory:scan -- --write --ssh   # also read real GPU specs
+```
+
+It walks your online peers, probes each for Ollama (`:11434`), sglang
+(`:30000`), vLLM (`:8000`), llama.cpp (`:8080`) and LocalAI (`:8081`), and
+records every runtime it finds along with the models each is serving. With
+`--ssh` it additionally runs `nvidia-smi` over Tailscale SSH to fill in real GPU
+counts and VRAM.
+
+**Everything discovered is written disabled.** A scan never starts routing
+traffic somewhere. Turning a lane on is a separate, deliberate step:
+
+```bash
+npm run inventory:list                              # what exists, what's on
+npm run inventory:enable  -- gpu-box                # every lane on that machine
+npm run inventory:enable  -- gpu-box.sglang         # just one
+npm run inventory:disable -- gpu-box.ollama
+npm run inventory:sync                              # regenerate configs
+```
+
+Rescanning is safe and idempotent. Your labels, `enabled` flags, execution
+policy, and notes are preserved; new machines and runtimes are added, and
+anything that has gone quiet is reported but **never deleted** — a box being
+powered off shouldn't erase it from your inventory.
+
 ### Then point it at a real model
 
 The shipped registry (`xx-stack/runtime/platforms.json`) is an **example** — the

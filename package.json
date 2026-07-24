@@ -24,8 +24,14 @@
     "design:golden": "node xx-stack/scripts/evaluate-golden-tasks.mjs",
     "design:html-gate": "node xx-stack/scripts/quality-gate-html.mjs",
     "hermes:test": "cd hermes-orchestration && python3 -m unittest discover -s tests",
-    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm test && npm run hermes:test",
-    "drift:check": "node xx-stack/scripts/check-stack-source-drift.mjs"
+    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm run inventory:check && npm test && npm run hermes:test",
+    "drift:check": "node xx-stack/scripts/check-stack-source-drift.mjs",
+    "inventory:sync": "node xx-stack/scripts/generate-registries.mjs",
+    "inventory:check": "node xx-stack/scripts/generate-registries.mjs --check",
+    "inventory:scan": "node xx-stack/scripts/scan-tailscale.mjs",
+    "inventory:list": "node xx-stack/scripts/toggle-lane.mjs list",
+    "inventory:enable": "node xx-stack/scripts/toggle-lane.mjs enable",
+    "inventory:disable": "node xx-stack/scripts/toggle-lane.mjs disable"
   },
   "keywords": [
     "mcp",

@@ -102,7 +102,7 @@
   },
   "lanes": {
     "sglang": {
-      "name": "skippy-sglang-5090",
+      "name": "skippy-debian-5090-sglang",
       "role": "self_hosted",
       "priority": 100,
       "endpoint_type": "openai_compatible",
@@ -111,7 +111,7 @@
       "enabled": true
     },
     "ollama": {
-      "name": "skippy-ollama-5090",
+      "name": "skippy-debian-5090-ollama",
       "role": "self_hosted",
       "priority": 70,
       "endpoint_type": "openai_compatible",
