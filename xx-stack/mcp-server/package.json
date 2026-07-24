@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "test": "npm run build && node --test dist/*.test.js",
     "design-pack:catalog": "node ../scripts/generate-design-catalog.mjs",
     "design-pack:verify-layout": "node ../scripts/verify-repo-layout.mjs",
     "design-pack:golden": "node ../scripts/evaluate-golden-tasks.mjs",
