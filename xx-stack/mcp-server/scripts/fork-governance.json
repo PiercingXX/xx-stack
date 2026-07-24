@@ -1,0 +1,20 @@
+{
+  "channels": {
+    "stable": {
+      "repo": "ggml-org/llama.cpp",
+      "ref": "master"
+    },
+    "experimental": {
+      "repo": "PrismML-Eng/llama.cpp",
+      "ref": "prism"
+    }
+  },
+  "driftThreshold": {
+    "maxStableAdvancesWithoutExperimental": 3
+  },
+  "logs": {
+    "governanceLogPath": "~/.config/opencode/xx-stack-logs/fork-governance.jsonl",
+    "statePath": "~/.config/opencode/xx-stack-logs/fork-governance-state.json",
+    "artifactPipelineLogPath": "~/.config/opencode/xx-stack-logs/model-artifact-pipeline.jsonl"
+  }
+}

@@ -1,0 +1,24 @@
+# Dependencies and build output
+node_modules/
+dist/
+**/node_modules/
+**/dist/
+
+# Symlinked duplicates of xx-stack/ — formatting them would rewrite the same
+# physical files twice under a second path.
+opencode-orchestration/mcp-server/
+opencode-orchestration/scripts/
+opencode-orchestration/packs/
+
+# Content pack: design systems and skills are largely vendored or derived from
+# upstream projects (each carries its own attribution and, where applicable,
+# LICENSE). Reformatting them would create churn in third-party content and
+# obscure real diffs against upstream.
+xx-stack/packs/
+
+# Generated artifacts
+**/DESIGN-CATALOG.md
+xx-stack/mcp-server/dist/
+
+# Runtime state
+hermes-orchestration/logs/

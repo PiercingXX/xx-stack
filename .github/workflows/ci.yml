@@ -1,4 +1,4 @@
-name: xx-stack CI/CD
+name: xx-stack CI
 
 on:
   push:
@@ -8,15 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  checks:
-    name: Layout, Agent Sync, Lint, Type Check
+  layout:
+    name: Layout, Agent Sync & Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -24,27 +22,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify repository layout
-        run: node scripts/verify-repo-layout.mjs
+      - name: Verify component layouts
+        run: npm run layout:verify
 
       - name: Verify VS Code agent mirrors are in sync
-        run: node scripts/sync-vscode-agents.mjs --check
+        run: npm run agents:check
 
-      - name: Run linting
+      - name: Lint
         run: npm run lint
 
-      - name: Run type checking
-        run: npm run typecheck
+      - name: Format check
+        run: npm run format:check
 
-  mcp-server-tests:
-    name: MCP Server Tests
+  mcp-server:
+    name: MCP Server (build, typecheck, test)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -52,18 +48,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run MCP server tests
-        run: npm --prefix mcp-server test
+      - name: Build and test
+        run: npm --prefix xx-stack/mcp-server test
 
   design-pack:
     name: Design Pack
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -72,7 +66,24 @@ jobs:
         run: npm ci
 
       - name: Regenerate design catalog
-        run: npm --prefix mcp-server run design-pack:catalog
+        run: npm run design:catalog
+
+      - name: Fail if the catalog is stale
+        run: git diff --exit-code -- xx-stack/packs/design/DESIGN-CATALOG.md
 
       - name: Run golden task checks
-        run: npm --prefix mcp-server run design-pack:golden
+        run: npm run design:golden
+
+  hermes:
+    name: Hermes Control Plane
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run orchestrator tests
+        working-directory: hermes-orchestration
+        run: python3 -m unittest discover -s tests -v

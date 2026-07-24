@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "profiles": [
+    {
+      "match": {
+        "gpuVramGbMin": 48
+      },
+      "recommendedModels": [
+        {
+          "name": "qwen3-coder:30b-a3b-tq2_0",
+          "reason": "Strong local coding lane for high-VRAM multi-GPU workstations."
+        },
+        {
+          "name": "qwq:32b-tq2_0",
+          "reason": "Useful local reasoning lane when you want to avoid cloud or remote dependency."
+        },
+        {
+          "name": "gpt-oss:20b-tq2_0",
+          "reason": "Good general-purpose local reasoning and research model with lower overhead."
+        }
+      ]
+    },
+    {
+      "match": {
+        "gpuVramGbMin": 20
+      },
+      "recommendedModels": [
+        {
+          "name": "qwen2.5-coder:14b-tq2_0",
+          "reason": "Safer default coding model for midrange GPUs."
+        },
+        {
+          "name": "ministral-3:14b-tq2_0",
+          "reason": "Fast lower-memory reasoning lane."
+        }
+      ]
+    },
+    {
+      "match": {
+        "gpuVramGbMin": 10
+      },
+      "recommendedModels": [
+        {
+          "name": "qwen2.5-coder:7b-tq2_0",
+          "reason": "Light local coding option when VRAM is limited."
+        },
+        {
+          "name": "phi4:14b-tq2_0",
+          "reason": "Compact general-purpose reasoning option if it fits your card."
+        }
+      ]
+    },
+    {
+      "match": {
+        "gpuVramGbMin": 0
+      },
+      "recommendedModels": [
+        {
+          "name": "qwen2.5-coder:3b-tq2_0",
+          "reason": "Fallback coding model for CPU-only or very constrained systems."
+        },
+        {
+          "name": "llama3.2:3b-tq2_0",
+          "reason": "Low-overhead fallback for general local chat and routing tests."
+        }
+      ]
+    }
+  ]
+}

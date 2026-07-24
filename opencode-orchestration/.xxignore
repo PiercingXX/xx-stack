@@ -1,0 +1,32 @@
+# .xxignore — repo-local agent context boundary.
+#
+# Paths listed here are excluded from agent context gathering, search, and
+# "did you read the whole repo" completeness claims. This is about attention,
+# not about version control: use .gitignore for what must not be committed.
+#
+# Syntax follows .gitignore conventions.
+
+# Dependencies and build output — never useful as agent context.
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+
+# Runtime state, logs, and captured telemetry.
+../hermes-orchestration/logs/
+*.log
+
+# Generated catalogs — read the generator, not the output.
+**/DESIGN-CATALOG.md
+
+# Large vendored design-system reference data. The design agents load these
+# on demand via the design skills; they should not be swept into general
+# context. Remove this entry if you are actively editing the design pack.
+**/packs/design/design-systems/
+
+# Local, machine-specific overrides.
+.env
+.env.*
+*.local.json

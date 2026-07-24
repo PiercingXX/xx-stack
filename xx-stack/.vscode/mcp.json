@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "xx-stack-platform-routing": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/mcp-server/dist/index.js"
+      ]
+    }
+  }
+}

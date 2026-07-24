@@ -1,0 +1,59 @@
+{
+  "name": "@xx-stack/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for xx-stack platform routing \u2014 multi-provider inventory, health checks, task routing, and supervision",
+  "main": "dist/index.js",
+  "bin": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "design-pack:catalog": "node ../scripts/generate-design-catalog.mjs",
+    "design-pack:verify-layout": "node ../scripts/verify-repo-layout.mjs",
+    "design-pack:golden": "node ../scripts/evaluate-golden-tasks.mjs",
+    "design-pack:html-gate": "node ../scripts/quality-gate-html.mjs",
+    "stack:catalog": "npm run design-pack:catalog",
+    "stack:verify-layout": "npm run design-pack:verify-layout",
+    "stack:golden": "npm run design-pack:golden",
+    "stack:html-gate": "npm run design-pack:html-gate",
+    "reliability:harness": "npm run build && node dist/reliability-harness.js",
+    "harness:ci": "npm run build && node dist/reliability-harness.js && node dist/check-regression.js",
+    "harness:watch": "while true; do npm run harness:ci; sleep 30; done",
+    "harness:fork-governance": "npm run build && node dist/fork-governance.js check-drift",
+    "artifact:record": "npm run build && node dist/fork-governance.js log-artifact",
+    "logs:tail": "tail -f ~/.config/opencode/xx-stack-logs/mcp-server.jsonl | jq .",
+    "tune": "npm run build && node dist/tune-reliability.js",
+    "monitor:memory": "npm run build && node dist/monitor-memory.js",
+    "monitor:memory:json": "npm run build && node dist/monitor-memory.js --json",
+    "preflight:parallel": "npm run build && node dist/parallel-preflight.js",
+    "smoke:parallel": "npm run build && node dist/parallel-smoke.js",
+    "trace:provider": "npm run build && node dist/trace-provider-proxy.js"
+  },
+  "keywords": [
+    "mcp",
+    "routing",
+    "ollama",
+    "llama-cpp",
+    "openai-compatible",
+    "localai"
+  ],
+  "author": "PiercingXX",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/piercingxx/xx-stack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/piercingxx/xx-stack/issues"
+  },
+  "homepage": "https://github.com/piercingxx/xx-stack#readme",
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
+}

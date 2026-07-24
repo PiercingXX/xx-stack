@@ -1,0 +1,22 @@
+[Unit]
+Description=Hermes orchestrator loopback proxy (OpenAI-compatible)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# TEMPLATE: replace __HERMES_DIR__ with the absolute path to this
+# hermes-orchestration/ directory before installing. systemd does not resolve
+# relative paths. The install helper does this for you:
+#
+#   ./scripts/install_systemd_units.sh
+#
+Type=simple
+WorkingDirectory=__HERMES_DIR__
+# Provide HERMES_PROXY_TOKEN via an environment file kept out of the repo.
+EnvironmentFile=%h/.config/hermes-orchestration/proxy.env
+ExecStart=/usr/bin/python3 __HERMES_DIR__/scripts/hermes_orchestrator.py serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

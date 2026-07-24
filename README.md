@@ -1,261 +1,238 @@
-# XX-Stack
+# xx-stack
 
-XX-Stack is a self-hosted-first AI orchestration stack. It is the single
-consolidated home for what used to be three repos (`XX-Stack`,
-`opencode-orchestration`, and `hermes-orchestration`) — see
-[Consolidation Notes](#consolidation-notes).
+**Local-first orchestration for AI coding agents.**
 
-It has two cooperating halves:
+xx-stack decides *where* an agent's work should run — your own machine first,
+your own GPU boxes second, a cloud provider only if you explicitly turn it on —
+and gives agents the contracts, skills, and supervision to finish long tasks
+without babysitting.
 
-- **Agent stack (TypeScript, repo root)** — reusable agent contracts, skills,
-  routing policy, a TypeScript MCP server for supervision/routing/health
-  checks, editor adapters (VS Code, OpenCode), and a design content pack.
-- **Hermes control plane (Python, `hermes/`)** — a runnable local-first
-  inference control plane: lane routing over Tailscale, parallel subagents, an
-  OpenAI-compatible loopback proxy, lane benchmarking, and capability probing.
-  Fully self-contained; see [hermes/README.md](hermes/README.md).
+It ships as an [MCP](https://modelcontextprotocol.io) server exposing 33 tools
+for routing, health checks, agent profiles, and long-running task supervision.
+Any MCP-compatible host can load it (OpenCode, VS Code / Copilot,
+and others).
 
-## Topology
+> **Cloud is off by default.** Routing never selects a cloud host unless you set
+> `selectionPolicy.cloudEscalation.optIn: true` or export `XX_STACK_ALLOW_CLOUD=1`
+> — even when every self-hosted lane is unreachable.
 
-All self-hosted inference runs on the AI rig `skippy-debian-5090` (Debian,
-4x RTX 5090), reached over Tailscale (MagicDNS). Cloud is strictly opt-in.
-There are currently no local inference lanes on the workstation.
+---
 
-| Lane | Endpoint | Runtime | Status |
-|------|----------|---------|--------|
-| Skippy sglang | `http://skippy-debian-5090:30000/v1` | sglang (`qwen3-coder-next`, 262k ctx) | **Live** — primary + reasoning lane; batches parallel subagents |
-| Skippy Ollama | `http://skippy-debian-5090:11434` | ollama (model unverified, assumed `qwen3-coder:30b`) | **Disabled** — not exposed on the tailnet yet; see hermes/README.md to enable |
-| Cloud | — | hermes CLI (`gpt-5.3-codex`, fallback `gpt-5.4`) | Last resort, strictly opt-in |
+## Try it in 5 minutes (no special hardware)
 
-The shipped registry lives in `runtime/platforms.json` (agent stack) and
-`hermes/config/orchestration.json` (control plane). Cloud lanes are never
-selected while `selectionPolicy.cloudEscalation.optIn` is false and
-`XX_STACK_ALLOW_CLOUD` is unset.
+You do not need a GPU, a second machine, or Tailscale to see this working.
 
-## Repository Shape
+```bash
+git clone https://github.com/piercingxx/xx-stack
+cd xx-stack
+npm install
+npm --prefix xx-stack/mcp-server run build
+```
 
-- stack core: `runtime/` contracts, `adapters/` (VS Code mirrors),
-  `mcp-server/`, `scripts/`, `hooks/`, setup scripts, shared docs
-- content pack: `packs/design/` — design systems, design skills, templates,
-  and design eval assets (see `DESIGN-CATALOG.md`)
-- control plane: `hermes/` — Python orchestrator, routing/proxy/bench,
-  systemd units, policy docs, unit tests
+Confirm the routing server starts and reports its tools:
 
-Compatibility shims are retained where stability matters:
+```bash
+printf '%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node xx-stack/mcp-server/dist/index.js
+```
 
-- `design-systems/` -> `packs/design/design-systems/`
-- `design-skills/` -> `packs/design/design-skills/`
-- `DESIGN-CATALOG.md` -> `packs/design/DESIGN-CATALOG.md`
-- `runtime/skills/design/` -> `packs/design/runtime/skills/design/`
-- `evals/golden-tasks/` -> `packs/design/evals/golden-tasks/`
+You should see a handshake response followed by 33 tools. That is the whole
+server — it runs with no providers configured, and simply reports that no lane
+is reachable until you add one.
 
-For the boundary contract, see `REPO-LAYERS.md`.
-For operating the runtime when it is unhealthy, see `MAINTAINER-RUNBOOK.md`.
+Run the full verification gate to confirm your checkout is healthy:
 
-## Source Of Truth
+```bash
+npm run verify
+```
 
-- `runtime/config.json`: shipped agent registry defaults
-- `runtime/platforms.json`: shipped platform/lane registry
-- `runtime/shared_instructions.md`: shared runtime behavior and delegation rules
-- `runtime/SKILLS.md`: canonical skill inventory and contract rules
-- `runtime/FILE-STRUCTURE.md`: navigation map
-- `REPO-LAYERS.md`: stack-core vs content-pack boundary
-- `hermes/config/orchestration.json`: control-plane lane and policy config
+This runs the layout checks, agent-mirror sync check, 58 TypeScript tests, and
+25 Python tests for the Hermes control plane.
 
-## Primary Agents
+### Route your first task
 
-- `execution-orchestrator`: accountable orchestration and completion gates
-- `parallel-execution-orchestrator`: parallel delegation across healthy remote lanes
-- `build`: implementation agent
-- `fast-build`: narrow speed lane for small changes
-- `plan`: planning-only lane
-- `deep-thinker`: architecture, risk, and deep reasoning
-- `release-manager`: release and deployment gating
-- `incident-commander`: incident handling
-- `design-engineer`: design workflow specialist
+Point the server at the shipped registry and ask it where a task should run.
+This needs no model and no network — routing is a pure decision over the
+registry:
+
+```bash
+export XX_STACK_REPO="$PWD/xx-stack"
+
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"route_task","arguments":{"description":"implement a small bug fix and run tests"}}}' \
+  | node xx-stack/mcp-server/dist/index.js
+```
+
+You get back a routing decision, including the cloud gate refusing to engage:
+
+```json
+{
+  "recommendedTier": "local",
+  "recommendedHost": "local-fallback",
+  "recommendedModel": "coder-fast",
+  "reasoning": "Matched keywords for \"local\" tier (score: 4); cloud tier excluded (cloud escalation requires opt-in via selectionPolicy.cloudEscalation.optIn or XX_STACK_ALLOW_CLOUD=1); selected model \"coder-fast\" using host roles and task intent",
+  "availableModels": ["coder-fast", "coder-main"],
+  "fallback": "primary"
+}
+```
+
+That is the core loop: describe work, get a lane. Everything else in this repo
+exists to make that decision better or to act on it.
+
+### Then point it at a real model
+
+The shipped registry (`xx-stack/runtime/platforms.json`) is an **example** — the
+hosts in it resolve to `.invalid` domains on purpose. Edit it to describe hosts
+you actually have. The simplest real setup is a local OpenAI-compatible
+endpoint — Ollama, llama.cpp's `llama-server`, LocalAI, or anything else that
+speaks `/v1/chat/completions`:
+
+```bash
+ollama serve            # exposes http://127.0.0.1:11434
+```
+
+Then set that endpoint on the `local` tier host in `platforms.json`, re-run the
+`route_task` call above, and `check_health` to confirm the lane is reachable.
+Nothing else in this repo is required to get value out of it.
+
+---
+
+## What's in here
+
+This repo holds three components that are useful separately and better together.
+
+| Component | What it is | Start here if you want to… |
+|---|---|---|
+| **[`xx-stack/`](xx-stack/)** | The core. Agent contracts, skills, the routing MCP server, the design content pack. Host-agnostic. | Load the MCP server into any agent host, or reuse the agent/skill contracts. |
+| **[`opencode-orchestration/`](opencode-orchestration/)** | The OpenCode integration layer. Installs, registers, and syncs the stack into an OpenCode or VS Code environment. | Actually *install* the stack into a working editor setup. |
+| **[`hermes-orchestration/`](hermes-orchestration/)** | A standalone Python control plane that routes inference across self-hosted lanes over Tailscale, with a loopback OpenAI-compatible proxy. | Route raw inference across your own GPU boxes. No Node.js involved. |
+
+**If you're not sure where to start: read this file, then
+[`xx-stack/README.md`](xx-stack/README.md).** The other two are opt-in.
+
+### How they relate
+
+`xx-stack/` is the source of truth. To avoid two copies drifting apart,
+`opencode-orchestration/` reaches into it by symlink rather than duplicating:
+
+```
+opencode-orchestration/mcp-server  ->  ../xx-stack/mcp-server
+opencode-orchestration/scripts     ->  ../xx-stack/scripts
+opencode-orchestration/packs       ->  ../xx-stack/packs
+```
+
+Edit the files under `xx-stack/`; both components see the change.
+
+`hermes-orchestration/` has no code dependency on the other two and can be
+copied out and used on its own. It can also plug into the routing layer as a
+**single lane** — see below.
+
+### Using Hermes as a routing lane
+
+Hermes exposes its own self-hosted-first lane policy behind one
+OpenAI-compatible loopback endpoint. The shipped registries already contain a
+`hermes-proxy` host in the `local` tier, **disabled by default**. Turning it on
+lets xx-stack delegate lane selection to Hermes instead of picking a backend
+directly:
+
+```bash
+# 1. Give the proxy a token and start it
+mkdir -p ~/.config/hermes-orchestration
+printf 'HERMES_PROXY_TOKEN=%s\n' "$(openssl rand -hex 24)" \
+  > ~/.config/hermes-orchestration/proxy.env
+chmod 600 ~/.config/hermes-orchestration/proxy.env
+
+set -a; . ~/.config/hermes-orchestration/proxy.env; set +a
+python3 hermes-orchestration/scripts/hermes_orchestrator.py serve &
+
+# 2. Confirm it is up
+curl -s http://127.0.0.1:8180/healthz
+
+# 3. Flip enabled -> true on the hermes-proxy host
+#    in xx-stack/runtime/platforms.json
+```
+
+The `hermes-auto` model on that host is virtual: Hermes resolves the real
+backend per its own policy, so xx-stack sees one stable lane instead of needing
+to know about every GPU box.
+
+---
 
 ## Requirements
 
-- Node.js 20+ (agent stack, MCP server)
-- Python 3 (hermes control plane; stdlib only)
-- an MCP-compatible host that can load the routing server
-- Tailscale connectivity to `skippy-debian-5090` for the remote lanes
+- **Node.js 20+** — for the MCP server and tooling
+- **Python 3.11+** — only for `hermes-orchestration/` (standard library only)
+- **An MCP-compatible host** — OpenCode, VS Code, or your own client
+- **At least one reachable model provider** — local or remote; see above
 
-## Setup
+---
 
-Editor integration helpers:
+## Common commands
 
-- `./setup-opencode.sh` — install or link the stack into OpenCode
-- `./setup-vscode.sh <target-project>` — install MCP wiring, VS Code prompt
-  mirrors, and Copilot instructions into a downstream workspace
+Run from the repo root.
 
-For VS Code specifically, this repo ships the workspace surfaces directly:
+| Command | What it does |
+|---|---|
+| `npm run verify` | Full gate: layout, agent sync, all tests |
+| `npm test` | MCP server test suite (58 tests) |
+| `npm run hermes:test` | Hermes control plane tests (25 tests) |
+| `npm run layout:verify` | Check both components' file layout and symlinks |
+| `npm run lint` / `npm run format` | ESLint / Prettier over the TypeScript sources |
+| `npm run agents:sync` | Regenerate VS Code agent mirrors from canonical contracts |
+| `npm run design:catalog` | Regenerate the design system catalog |
+| `npm run design:golden` | Run the golden-task evaluations |
 
-- `.vscode/mcp.json` wires the local `xx-stack-platform-routing` MCP server
-- `.github/copilot-instructions.md` gives Copilot the canonical runtime guidance
-
-The VS Code agent mirrors under `adapters/agents/` are generated from
-`runtime/agents/` by `scripts/sync-vscode-agents.mjs`. Treat the runtime files
-as the canonical source and regenerate the mirrors instead of hand-editing them.
-
-By default, xx-stack should execute on whatever host model or lane invoked it.
-Routing and platform inventory are override mechanisms for capability gaps,
-reliability problems, or explicit delegation, not the default execution path.
-
-For the hermes control plane (health checks, routing preview, proxy `serve`
-mode, benchmarking, systemd units), follow the quick start in
-[hermes/README.md](hermes/README.md).
-
-## Git Hooks
-
-A pre-commit hook prevents VS Code agent mirrors from drifting out of sync:
+Enable the pre-commit hook that keeps agent mirrors in sync:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-This runs `scripts/sync-vscode-agents.mjs --check` before each commit.
+---
 
-## Common Commands
+## A note on the examples
 
-Run these from repo root unless noted otherwise.
+The registries and docs reference a machine called `skippy-debian-5090` — a
+4×RTX 5090 Debian box reached over Tailscale. **That is the author's hardware,
+included as a worked example, not a requirement.** Replace those hosts with your
+own (or delete them) in:
 
-Verify the MCP server:
+- `xx-stack/runtime/platforms.json`
+- `opencode-orchestration/opencode/platforms.json`
+- `hermes-orchestration/config/orchestration.json`
 
-```bash
-npm --prefix mcp-server test
+Nothing here assumes you have that rig. The stack degrades to "route everything
+locally" when no other lane is reachable.
+
+---
+
+## Layout
+
+```
+.
+├── xx-stack/                  Core: agents, skills, MCP server, design pack
+├── opencode-orchestration/    OpenCode + VS Code install layer
+├── hermes-orchestration/      Python inference control plane (standalone)
+├── .github/workflows/ci.yml   CI: layout, lint, tests, design pack, hermes
+└── .xxignore                  Agent context boundary (see CONTRIBUTING.md)
 ```
 
-Verify repo layout and compatibility shims:
+---
 
-```bash
-node scripts/verify-repo-layout.mjs
-```
+## Contributing
 
-Verify or regenerate VS Code agent mirrors:
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `npm run verify` must pass,
+canonical agent contracts live in `xx-stack/runtime/agents/` (the
+`adapters/` mirrors are generated), and generated files stay out of git.
 
-```bash
-node scripts/sync-vscode-agents.mjs --check
-node scripts/sync-vscode-agents.mjs
-```
+## License
 
-Regenerate the design catalog:
+[MIT](LICENSE).
 
-```bash
-npm --prefix mcp-server run design-pack:catalog
-```
-
-Run golden-task checks:
-
-```bash
-npm --prefix mcp-server run design-pack:golden
-```
-
-Run the HTML quality gate:
-
-```bash
-npm --prefix mcp-server run design-pack:html-gate -- --skill web-prototype path/to/artifact.html
-```
-
-Hermes control plane:
-
-```bash
-(cd hermes && python3 -m unittest discover -s tests)
-python3 hermes/scripts/hermes_orchestrator.py health
-python3 hermes/scripts/hermes_orchestrator.py route --reason-code PRECHECK
-```
-
-## Autonomous Todo Loop
-
-For unattended whole-plan execution, use the outer-loop runner instead of
-relying on the orchestrator prompt alone:
-
-```bash
-node scripts/run-agent-loop.mjs \
-	--runner 'your-agent-command-that-reads-stdin' \
-	--runner-timeout-ms 900000 \
-	--todo TODO.md \
-	--goal 'Finish the entire todo plan without stopping for intermediate updates.'
-```
-
-This creates disk-backed loop state under `.xx-stack/loops/` and keeps retrying
-until the todo is complete, blocked, stalled, or reaches the iteration limit.
-See `runtime/AUTONOMOUS_TODO_LOOP.md` for details.
-
-For OpenCode, use the dedicated safe wrapper:
-
-```bash
-node scripts/run-opencode-loop.mjs --todo TODO.md
-```
-
-Optional model override:
-
-```bash
-node scripts/run-opencode-loop.mjs --todo TODO.md --model sglang-remote/qwen3-coder-next
-```
-
-The wrapper feeds loop prompts to OpenCode through a stdin bridge, builds a
-job-scoped minimal OpenCode HOME under the loop state, proves liveness and one
-real tool round-trip before iteration 1, and fails fast with
-`runner-unhealthy` state if OpenCode is hanging.
-
-At the moment, treat headless OpenCode as unsupported for unattended todo
-execution unless this preflight passes in your environment.
-
-## Customizing
-
-To add an agent:
-
-1. Create `runtime/agents/<name>.md`.
-2. Register it in `runtime/config.json`.
-3. Add any host-specific adapter only if you actually need it.
-
-To add a skill:
-
-1. Create `runtime/skills/<name>/SKILL.md`.
-2. Register it in `runtime/SKILLS.md`.
-3. Add adapter surfaces only when required by a downstream host.
-
-To add content-pack material:
-
-1. Put payload files under `packs/design/`.
-2. Keep runtime contracts in stack core.
-3. Use compatibility shims only when an older path must remain stable.
-
-## Host Model Inheritance
-
-- Canonical agent contracts do not hardcode a provider or model unless a host truly requires one.
-- VS Code adapter prompts inherit the current chat model.
-- OpenCode installs should clear legacy repo-managed per-agent model pins so host-native inheritance actually takes effect.
-- Use routing or explicit model overrides only when the active caller model cannot satisfy the task.
-
-## Consolidation Notes
-
-This repo absorbed and replaces two other repos (2026-07-09):
-
-**From `opencode-orchestration`** (deleted upstream):
-
-- the real platform topology (Skippy sglang/ollama over Tailscale, strict
-  cloud opt-in) baked into `runtime/platforms.json`, then trimmed to what the
-  rig actually serves (verified against the live endpoints on 2026-07-09)
-- the `parallel-execution-orchestrator` agent
-- four design systems (`github`, `nvidia`, `ollama`, `opencode-ai`)
-- `MAINTAINER-RUNBOOK.md` (paths adapted to this repo's layout)
-
-Intentionally not ported: the modularized `mcp-server/src` split (this repo's
-tested single-module server has the same 34-tool surface), the opt-in
-lifecycle-hooks subsystem, the `trace-provider-proxy`/`parallel-preflight`
-debug utilities, and the interactive `setup.sh` hardware/Tailscale discovery
-(superseded by the shipped registry plus `setup-opencode.sh`/`setup-vscode.sh`).
-Recover them from the old repo's history if ever needed.
-
-**From `hermes-orchestration`** (deleted upstream, was never pushed):
-
-- the entire repo, moved unmodified to `hermes/` (systemd unit paths updated),
-  including its README, policy docs, `TODO.md`, config, scripts, and 25 unit tests
-
-## Notes
-
-- `.xxignore` is the repo-specific context boundary. `.gitignore` backs it up for general tooling.
-- `hooks/` is optional scaffolding, not an assumed runtime.
-- Generated or vendored artifacts are not source-of-truth and should stay out of git.
+The design content pack under `xx-stack/packs/design/` includes material derived
+from upstream projects that carry their own licenses and attribution — see the
+`LICENSE` files within those skill directories.

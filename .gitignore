@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime state and logs
+hermes-orchestration/logs/
+*.log
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local.json
+proxy.env
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+
+# Local overrides that should never be committed
+platforms.local.json
+config.local.json
