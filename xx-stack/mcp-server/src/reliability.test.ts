@@ -1810,3 +1810,149 @@ test("repoFileCandidates can also look one level up for each layout", () => {
   assert.ok(candidates.includes("/repo/runtime/platforms.json"));
   assert.ok(candidates.includes("/repo/opencode/platforms.json"));
 });
+
+// ── Inventory → registry generation ──────────────────────────────────────────
+
+async function loadJson(rel: string): Promise<Record<string, any>> {
+  return JSON.parse(await readFile(new URL(rel, import.meta.url), "utf-8"));
+}
+
+test("generated registries stay in sync with inventory.json", async () => {
+  const script = join(process.cwd(), "..", "scripts", "generate-registries.mjs");
+  // --check exits non-zero when any consumer config has drifted from the
+  // inventory, which is the whole point of having one source of truth.
+  await execFileAsync(process.execPath, [script, "--check"]);
+});
+
+test("a machine's hardware is written once and inherited by all its runtimes", async () => {
+  const inventory = await loadJson("../../../inventory.json");
+  const registry = await loadJson("../../../opencode-orchestration/opencode/platforms.json");
+
+  const multiRuntime = inventory.machines.find(
+    (m: Record<string, any>) => m.runtimes.length > 1 && m.hardware?.detected
+  );
+  assert.ok(multiRuntime, "expected at least one machine with several runtimes");
+
+  const hosts = registry.tiers
+    .flatMap((t: Record<string, any>) => t.hosts ?? [])
+    .filter((h: Record<string, any>) => h.id.startsWith(multiRuntime.id));
+
+  assert.equal(
+    hosts.length,
+    multiRuntime.runtimes.length,
+    "every runtime on the machine should become its own host"
+  );
+  for (const host of hosts) {
+    assert.deepEqual(
+      host.hardware.detected,
+      multiRuntime.hardware.detected,
+      `${host.id} should inherit the machine's hardware, not restate it`
+    );
+  }
+});
+
+test("hermes lanes and TS hosts agree on endpoints for the same runtime", async () => {
+  const inventory = await loadJson("../../../inventory.json");
+  const hermes = await loadJson("../../../hermes-orchestration/config/orchestration.json");
+  const registry = await loadJson("../../../opencode-orchestration/opencode/platforms.json");
+
+  const tsHosts = new Map<string, string>(
+    registry.tiers
+      .flatMap((t: Record<string, any>) => t.hosts ?? [])
+      .map((h: Record<string, any>) => [h.id, h.endpoint])
+  );
+
+  for (const machine of inventory.machines) {
+    if (machine.network.scope === "localhost" || machine.network.scope === "loopback") continue;
+    for (const runtime of machine.runtimes) {
+      const lane = Object.values(hermes.lanes).find(
+        (l: any) => l.name === `${machine.id}-${runtime.kind}`
+      ) as Record<string, any> | undefined;
+      assert.ok(lane, `hermes lane missing for ${machine.id}-${runtime.kind}`);
+
+      const tsEndpoint = tsHosts.get(`${machine.id}-${runtime.kind}`);
+      assert.ok(tsEndpoint, `TS host missing for ${machine.id}-${runtime.kind}`);
+      assert.equal(
+        lane.base_url,
+        `${tsEndpoint}/v1`,
+        "hermes base_url must be the TS endpoint plus /v1 — a mismatch means the two consumers would dial different addresses"
+      );
+      assert.equal(lane.enabled, runtime.enabled !== false);
+    }
+  }
+});
+
+test("the shipped example registry carries no personal hardware", async () => {
+  const shipped = JSON.stringify(await loadJson("../../runtime/platforms.json"));
+  const inventory = await loadJson("../../../inventory.json");
+
+  for (const machine of inventory.machines) {
+    if (machine.network.scope === "localhost" || machine.network.scope === "loopback") continue;
+    assert.ok(
+      !shipped.includes(machine.id),
+      `xx-stack ships a host-agnostic registry, but it names "${machine.id}"`
+    );
+  }
+});
+
+test("cloud stays opt-out in both generated consumers", async () => {
+  const registry = await loadJson("../../../opencode-orchestration/opencode/platforms.json");
+  const hermes = await loadJson("../../../hermes-orchestration/config/orchestration.json");
+
+  assert.equal(registry.selectionPolicy.cloudEscalation.optIn, false);
+  assert.equal(hermes.policy.cloud_enabled_by_default, false);
+  assert.equal(hermes.policy.require_manual_cloud_escalation, true);
+});
+
+test("scan and toggle scripts are valid and self-documenting", async () => {
+  // Syntax-check by importing; both scripts guard their side effects behind
+  // argv, so a bare --help-less import must not touch inventory.json.
+  const scripts = ["scan-tailscale.mjs", "toggle-lane.mjs"];
+  for (const name of scripts) {
+    const file = join(process.cwd(), "..", "scripts", name);
+    const source = await readFile(file, "utf-8");
+    assert.ok(source.startsWith("#!/usr/bin/env node"), `${name} needs a shebang`);
+    assert.match(source, /inventory\.json/, `${name} should operate on inventory.json`);
+  }
+});
+
+test("toggle-lane lists lanes without mutating the inventory", async () => {
+  const script = join(process.cwd(), "..", "scripts", "toggle-lane.mjs");
+  const before = await readFile(new URL("../../../inventory.json", import.meta.url), "utf-8");
+
+  const { stdout } = await execFileAsync(process.execPath, [script, "list"]);
+  assert.match(stdout, /Machines and lanes/);
+  assert.match(stdout, /cloud escalation/);
+
+  const after = await readFile(new URL("../../../inventory.json", import.meta.url), "utf-8");
+  assert.equal(before, after, "`list` must be read-only");
+});
+
+test("every discovered runtime kind is known to the generator", async () => {
+  const genSource = await readFile(
+    new URL("../../scripts/generate-registries.mjs", import.meta.url),
+    "utf-8"
+  );
+  const scanSource = await readFile(
+    new URL("../../scripts/scan-tailscale.mjs", import.meta.url),
+    "utf-8"
+  );
+
+  // Anything the scanner can write into inventory.json must be renderable by
+  // the generator, or a scan would produce a config that cannot be synced.
+  // Matched independently of formatting so Prettier cannot break this test.
+  const probeBlock = scanSource.slice(
+    scanSource.indexOf("const PROBES"),
+    scanSource.indexOf("DEFAULT_HERMES_PRIORITY")
+  );
+  const scanned = [...new Set([...probeBlock.matchAll(/kind:\s*"([a-z-]+)"/g)].map((m) => m[1]))];
+  assert.ok(scanned.length >= 4, "expected the scanner to probe several runtimes");
+
+  for (const kind of scanned) {
+    assert.match(
+      genSource,
+      new RegExp(`^\\s+"?${kind}"?:`, "m"),
+      `runtime "${kind}" is discoverable by the scanner but unknown to the generator`
+    );
+  }
+});

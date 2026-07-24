@@ -1,0 +1,238 @@
+{
+  "$schema": "./inventory.schema.json",
+  "version": 1,
+  "_readme": [
+    "THIS IS THE SINGLE SOURCE OF TRUTH FOR YOUR HARDWARE AND ENDPOINTS.",
+    "Describe each machine you own once, list what is installed on it, and run",
+    "`npm run inventory:sync`. That regenerates every consumer config:",
+    "  xx-stack/runtime/platforms.json                 (host-agnostic example registry)",
+    "  opencode-orchestration/opencode/platforms.json  (live registry)",
+    "  hermes-orchestration/config/orchestration.json  (lanes block only)",
+    "Do not hand-edit those files — your edits will be overwritten and CI will fail."
+  ],
+  "policy": {
+    "selfHostedFirst": true,
+    "cloudEscalation": {
+      "optIn": false,
+      "note": "Cloud is strictly opt-in. While optIn is false, routing and fallback never select cloud hosts, even when every self-hosted lane is unreachable. Set optIn to true or export XX_STACK_ALLOW_CLOUD=1 to enable it."
+    },
+    "laneOrder": [
+      "local",
+      "tailscale-openai-compatible",
+      "tailscale-ollama",
+      "cloud"
+    ]
+  },
+  "machines": [
+    {
+      "id": "local-workstation",
+      "label": "This workstation",
+      "network": {
+        "scope": "localhost",
+        "address": "127.0.0.1"
+      },
+      "hardware": {
+        "summary": "Detected during setup",
+        "cpu": "Detected during setup",
+        "ram": "Detected during setup",
+        "gpu": [],
+        "limits": [
+          "Best for low-latency coding and iterative execution",
+          "Do not schedule many concurrent heavy reasoning jobs while actively developing",
+          "If multiple slices need different Ollama models here, serialize them and switch only at explicit handoff boundaries"
+        ]
+      },
+      "execution": {
+        "maxParallelSlices": 2,
+        "maxConcurrentModels": 1,
+        "contextReservePercent": 25,
+        "scheduling": "serial-per-model"
+      },
+      "delegation": {
+        "preferredTaskTypes": [
+          "quick-verify",
+          "small-fix",
+          "interactive-coding",
+          "offline-fallback"
+        ]
+      },
+      "runtimes": [
+        {
+          "kind": "ollama",
+          "port": 11434,
+          "enabled": true,
+          "primary": true,
+          "models": []
+        },
+        {
+          "kind": "llama-cpp",
+          "port": 8080,
+          "enabled": false,
+          "notes": "Enable if you run llama-server locally on :8080.",
+          "models": []
+        }
+      ]
+    },
+    {
+      "id": "skippy-debian-5090",
+      "label": "Skippy Debian AI rig",
+      "network": {
+        "scope": "tailscale",
+        "address": "skippy-debian-5090",
+        "notes": "Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet."
+      },
+      "hardware": {
+        "summary": "8x RTX 5090 Debian AI rig (Skippy)",
+        "gpu": [
+          {
+            "name": "NVIDIA RTX 5090",
+            "count": 8,
+            "vramGb": 32
+          }
+        ],
+        "detected": {
+          "gpuCount": 8,
+          "totalGpuVramGb": 256
+        },
+        "limits": [
+          "Primary lane runs sglang on :30000; keep Ollama as the compatibility lane",
+          "Prefer the sglang lane for long-context and high-throughput work"
+        ]
+      },
+      "execution": {
+        "maxParallelSlices": 8,
+        "maxConcurrentModels": 2,
+        "contextReservePercent": 20,
+        "scheduling": "throughput"
+      },
+      "delegation": {
+        "preferredTaskTypes": [
+          "planning",
+          "architecture",
+          "multi-step reasoning",
+          "broad research",
+          "parallel delegated slices",
+          "long-context synthesis"
+        ],
+        "avoidTaskTypes": [
+          "tight edit-run-edit loops",
+          "low-latency interactive coding"
+        ]
+      },
+      "runtimes": [
+        {
+          "kind": "sglang",
+          "port": 30000,
+          "enabled": true,
+          "primary": true,
+          "reachable": true,
+          "hermesPriority": 100,
+          "notes": "Preferred remote lane. sglang batches concurrent requests across the GPUs, so parallel slices are close to free relative to sequential execution.",
+          "models": [
+            {
+              "name": "qwen3-coder-next",
+              "roles": [
+                "implement",
+                "plan",
+                "reason",
+                "research",
+                "long-context"
+              ],
+              "priority": "high",
+              "contextWindow": 262144,
+              "supportsToolUse": true,
+              "toolCallReliability": "validated",
+              "jsonModeReliability": "validated"
+            }
+          ]
+        },
+        {
+          "kind": "ollama",
+          "port": 11434,
+          "enabled": false,
+          "reachable": false,
+          "hermesPriority": 70,
+          "notes": "Ollama binds to 127.0.0.1 by default and is not reachable over Tailscale until you set OLLAMA_HOST on the rig and restart it. Enable this runtime once that is done and `ollama list` shows the model below.",
+          "models": [
+            {
+              "name": "qwen3-coder:30b",
+              "roles": [
+                "implement",
+                "fallback"
+              ],
+              "priority": "medium"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "aggregators": [
+    {
+      "id": "hermes-proxy",
+      "label": "Hermes local-first control plane (loopback proxy)",
+      "kind": "hermes",
+      "network": {
+        "scope": "loopback",
+        "address": "127.0.0.1"
+      },
+      "port": 8180,
+      "enabled": false,
+      "notes": "OpenAI-compatible loopback proxy exposed by hermes-orchestration. Start it with `python3 hermes-orchestration/scripts/hermes_orchestrator.py serve` and export HERMES_PROXY_TOKEN. Hermes applies its own lane policy behind this single endpoint, so enabling it delegates lane selection to Hermes instead of routing to a backend directly. Leave disabled if you would rather address your machines directly — the two approaches are alternatives, not layers.",
+      "execution": {
+        "maxParallelSlices": 4,
+        "maxConcurrentModels": 1,
+        "contextReservePercent": 20,
+        "scheduling": "parallel-batched"
+      },
+      "models": [
+        {
+          "name": "hermes-auto",
+          "roles": [
+            "implement",
+            "plan",
+            "reason",
+            "fallback"
+          ],
+          "priority": "medium",
+          "toolCallReliability": "unverified",
+          "jsonModeReliability": "unverified",
+          "notes": "Virtual model name — Hermes resolves the real backend per its own lane policy."
+        }
+      ]
+    }
+  ],
+  "cloud": {
+    "providers": [
+      {
+        "id": "openai-compatible-template",
+        "label": "Generic OpenAI-compatible cloud endpoint",
+        "provider": "openai-compatible",
+        "endpoint": "https://example.invalid/v1",
+        "enabled": false,
+        "notes": "Template. Replace endpoint and models with a real provider if you opt in to cloud."
+      },
+      {
+        "id": "google-template",
+        "label": "Google Gemini",
+        "provider": "google",
+        "endpoint": "https://generativelanguage.googleapis.com",
+        "enabled": false,
+        "notes": "Template. Requires an API key; only reachable when cloud escalation is opted in."
+      }
+    ],
+    "hermesCli": {
+      "id": "github-premium-cloud",
+      "provider": "github-copilot",
+      "endpointType": "hermes_cli",
+      "baseUrl": "github-premium://local-hermes-cli",
+      "model": "gpt-5.3-codex",
+      "fallbackModels": [
+        "gpt-5.4"
+      ],
+      "hermesPriority": 50,
+      "enabled": true,
+      "notes": "Hermes reaches this through the local `hermes` CLI rather than an HTTP endpoint. Still gated by policy.cloudEscalation.optIn on the xx-stack side and by --allow-cloud on the Hermes side."
+    }
+  }
+}

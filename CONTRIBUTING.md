@@ -95,6 +95,29 @@ Canonical agent contracts live in `xx-stack/runtime/agents/`. The files under
 2. Register it in `xx-stack/runtime/SKILLS.md`
 3. Add adapter surfaces only when a downstream host requires them
 
+### Hardware and Endpoint Config — generated, do not hand-edit
+
+`inventory.json` is the only file you edit to describe machines, networks, and
+installed runtimes. These three are **generated from it** and carry a
+`_generated` banner:
+
+- `xx-stack/runtime/platforms.json` (built from `inventory.example.json`, so the
+  core stays host-agnostic and no clone ships the maintainer's hardware)
+- `opencode-orchestration/opencode/platforms.json`
+- `hermes-orchestration/config/orchestration.json` — the `lanes` block and the
+  cloud-gate fields only; its `execution` and `proxy` sections stay hand-tuned
+
+Run `npm run inventory:sync` after any change. `npm run inventory:check` is part
+of `npm run verify` and runs in CI, so drift fails the build rather than
+silently diverging.
+
+Adding support for a new inference server means adding one entry to the
+`RUNTIMES` table in `xx-stack/scripts/generate-registries.mjs` and one value to
+the `kind` enum in `inventory.schema.json`. Note that `endpointFamily` (how the
+TypeScript registry inspects models) and `hermesEndpointType` (how Hermes dials
+it) are deliberately separate — Ollama is its own family to the TS side but
+plain `openai_compatible` to Hermes.
+
 ### Routing and Cloud Escalation
 
 Cloud routing is gated by `cloudRoutingAllowed()` in

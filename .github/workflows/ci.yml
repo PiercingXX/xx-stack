@@ -28,6 +28,9 @@ jobs:
       - name: Verify VS Code agent mirrors are in sync
         run: npm run agents:check
 
+      - name: Verify generated registries match inventory.json
+        run: npm run inventory:check
+
       - name: Lint
         run: npm run lint
 
