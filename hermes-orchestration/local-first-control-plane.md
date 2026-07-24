@@ -18,7 +18,7 @@ The contract below must match those files.
 
 - Orchestration decisions are always made on the orchestrator host; inference runs
   on self-hosted lanes first.
-- Self-hosted inference host: `skippy-debian-5090` (Debian, 4x RTX 5090), reached
+- Self-hosted inference host: `skippy-debian-5090` (Debian, 8x RTX 5090), reached
   over Tailscale only (MagicDNS `skippy-debian-5090`).
 - Lanes are named config entries (`sglang`, `ollama`, `cloud`) with a `role`
   (`self_hosted` or `cloud`) and numeric `priority`; higher priority is tried first
@@ -28,7 +28,7 @@ The contract below must match those files.
   2. `skippy-ollama-5090` (ollama, port 11434)
   3. Cloud lane when enabled and needed
 - Mandatory lane order for delegated subagent slices (`execution.subagent_profile_orders`):
-  1. `skippy-sglang-5090` (preferred — batched parallel serving on 4x 5090)
+  1. `skippy-sglang-5090` (preferred — batched parallel serving on 8x 5090)
   2. `skippy-ollama-5090`
   3. Cloud lane for eligible presets only after self-hosted lanes are unavailable or unsuitable
 

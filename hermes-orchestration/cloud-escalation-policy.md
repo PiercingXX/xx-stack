@@ -23,7 +23,7 @@ If any condition is false, cloud is denied.
 
 ## Delegation order
 
-1. `skippy-sglang-5090` over Tailscale (preferred delegated lane, 4x RTX 5090)
+1. `skippy-sglang-5090` over Tailscale (preferred delegated lane, 8x RTX 5090)
 2. `skippy-ollama-5090` over Tailscale (fallback runtime on the same rig)
 3. Cloud lane for eligible delegated tasks only after self-hosted exhaustion or model mismatch
 

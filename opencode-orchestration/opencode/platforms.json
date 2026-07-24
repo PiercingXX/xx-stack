@@ -149,7 +149,7 @@
       "id": "tailscale-ollama",
       "label": "Tailscale Ollama compatibility lane",
       "priority": 3,
-      "usageGuidance": "Use for delegated subagents and parallel reasoning slices while local orchestration continues on the workstation. Currently backed by Skippy (quad RTX 5090 Debian rig); the sglang OpenAI-compatible lane is the preferred remote lane.",
+      "usageGuidance": "Use for delegated subagents and parallel reasoning slices while local orchestration continues on the workstation. Currently backed by Skippy (8x RTX 5090 Debian rig); the sglang OpenAI-compatible lane is the preferred remote lane.",
       "hosts": [
         {
           "id": "skippy-debian-5090",
@@ -181,13 +181,13 @@
             ]
           },
           "hardware": {
-            "summary": "Quad RTX 5090 Debian AI rig (Skippy)",
+            "summary": "8x RTX 5090 Debian AI rig (Skippy)",
             "cpu": "Optional",
             "ram": "Optional",
             "gpu": [
               {
                 "name": "NVIDIA RTX 5090",
-                "count": 4
+                "count": 8
               }
             ],
             "limits": [
@@ -195,8 +195,8 @@
               "Prefer sglang lane for long-context and high-throughput work"
             ],
             "detected": {
-              "gpuCount": 4,
-              "totalGpuVramGb": 128
+              "gpuCount": 8,
+              "totalGpuVramGb": 256
             }
           },
           "models": []
@@ -207,7 +207,7 @@
       "id": "tailscale-openai-compatible",
       "label": "Tailscale OpenAI-compatible lane",
       "priority": 2,
-      "usageGuidance": "Preferred remote lane: Skippy runs sglang (OpenAI-compatible /v1) on quad RTX 5090s. Keep the Ollama lane available as compatibility fallback when tool or JSON reliability is not yet validated.",
+      "usageGuidance": "Preferred remote lane: Skippy runs sglang (OpenAI-compatible /v1) on 8x RTX 5090s. Keep the Ollama lane available as compatibility fallback when tool or JSON reliability is not yet validated.",
       "hosts": [
         {
           "id": "local-openai-compatible",
@@ -231,7 +231,7 @@
         },
         {
           "id": "tailscale-openai-compatible-primary",
-          "label": "Skippy sglang endpoint (quad RTX 5090)",
+          "label": "Skippy sglang endpoint (8x RTX 5090)",
           "provider": "sglang-remote",
           "endpoint": "http://skippy-debian-5090:30000",
           "networkScope": "tailscale",
@@ -269,16 +269,16 @@
           "reachable": true,
           "connectionNotes": "Skippy (skippy-debian-5090, the MagicDNS name) running sglang on :30000. Serves qwen3-coder-next with a 262144-token context window.",
           "hardware": {
-            "summary": "Quad RTX 5090 Debian AI rig (Skippy) running sglang",
+            "summary": "8x RTX 5090 Debian AI rig (Skippy) running sglang",
             "gpu": [
               {
                 "name": "NVIDIA RTX 5090",
-                "count": 4
+                "count": 8
               }
             ],
             "detected": {
-              "gpuCount": 4,
-              "totalGpuVramGb": 128
+              "gpuCount": 8,
+              "totalGpuVramGb": 256
             }
           }
         }

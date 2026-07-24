@@ -1,7 +1,7 @@
 # Model Qualification Matrix
 
 > **2026-07-05 topology note:** production lanes moved to `skippy-debian-5090`
-> (4x RTX 5090) running sglang (port 30000) and ollama (port 11434) over Tailscale.
+> (8x RTX 5090) running sglang (port 30000) and ollama (port 11434) over Tailscale.
 > The Debian dual-4080 / Arch dual-5090 llama.cpp hosts below are historical; the
 > matrix methodology still applies and should be re-run against the new lanes.
 > Current qualified default: `qwen3-coder-next` on sglang (262k context,

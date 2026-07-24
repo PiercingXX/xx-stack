@@ -3,7 +3,7 @@
 Last updated: 2026-07-05
 
 > **2026-07-05 retarget:** self-hosted lanes now live on `skippy-debian-5090`
-> (4x RTX 5090) over Tailscale — sglang on port 30000 (primary, `qwen3-coder-next`)
+> (8x RTX 5090) over Tailscale — sglang on port 30000 (primary, `qwen3-coder-next`)
 > and ollama on port 11434 (fallback, pending `OLLAMA_HOST` exposure on the rig).
 > References below to "Debian local llama.cpp" and "Arch over Tailscale" predate
 > this and map to the sglang and ollama lanes respectively.
