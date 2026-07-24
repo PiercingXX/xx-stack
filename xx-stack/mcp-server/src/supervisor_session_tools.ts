@@ -1,0 +1,617 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { resolve } from "node:path";
+
+import { emitLifecycleHooks } from "./execution_policy.js";
+import { logEvent } from "./log_worker.js";
+import type { SupervisorRoute, SupervisorSessionState } from "./supervisor_runtime.js";
+import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
+
+import { jsonContent } from "./agent_tool_helpers.js";
+export function registerSupervisorSessionTools(server: McpServer, deps: SupervisorToolDeps): void {
+  server.tool(
+    "supervisor_start_session",
+    "Start or restart a supervised orchestrator session with persisted fallback state",
+    {
+      sessionId: z.string().optional().describe("Optional supervisor session ID"),
+      description: z.string().describe("Task description this session should supervise"),
+      preferredHost: z.string().optional().describe("Preferred host ID for primary attempt"),
+      preferredModel: z.string().optional().describe("Preferred model for primary attempt"),
+      maxFallbacks: z
+        .number()
+        .int()
+        .min(1)
+        .max(8)
+        .optional()
+        .describe("Maximum fallback routes to precompute"),
+      forceRestart: z.boolean().optional().describe("Replace an existing session with the same ID"),
+      memorySync: z
+        .object({
+          agentId: z
+            .string()
+            .min(1)
+            .describe("Agent identifier to enforce memory snapshot sync on completion"),
+          scope: z
+            .enum(["user", "project", "local"])
+            .optional()
+            .describe("Memory scope to enforce; defaults to project"),
+          cwd: z
+            .string()
+            .optional()
+            .describe("Project root used for project/local scope; defaults to current process cwd"),
+        })
+        .optional()
+        .describe("Optional memory sync guard for completion gating"),
+    },
+    async ({
+      sessionId,
+      description,
+      preferredHost,
+      preferredModel,
+      maxFallbacks,
+      forceRestart,
+      memorySync,
+    }) =>
+      deps.withSupervisorStoreLock(async () => {
+        const registry = await deps.loadRegistry();
+        const reliability = await deps.loadReliabilityConfig();
+        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+        const id =
+          sessionId?.trim() ||
+          `sx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+        if (store.sessions[id] && !forceRestart) {
+          return jsonContent({
+            status: "exists",
+            sessionId: id,
+            session: store.sessions[id],
+            message: "Session already exists. Use forceRestart=true to replace it.",
+          });
+        }
+
+        const now = Date.now();
+        const banned = new Set<string>();
+        for (const [key, failure] of Object.entries(store.hostModelFailures)) {
+          if (
+            (failure.cooldownUntil ?? 0) > now &&
+            failure.count >= reliability.banHostModelAfterFailures
+          ) {
+            banned.add(key);
+          }
+        }
+
+        const candidates = await deps.buildWatchdogRouteCandidates(
+          registry,
+          description,
+          preferredHost ?? null,
+          preferredModel ?? null,
+          maxFallbacks ?? 3,
+          banned
+        );
+
+        const selected = candidates.healthyPrimary
+          ? candidates.primary
+          : (candidates.candidates[0] ?? null);
+
+        void logEvent("server", "session.started", {
+          sessionId: id,
+          description,
+          healthyPrimary: candidates.healthyPrimary,
+          fallbackCount: candidates.candidates.length,
+          selectedHost: selected?.host ?? null,
+          selectedModel: selected?.model ?? null,
+        });
+
+        const state: SupervisorSessionState = {
+          sessionId: id,
+          description,
+          status: selected ? "running" : "blocked",
+          startedAt: now,
+          lastProgressAt: now,
+          lastOutputAt: undefined,
+          completionEvidenceAt: undefined,
+          completionEvidenceSummary: undefined,
+          completionJudgeAt: undefined,
+          completionJudgeVerdict: undefined,
+          completionJudgeSummary: undefined,
+          completionMemorySync: memorySync
+            ? {
+                agentId: memorySync.agentId.trim(),
+                scope: memorySync.scope ?? "project",
+                cwd: resolve(memorySync.cwd ?? process.cwd()),
+              }
+            : undefined,
+          attemptCount: selected ? 1 : 0,
+          failureCount: 0,
+          currentRoute: selected,
+          fallbackRoutes: candidates.healthyPrimary
+            ? candidates.candidates
+            : candidates.candidates.slice(1),
+          nextFallbackIndex: 0,
+          continuationCount: 0,
+          currentAttemptId: selected ? deps.makeAttemptId(id, 1, selected) : undefined,
+          recoveryInFlight: false,
+          events: [
+            deps.sessionEvent(
+              "session.started",
+              selected
+                ? `primary route: ${selected.host}/${selected.model ?? "<none>"}`
+                : "no healthy route available at start"
+            ),
+          ],
+        };
+
+        store.sessions[id] = state;
+        await deps.writeSupervisorStore(store);
+
+        return jsonContent({
+          status: state.status,
+          reasonCode: state.status === "blocked" ? "start_no_healthy_route" : "start_ok",
+          sessionId: id,
+          reliability,
+          completionMemorySync: state.completionMemorySync ?? null,
+          currentAttemptId: state.currentAttemptId,
+          currentRoute: state.currentRoute,
+          fallbackQueueDepth: state.fallbackRoutes.length,
+          routeHealth: candidates.health,
+        });
+      })
+  );
+
+  server.tool(
+    "supervisor_record_event",
+    "Record canonical session lifecycle events (status, error, stop, and output updates) and apply transition logic",
+    {
+      sessionId: z.string().describe("Supervisor session ID"),
+      eventType: z
+        .enum([
+          "session.status.busy",
+          "session.status.retry",
+          "session.status.idle",
+          "session.error",
+          "session.stop",
+          "message.updated.assistant",
+          "message.part.updated.assistant",
+          "tool.execute.before",
+          "tool.execute.after",
+          "session.custom",
+        ])
+        .describe("Event type to apply"),
+      detail: z.string().optional().describe("Optional event detail"),
+    },
+    async ({ sessionId, eventType, detail }) =>
+      deps.withSupervisorStoreLock(async () => {
+        const reliability = await deps.loadReliabilityConfig();
+        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+        const state = store.sessions[sessionId];
+
+        if (!state) {
+          return jsonContent({ status: "missing", sessionId });
+        }
+
+        const now = Date.now();
+        const transition = deps.applySupervisorEventTransition(
+          state,
+          eventType,
+          now,
+          reliability,
+          detail
+        );
+        const hookSummary = await emitLifecycleHooks("supervisor.event_recorded", {
+          sessionId,
+          eventType,
+          reasonCode: transition.reasonCode,
+          status: state.status,
+        });
+        await deps.writeSupervisorStore(store);
+
+        return jsonContent({
+          status: state.status,
+          reasonCode: transition.reasonCode,
+          sessionId,
+          eventType,
+          stateChanged: transition.stateChanged,
+          hooks: hookSummary,
+          lastProgressAt: state.lastProgressAt,
+          lastOutputAt: state.lastOutputAt,
+          abortDetectedAt: state.abortDetectedAt,
+          pendingCompletionValidationAt: state.pendingCompletionValidationAt,
+          currentAttemptId: state.currentAttemptId,
+        });
+      })
+  );
+
+  server.tool(
+    "supervisor_tick",
+    "Tick a supervised session. Detect stalls, apply cooldown/backoff, and switch to fallback route when needed",
+    {
+      sessionId: z.string().describe("Supervisor session ID to tick"),
+      progressObserved: z
+        .boolean()
+        .optional()
+        .describe("Whether deterministic progress was observed since last tick"),
+      note: z.string().optional().describe("Optional operator note for this tick"),
+      forceRecover: z.boolean().optional().describe("Force recovery regardless of timers"),
+    },
+    async ({ sessionId, progressObserved, note, forceRecover }) =>
+      deps.withSupervisorStoreLock(async () => {
+        const reliability = await deps.loadReliabilityConfig();
+        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+        const state = store.sessions[sessionId];
+
+        if (!state) {
+          return jsonContent({ status: "missing", sessionId });
+        }
+
+        const now = Date.now();
+
+        void logEvent({ session: sessionId }, "tick.start", {
+          sessionId,
+          status: state.status,
+          sinceProgressMs: now - state.lastProgressAt,
+          sinceStartMs: now - state.startedAt,
+          failureCount: state.failureCount,
+          attemptCount: state.attemptCount,
+          recoveryInFlight: state.recoveryInFlight,
+          abortDetectedAt: state.abortDetectedAt,
+        });
+
+        if (
+          state.failureCount > 0 &&
+          now - state.lastProgressAt >= reliability.failureResetWindowMs
+        ) {
+          state.failureCount = 0;
+          deps.pushSessionEvent(
+            state,
+            "failure.reset",
+            "failure window expired; resetting consecutive failure count"
+          );
+        }
+
+        if (
+          deps.shouldAutoReleaseLock(
+            state.recoveryInFlight,
+            state.lastRecoveryAt,
+            now,
+            reliability.retryDedupeWindowMs * 3
+          )
+        ) {
+          state.recoveryInFlight = false;
+          deps.pushSessionEvent(
+            state,
+            "recovery.inflight.cleared",
+            `auto-released stale lock after ${now - (state.lastRecoveryAt ?? 0)}ms`
+          );
+        }
+
+        if (progressObserved) {
+          state.lastProgressAt = now;
+          state.lastOutputAt = now;
+          state.abortDetectedAt = undefined;
+          state.pendingCompletionValidationAt = undefined;
+          deps.clearCompletionProof(state);
+          state.status = "running";
+          state.recoveryInFlight = false;
+          deps.pushSessionEvent(state, "progress.observed", note ?? "progress signal received");
+        } else if (note) {
+          deps.pushSessionEvent(state, "progress.note", note);
+        }
+
+        if (
+          state.status === "completed" ||
+          state.status === "blocked" ||
+          state.status === "interrupted" ||
+          state.status === "exhausted"
+        ) {
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: state.status,
+            reasonCode: "terminal_state",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            currentRoute: state.currentRoute,
+            attemptCount: state.attemptCount,
+            failureCount: state.failureCount,
+          });
+        }
+
+        if (state.cooldownUntil && now < state.cooldownUntil) {
+          state.status = "cooldown";
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "cooldown",
+            reasonCode: "cooldown_active",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            waitMs: state.cooldownUntil - now,
+            currentRoute: state.currentRoute,
+          });
+        }
+
+        if (
+          deps.isAbortWindowActive(state.abortDetectedAt, now, reliability.abortWindowMs) &&
+          forceRecover !== true
+        ) {
+          state.status = "cooldown";
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "cooldown",
+            reasonCode: "abort_window_active",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            waitMs: reliability.abortWindowMs - (now - (state.abortDetectedAt ?? now)),
+            currentRoute: state.currentRoute,
+          });
+        }
+
+        const sinceProgress = now - state.lastProgressAt;
+        const sinceStart = now - state.startedAt;
+        const stalled =
+          forceRecover === true ||
+          sinceProgress >= reliability.progressTimeoutMs ||
+          sinceStart >= reliability.hardSessionTimeoutMs;
+
+        if (!stalled) {
+          state.status = "running";
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "running",
+            reasonCode: "healthy_progress_window",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            currentRoute: state.currentRoute,
+            sinceProgressMs: sinceProgress,
+            sinceStartMs: sinceStart,
+            progressTimeoutMs: reliability.progressTimeoutMs,
+            hardSessionTimeoutMs: reliability.hardSessionTimeoutMs,
+          });
+        }
+
+        if (state.recoveryInFlight) {
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "recovering",
+            reasonCode: "retry_in_flight",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            currentRoute: state.currentRoute,
+          });
+        }
+
+        const recoveryKey = deps.makeRecoveryKey(state);
+        if (
+          deps.shouldDedupeContinuation(
+            state.lastRecoveryKey,
+            state.lastRecoveryAt,
+            recoveryKey,
+            now,
+            reliability.retryDedupeWindowMs
+          )
+        ) {
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "cooldown",
+            reasonCode: "recovery_deduped",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            dedupeWindowMs: reliability.retryDedupeWindowMs,
+          });
+        }
+
+        state.lastRecoveryKey = recoveryKey;
+        state.lastRecoveryAt = now;
+
+        state.recoveryInFlight = true;
+        await deps.writeSupervisorStore(store);
+
+        state.failureCount += 1;
+        const previousRoute = state.currentRoute;
+        deps.pushSessionEvent(
+          state,
+          "session.stalled",
+          `stalled after ${sinceProgress}ms since progress, ${sinceStart}ms since start`
+        );
+
+        if (previousRoute) {
+          const key = deps.failureKey(previousRoute.host, previousRoute.model);
+          const prev = store.hostModelFailures[key] ?? { count: 0, lastFailureAt: now };
+          prev.count += 1;
+          prev.lastFailureAt = now;
+          if (prev.count >= reliability.banHostModelAfterFailures) {
+            prev.cooldownUntil = now + reliability.failureResetWindowMs;
+            deps.pushSessionEvent(
+              state,
+              "breaker.opened",
+              `${key} banned until ${new Date(prev.cooldownUntil).toISOString()}`
+            );
+          }
+          store.hostModelFailures[key] = prev;
+        }
+
+        if (
+          state.failureCount >= reliability.maxConsecutiveFailures ||
+          state.attemptCount >= reliability.maxAttemptsPerSlice
+        ) {
+          state.status = "exhausted";
+          state.recoveryInFlight = false;
+          deps.pushSessionEvent(state, "session.exhausted", "max failures or attempts reached");
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "exhausted",
+            reasonCode: "attempts_exhausted",
+            reason: "max failures or attempts reached",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            attemptCount: state.attemptCount,
+            failureCount: state.failureCount,
+            currentRoute: state.currentRoute,
+          });
+        }
+
+        let nextRoute: SupervisorRoute | null =
+          state.fallbackRoutes[state.nextFallbackIndex] ?? null;
+        if (nextRoute) {
+          state.nextFallbackIndex += 1;
+        }
+
+        if (!nextRoute) {
+          const registry = await deps.loadRegistry();
+          const banned = new Set<string>();
+          for (const [key, failure] of Object.entries(store.hostModelFailures)) {
+            if (
+              (failure.cooldownUntil ?? 0) > now &&
+              failure.count >= reliability.banHostModelAfterFailures
+            ) {
+              banned.add(key);
+            }
+          }
+
+          const refreshed = await deps.buildWatchdogRouteCandidates(
+            registry,
+            state.description,
+            previousRoute?.host ?? null,
+            null,
+            4,
+            banned
+          );
+
+          const primaryKey = refreshed.primary
+            ? deps.failureKey(refreshed.primary.host, refreshed.primary.model)
+            : "";
+          nextRoute =
+            refreshed.candidates.find(
+              (candidate) => deps.failureKey(candidate.host, candidate.model) !== primaryKey
+            ) ?? null;
+
+          if (nextRoute) {
+            state.fallbackRoutes = refreshed.candidates.filter(
+              (candidate) =>
+                candidate.host !== nextRoute?.host || candidate.model !== nextRoute?.model
+            );
+            state.nextFallbackIndex = 0;
+          }
+        }
+
+        if (!nextRoute) {
+          state.status = "blocked";
+          state.recoveryInFlight = false;
+          deps.pushSessionEvent(state, "session.blocked", "no healthy fallback routes available");
+          await deps.writeSupervisorStore(store);
+          return jsonContent({
+            status: "blocked",
+            reasonCode: "fallback_exhausted",
+            reason: "no healthy fallback routes available",
+            sessionId,
+            currentAttemptId: state.currentAttemptId,
+            attemptCount: state.attemptCount,
+            failureCount: state.failureCount,
+          });
+        }
+
+        if (nextRoute.endpoint.startsWith("http")) {
+          const pingOk = await deps.quickPingEndpoint(nextRoute.endpoint);
+          if (!pingOk) {
+            void logEvent("server", "fallback.ping_failed", {
+              sessionId,
+              host: nextRoute.host,
+              endpoint: nextRoute.endpoint,
+              note: "skipping dead candidate; will re-try next fallback on next tick",
+            });
+            void logEvent({ session: sessionId }, "fallback.ping_failed", {
+              host: nextRoute.host,
+              endpoint: nextRoute.endpoint,
+            });
+            state.status = "cooldown";
+            state.cooldownUntil = now + reliability.retryDedupeWindowMs;
+            state.recoveryInFlight = false;
+            await deps.writeSupervisorStore(store);
+            return jsonContent({
+              status: "cooldown",
+              reasonCode: "fallback_ping_failed",
+              sessionId,
+              skippedHost: nextRoute.host,
+              retryAfterMs: reliability.retryDedupeWindowMs,
+            });
+          }
+        }
+
+        state.currentRoute = nextRoute;
+        state.attemptCount += 1;
+        state.currentAttemptId = deps.makeAttemptId(sessionId, state.attemptCount, nextRoute);
+        state.status = "cooldown";
+        const backoffMs = deps.computeBackoffMs(reliability, state.failureCount);
+        state.cooldownUntil = now + backoffMs;
+        state.lastProgressAt = now;
+        state.recoveryInFlight = false;
+        deps.pushSessionEvent(
+          state,
+          "fallback.applied",
+          `${nextRoute.host}/${nextRoute.model ?? "<none>"} (attempt ${state.attemptCount})`
+        );
+
+        void logEvent("server", "fallback.applied", {
+          sessionId,
+          host: nextRoute.host,
+          model: nextRoute.model,
+          attemptCount: state.attemptCount,
+          failureCount: state.failureCount,
+          backoffMs,
+        });
+        void logEvent({ session: sessionId }, "fallback.applied", {
+          host: nextRoute.host,
+          model: nextRoute.model,
+          attemptCount: state.attemptCount,
+          backoffMs,
+          cooldownUntil: new Date(state.cooldownUntil).toISOString(),
+        });
+
+        await deps.writeSupervisorStore(store);
+
+        return jsonContent({
+          status: "recovering",
+          reasonCode: "fallback_applied",
+          sessionId,
+          currentAttemptId: state.currentAttemptId,
+          switchedTo: nextRoute,
+          backoffMs,
+          cooldownUntil: new Date(state.cooldownUntil).toISOString(),
+          attemptCount: state.attemptCount,
+          failureCount: state.failureCount,
+        });
+      })
+  );
+
+  server.tool(
+    "supervisor_abort_session",
+    "Abort a supervised session and mark it as interrupted",
+    {
+      sessionId: z.string().describe("Supervisor session ID"),
+      reason: z.string().optional().describe("Optional abort reason"),
+    },
+    async ({ sessionId, reason }) =>
+      deps.withSupervisorStoreLock(async () => {
+        const reliability = await deps.loadReliabilityConfig();
+        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+        const state = store.sessions[sessionId];
+        if (!state) {
+          return jsonContent({ status: "missing", sessionId });
+        }
+
+        state.status = "interrupted";
+        state.lastProgressAt = Date.now();
+        state.cooldownUntil = undefined;
+        state.recoveryInFlight = false;
+        deps.pushSessionEvent(state, "session.interrupted", reason ?? "abort requested");
+        await deps.writeSupervisorStore(store);
+
+        return jsonContent({
+          status: "interrupted",
+          reasonCode: "interrupt_requested",
+          sessionId,
+          currentAttemptId: state.currentAttemptId,
+          currentRoute: state.currentRoute,
+          reason: reason ?? "abort requested",
+        });
+      })
+  );
+}

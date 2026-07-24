@@ -1,70 +1,65 @@
 # xx-stack Copilot Instructions
 
-This repository contains xx-stack, a production-oriented agent stack for AI-assisted software development.
+This repository is local-first orchestration for AI coding agents: a routing MCP
+server, agent contracts and skills, and a self-hosted inference control plane.
 
 ## Repository Structure
 
-- **Stack Core** (`runtime/`, `mcp-server/`, `scripts/`, `adapters/`): Reusable agent contracts, skills, routing policy, and MCP infrastructure
-- **Content Packs** (`packs/design/`): Domain-specific content consumed by agents and skills
+Three components at the top level:
+
+- **`xx-stack/`** — the core and the source of truth. Agent contracts
+  (`runtime/agents/`), skills (`runtime/skills/`), the routing MCP server
+  (`mcp-server/`), shared tooling (`scripts/`), and the design content pack
+  (`packs/design/`). Host-agnostic.
+- **`opencode-orchestration/`** — the OpenCode / VS Code install layer. Its
+  `mcp-server/`, `scripts/`, and `packs/` are **symlinks into `../xx-stack/`**,
+  not copies. Edit at the real path.
+- **`hermes-orchestration/`** — standalone Python control plane for routing
+  inference across self-hosted lanes over Tailscale. No dependency on the
+  TypeScript stack.
 
 ## Key Files
 
-- `runtime/config.json`: Agent registry defaults
-- `runtime/shared_instructions.md`: Shared runtime behavior and delegation rules
-- `runtime/SKILLS.md`: Canonical skill inventory
-- `runtime/FILE-STRUCTURE.md`: Navigation map
-- `REPO-LAYERS.md`: Stack-core vs content-pack boundary
+- `xx-stack/runtime/config.json` — agent registry defaults
+- `xx-stack/runtime/platforms.json` — example platform registry (hosts, tiers)
+- `xx-stack/runtime/shared_instructions.md` — shared runtime behavior
+- `xx-stack/runtime/SKILLS.md` — canonical skill inventory
+- `xx-stack/REPO-LAYERS.md` — stack-core vs content-pack boundary
+- `hermes-orchestration/config/orchestration.json` — lane and escalation policy
 
-## Primary Agents
+## Routing Policy — do not weaken
 
-- `execution-orchestrator`: Accountable orchestration and completion gates
-- `build`: Implementation agent
-- `fast-build`: Narrow speed lane for small changes
-- `plan`: Planning-only lane
-- `deep-thinker`: Architecture, risk, and deep reasoning
-- `release-manager`: Release and deployment gating
-- `incident-commander`: Incident handling
-- `design-engineer`: Design workflow specialist
+Local first, self-hosted over Tailscale second, cloud **only** when explicitly
+opted in via `selectionPolicy.cloudEscalation.optIn` or `XX_STACK_ALLOW_CLOUD=1`.
+The gate lives in `xx-stack/mcp-server/src/routing_selection_runtime.ts`
+(`cloudRoutingAllowed`) and is fail-safe by design: absent config means cloud is
+off. Never add a cloud code path that bypasses it.
 
-## Setup Commands
+## Commands
 
 ```bash
-# Wire a workspace to xx-stack (MCP config, agents, design pack links)
-./setup-vscode.sh <target-project>
-
-# Install agents and prompts globally for all VS Code workspaces
-./setup-vscode.sh --global
-
-# Verify repo layout
-node scripts/verify-repo-layout.mjs
-
-# Sync VS Code agent mirrors
-node scripts/sync-vscode-agents.mjs
-
-# Regenerate design catalog
-npm --prefix mcp-server run design-pack:catalog
+npm run verify          # full gate: layout + agent sync + all tests
+npm test                # MCP server suite (58 tests)
+npm run hermes:test     # Hermes control plane (25 tests)
+npm run layout:verify   # component layout and compatibility symlinks
+npm run lint            # ESLint over TypeScript sources
+npm run agents:sync     # regenerate VS Code agent mirrors
+npm run design:catalog  # regenerate the design system catalog
 ```
 
-Global prompt install alone is not enough: `--global` does not configure MCP
-or link the design pack. Run `./setup-vscode.sh <target-project>` in workspace
-mode to wire `.vscode/mcp.json` and the design pack symlinks.
+## Conventions
 
-## Git Hooks
-
-Pre-commit hook prevents VS Code agent mirrors from drifting. Activate with:
-
-```bash
-git config core.hooksPath .githooks
-```
+- Canonical agent contracts live in `xx-stack/runtime/agents/`;
+  `xx-stack/adapters/agents/` are **generated** — edit the runtime files and run
+  `npm run agents:sync`
+- Prettier is not applied to `xx-stack/packs/` (vendored upstream content)
+- Keep hostnames, IPs, and absolute paths out of committed files; use
+  placeholders and document the substitution
+- Generated files stay out of git
+- Respect `.xxignore` for repo-local context exclusions
 
 ## Requirements
 
 - Node.js 20+
-- MCP-compatible host
-- At least one reachable model provider
-
-## Notes
-
-- Canonical agent contracts live in `runtime/agents/*.md`; `adapters/agents/` are auto-generated from them - edit runtime files, not adapter files
-- The repo is host-agnostic - use setup scripts only when integrating with specific editors
-- Generated files should stay out of git
+- Python 3.11+ (hermes only)
+- An MCP-compatible host and at least one reachable model provider

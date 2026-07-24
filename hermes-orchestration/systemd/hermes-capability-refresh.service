@@ -1,0 +1,15 @@
+[Unit]
+Description=Hermes capability cache refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# TEMPLATE: replace __HERMES_DIR__ with the absolute path to this
+# hermes-orchestration/ directory before installing. systemd does not resolve
+# relative paths. The install helper does this for you:
+#
+#   ./scripts/install_systemd_units.sh
+#
+Type=oneshot
+WorkingDirectory=__HERMES_DIR__
+ExecStart=__HERMES_DIR__/scripts/refresh_capability_cache.sh

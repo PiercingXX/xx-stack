@@ -1,0 +1,358 @@
+{
+  "$schema": "./platforms.schema.json",
+  "version": 1,
+  "selectionPolicy": {
+    "defaultOrder": [
+      "local",
+      "tailscale-openai-compatible",
+      "tailscale-ollama",
+      "cloud"
+    ],
+    "cloudEscalation": {
+      "optIn": false,
+      "note": "Cloud tier is strictly opt-in. While optIn is false, routing and fallback never select cloud hosts, even when all self-hosted tiers are unreachable. Set optIn to true or export XX_STACK_ALLOW_CLOUD=1 to enable cloud escalation."
+    },
+    "rules": [
+      {
+        "name": "Prefer local for code execution",
+        "when": "editing, test execution, code review, short iterative loops",
+        "preferTier": "local"
+      },
+      {
+        "name": "Prefer local for orchestration and planning",
+        "when": "orchestration, planning, architecture framing, broad synthesis on the primary controller",
+        "preferTier": "local"
+      },
+      {
+        "name": "Use remote for delegated subagents",
+        "when": "parallel subagent reasoning, delegated research, overflow analysis, non-blocking long-context slices",
+        "preferTier": "tailscale-ollama"
+      },
+      {
+        "name": "Escalate to cloud when justified and opted in",
+        "when": "cloud escalation is explicitly opted in AND required model capability is unavailable locally/remotely, latency is acceptable, or quality/availability requirements outweigh local cost savings",
+        "preferTier": "cloud"
+      },
+      {
+        "name": "Prefer OpenAI-compatible remote lane when enabled",
+        "when": "sglang, openai-compatible endpoint, llama-server, turboquant, llama.cpp preferred lane, localai fallback lane",
+        "preferTier": "tailscale-openai-compatible"
+      },
+      {
+        "name": "Prefer turboquant lane for long-context low-latency tasks",
+        "when": "long-context, low-latency, sufficient memory headroom, llama.cpp lane enabled",
+        "preferTier": "tailscale-openai-compatible"
+      },
+      {
+        "name": "Avoid turboquant lane for tool-critical tasks without validated support",
+        "when": "strict function-calling, strict json mode, tool reliability not validated",
+        "preferTier": "tailscale-ollama"
+      },
+      {
+        "name": "Fallback behavior",
+        "when": "preferred tier is unavailable or overloaded",
+        "preferTier": "next-available"
+      }
+    ]
+  },
+  "tiers": [
+    {
+      "id": "local",
+      "label": "Self-hosted local Ollama",
+      "priority": 1,
+      "usageGuidance": "Use first for fast coding, verification, and review loops on the current machine.",
+      "hosts": [
+        {
+          "id": "local-workstation",
+          "label": "Primary local machine",
+          "provider": "ollama-local",
+          "endpoint": "http://127.0.0.1:11434",
+          "networkScope": "localhost",
+          "executionPolicy": {
+            "maxParallelSlices": 2,
+            "maxConcurrentModels": 2,
+            "contextReservePercent": 25,
+            "scheduling": "balanced"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "implementation",
+              "code-review",
+              "test-execution",
+              "release-checks"
+            ],
+            "avoidTaskTypes": [
+              "very-long-context synthesis when local GPUs are actively needed for development",
+              "concurrent multi-model workloads on the same Ollama endpoint unless explicitly proven safe"
+            ]
+          },
+          "hardware": {
+            "summary": "Detected during setup",
+            "cpu": "Detected during setup",
+            "ram": "Detected during setup",
+            "gpu": [],
+            "limits": [
+              "Best for low-latency coding and iterative execution",
+              "Do not schedule too many concurrent heavy reasoning jobs if active development is in progress",
+              "If multiple slices require different Ollama models on this host, serialize them and switch models only at explicit handoff boundaries"
+            ]
+          },
+          "models": []
+        },
+        {
+          "id": "hermes-proxy",
+          "label": "Hermes local-first control plane (loopback proxy)",
+          "provider": "hermes-proxy",
+          "endpoint": "http://127.0.0.1:8180",
+          "networkScope": "loopback",
+          "enabled": false,
+          "connectionNotes": "OpenAI-compatible loopback proxy exposed by hermes-orchestration. Start it with `python3 hermes-orchestration/scripts/hermes_orchestrator.py serve` and export HERMES_PROXY_TOKEN. Hermes applies its own self-hosted-first lane policy behind this single endpoint, so routing here delegates lane selection to Hermes rather than picking a backend directly. Set enabled=true once the proxy is running; check readiness with `curl http://127.0.0.1:8180/healthz`.",
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false
+          },
+          "executionPolicy": {
+            "maxParallelSlices": 4,
+            "maxConcurrentModels": 1,
+            "contextReservePercent": 20,
+            "scheduling": "parallel-batched"
+          },
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "delegated-self-hosted-routing",
+              "long-context synthesis across self-hosted lanes",
+              "parallel subagent slices"
+            ],
+            "avoidTaskTypes": [
+              "work that must pin one specific backend"
+            ]
+          },
+          "models": [
+            {
+              "name": "hermes-auto",
+              "roles": [
+                "implement",
+                "plan",
+                "reason",
+                "fallback"
+              ],
+              "priority": "medium",
+              "toolCallReliability": "unverified",
+              "jsonModeReliability": "unverified",
+              "notes": "Virtual model name \u2014 Hermes selects the real backend per its own lane policy."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "tailscale-ollama",
+      "label": "Tailscale Ollama compatibility lane",
+      "priority": 3,
+      "usageGuidance": "Use for delegated subagents and parallel reasoning slices while local orchestration continues on the workstation. Currently backed by Skippy (quad RTX 5090 Debian rig); the sglang OpenAI-compatible lane is the preferred remote lane.",
+      "hosts": [
+        {
+          "id": "skippy-debian-5090",
+          "label": "Skippy Debian AI rig (Ollama lane)",
+          "provider": "ollama",
+          "endpoint": "http://skippy-debian-5090:11434",
+          "networkScope": "tailscale",
+          "primary": true,
+          "enabled": true,
+          "reachable": false,
+          "executionPolicy": {
+            "maxParallelSlices": 4,
+            "maxConcurrentModels": 2,
+            "contextReservePercent": 20,
+            "scheduling": "throughput"
+          },
+          "connectionNotes": "Skippy (skippy-debian-5090, the MagicDNS name). Ollama is installed but currently refuses connections on the Tailscale interface; on Skippy set a systemd override with Environment=\"OLLAMA_HOST=0.0.0.0:11434\" (or bind only to the tailnet address from `tailscale ip -4`) and restart ollama, then re-run setup to sync inventory and flip reachable.",
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "planning",
+              "architecture",
+              "multi-step reasoning",
+              "broad research",
+              "parallel delegated slices"
+            ],
+            "avoidTaskTypes": [
+              "tight edit-run-edit loops",
+              "low-latency interactive coding"
+            ]
+          },
+          "hardware": {
+            "summary": "Quad RTX 5090 Debian AI rig (Skippy)",
+            "cpu": "Optional",
+            "ram": "Optional",
+            "gpu": [
+              {
+                "name": "NVIDIA RTX 5090",
+                "count": 4
+              }
+            ],
+            "limits": [
+              "Primary remote lane runs sglang on :30000; keep Ollama as the compatibility lane",
+              "Prefer sglang lane for long-context and high-throughput work"
+            ],
+            "detected": {
+              "gpuCount": 4,
+              "totalGpuVramGb": 128
+            }
+          },
+          "models": []
+        }
+      ]
+    },
+    {
+      "id": "tailscale-openai-compatible",
+      "label": "Tailscale OpenAI-compatible lane",
+      "priority": 2,
+      "usageGuidance": "Preferred remote lane: Skippy runs sglang (OpenAI-compatible /v1) on quad RTX 5090s. Keep the Ollama lane available as compatibility fallback when tool or JSON reliability is not yet validated.",
+      "hosts": [
+        {
+          "id": "local-openai-compatible",
+          "label": "Local OpenAI-compatible endpoint",
+          "provider": "llama-cpp-local",
+          "endpoint": "http://127.0.0.1:8080",
+          "networkScope": "localhost",
+          "enabled": false,
+          "executionPolicy": {
+            "maxParallelSlices": 1,
+            "maxConcurrentModels": 2,
+            "contextReservePercent": 25,
+            "scheduling": "balanced"
+          },
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false,
+            "runtimeChannel": "stable"
+          },
+          "models": []
+        },
+        {
+          "id": "tailscale-openai-compatible-primary",
+          "label": "Skippy sglang endpoint (quad RTX 5090)",
+          "provider": "sglang-remote",
+          "endpoint": "http://skippy-debian-5090:30000",
+          "networkScope": "tailscale",
+          "enabled": true,
+          "primary": true,
+          "executionPolicy": {
+            "maxParallelSlices": 4,
+            "maxConcurrentModels": 4,
+            "contextReservePercent": 20,
+            "scheduling": "throughput"
+          },
+          "capabilities": {
+            "endpointFamily": "openai-compatible",
+            "supportsResidentModelInspection": false,
+            "runtimeChannel": "stable"
+          },
+          "models": [
+            {
+              "name": "qwen3-coder-next",
+              "roles": [
+                "build",
+                "code",
+                "review",
+                "plan",
+                "reason",
+                "research",
+                "orchestrator"
+              ],
+              "contextWindow": 262144,
+              "supportsToolUse": true,
+              "toolCallReliability": "unknown",
+              "jsonModeReliability": "unknown"
+            }
+          ],
+          "reachable": true,
+          "connectionNotes": "Skippy (skippy-debian-5090, the MagicDNS name) running sglang on :30000. Serves qwen3-coder-next with a 262144-token context window.",
+          "hardware": {
+            "summary": "Quad RTX 5090 Debian AI rig (Skippy) running sglang",
+            "gpu": [
+              {
+                "name": "NVIDIA RTX 5090",
+                "count": 4
+              }
+            ],
+            "detected": {
+              "gpuCount": 4,
+              "totalGpuVramGb": 128
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cloud",
+      "label": "Cloud AI services",
+      "priority": 4,
+      "usageGuidance": "Opt-in only: routing never falls back to this tier unless selectionPolicy.cloudEscalation.optIn is true (or XX_STACK_ALLOW_CLOUD=1). Use only when a hosted model or API is materially better for the task, or a workflow explicitly requires a cloud provider.",
+      "hosts": [
+        {
+          "id": "openai-compatible-template",
+          "label": "OpenAI-compatible cloud template",
+          "provider": "openai-compatible",
+          "endpoint": "https://example.invalid/v1",
+          "networkScope": "internet",
+          "enabled": false,
+          "costProfile": "higher",
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "provider-specific APIs",
+              "burst capacity",
+              "capability gaps not met by self-hosted models"
+            ],
+            "avoidTaskTypes": [
+              "routine local coding and review",
+              "sensitive work that does not require cloud"
+            ]
+          },
+          "routingPolicy": {
+            "useWhen": [
+              "A required model is not available on local or remote Ollama",
+              "The task requires a provider-specific capability",
+              "Temporary burst capacity is needed"
+            ],
+            "avoidWhen": [
+              "Local or remote models can satisfy the task at comparable quality",
+              "The task involves sensitive local-only work and a cloud call is unnecessary"
+            ]
+          },
+          "models": []
+        },
+        {
+          "id": "google-template",
+          "label": "Google cloud template",
+          "provider": "google",
+          "endpoint": "https://generativelanguage.googleapis.com",
+          "networkScope": "internet",
+          "enabled": false,
+          "costProfile": "higher",
+          "delegationPolicy": {
+            "preferredTaskTypes": [
+              "large-context analysis",
+              "multimodal or provider-specific workflows"
+            ],
+            "avoidTaskTypes": [
+              "standard code generation loops",
+              "local-first workflows with no cloud requirement"
+            ]
+          },
+          "routingPolicy": {
+            "useWhen": [
+              "A Google-specific model capability is required",
+              "Multimodal reasoning is needed and self-hosted options are insufficient"
+            ],
+            "avoidWhen": [
+              "Self-hosted options are available and adequate",
+              "The workload is primarily coding with tight feedback loops"
+            ]
+          },
+          "models": []
+        }
+      ]
+    }
+  ]
+}

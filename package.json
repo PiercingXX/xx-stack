@@ -1,41 +1,51 @@
 {
   "name": "xx-stack",
   "version": "0.1.0",
-  "description": "xx-stack - A platform for autonomous AI agents and MCP routing",
+  "description": "Local-first agent orchestration: routing MCP server, agent contracts, and self-hosted inference control plane",
   "private": true,
-  "type": "module",
+  "//type": "Intentionally NOT \"module\". Shared helpers under xx-stack/scripts/*.js are CommonJS; ESM entrypoints use the .mjs extension. xx-stack/mcp-server declares its own \"type\": \"module\".",
   "workspaces": [
-    "mcp-server"
+    "xx-stack/mcp-server"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "lint": "eslint . --ext .ts --ignore-path .gitignore",
-    "lint:fix": "eslint . --ext .ts --ignore-path .gitignore --fix",
-    "typecheck": "tsc --noEmit",
-    "layout:verify": "node scripts/verify-repo-layout.mjs",
-    "agents:sync": "node scripts/sync-vscode-agents.mjs",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "design:catalog": "node scripts/generate-design-catalog.mjs",
-    "design:golden": "node scripts/evaluate-golden-tasks.mjs",
-    "design:html-gate": "node scripts/quality-gate-html.mjs"
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "typecheck": "npm --prefix xx-stack/mcp-server run build -- --noEmit",
+    "format": "prettier --write \"{xx-stack/mcp-server/src,xx-stack/scripts}/**/*.{ts,js,mjs}\"",
+    "format:check": "prettier --check \"{xx-stack/mcp-server/src,xx-stack/scripts}/**/*.{ts,js,mjs}\"",
+    "layout:verify": "npm run layout:verify:core && npm run layout:verify:opencode",
+    "layout:verify:core": "node xx-stack/scripts/verify-repo-layout.mjs xx-stack",
+    "layout:verify:opencode": "node xx-stack/scripts/verify-repo-layout.mjs opencode-orchestration",
+    "agents:sync": "node xx-stack/scripts/sync-vscode-agents.mjs",
+    "agents:check": "node xx-stack/scripts/sync-vscode-agents.mjs --check",
+    "design:catalog": "node xx-stack/scripts/generate-design-catalog.mjs",
+    "design:golden": "node xx-stack/scripts/evaluate-golden-tasks.mjs",
+    "design:html-gate": "node xx-stack/scripts/quality-gate-html.mjs",
+    "hermes:test": "cd hermes-orchestration && python3 -m unittest discover -s tests",
+    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm test && npm run hermes:test",
+    "drift:check": "node xx-stack/scripts/check-stack-source-drift.mjs"
   },
   "keywords": [
     "mcp",
     "agents",
     "autonomous",
     "routing",
-    "self-hosted"
+    "self-hosted",
+    "opencode"
   ],
   "author": "xx-stack contributors",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "devDependencies": {
-    "@types/node": "^22.15.17",
+    "@types/node": "^25.5.0",
     "@typescript-eslint/eslint-plugin": "^8.26.0",
     "@typescript-eslint/parser": "^8.26.0",
     "eslint": "^8.57.1",
     "prettier": "^3.5.3",
-    "typescript": "~6.0.3"
+    "typescript": "^6.0.2"
   }
 }
