@@ -35,14 +35,21 @@ jobs:
         run: npm run format:check
 
   mcp-server:
-    name: MCP Server (build, typecheck, test)
+    # Matrix covers the lowest supported version (package.json engines) and
+    # current LTS. Node's test-runner glob handling differs across majors, so
+    # testing only one version hides real breakage.
+    name: MCP Server (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node }}
           cache: 'npm'
 
       - name: Install dependencies
