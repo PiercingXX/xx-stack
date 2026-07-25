@@ -1956,3 +1956,46 @@ test("every discovered runtime kind is known to the generator", async () => {
     );
   }
 });
+
+test("the server starts when launched through a symlinked path", async () => {
+  // opencode-orchestration/mcp-server is a symlink into xx-stack/. A lexical
+  // argv[1] vs import.meta.url comparison made the process exit 0 without ever
+  // starting, which every caller reads as a silent crash.
+  const symlinked = join(process.cwd(), "..", "..", "opencode-orchestration", "mcp-server");
+  const entry = join(symlinked, "dist", "index.js");
+
+  const handshake =
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "symlink-probe", version: "1" },
+      },
+    }) + "\n";
+
+  const child = execFile(process.execPath, [entry]);
+  child.stdin?.write(handshake);
+
+  const reply = await new Promise<string>((resolvePromise, reject) => {
+    let buffer = "";
+    const timer = setTimeout(() => reject(new Error("no response within 10s")), 10_000);
+    child.stdout?.on("data", (chunk) => {
+      buffer += String(chunk);
+      if (buffer.includes("\n")) {
+        clearTimeout(timer);
+        child.kill("SIGTERM");
+        resolvePromise(buffer);
+      }
+    });
+    child.on("exit", (code) => {
+      clearTimeout(timer);
+      if (!buffer) reject(new Error(`exited (code ${code}) without responding`));
+    });
+  });
+
+  const parsed = JSON.parse(reply.split("\n")[0]);
+  assert.equal(parsed.result.serverInfo.name, "xx-stack-platform-routing");
+});

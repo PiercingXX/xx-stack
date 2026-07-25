@@ -47,6 +47,7 @@ const exports = {
   XX_STACK_NETWORK_SCOPE_LOCALHOST: constants.networkScopes.localhost,
   XX_STACK_NETWORK_SCOPE_TAILSCALE: constants.networkScopes.tailscale,
   XX_STACK_NETWORK_SCOPE_INTERNET: constants.networkScopes.internet,
+  XX_STACK_OPENCODE_SOURCE_DIR: constants.paths.sourceDir,
   XX_STACK_OPENCODE_COMPAT_DIR: constants.paths.compatDir,
   XX_STACK_OPENCODE_PLATFORMS_FILE: constants.paths.platformsFile,
   XX_STACK_OPENCODE_CONFIG_FILE: constants.paths.configFile,

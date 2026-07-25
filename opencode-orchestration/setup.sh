@@ -44,8 +44,6 @@ export XX_STACK_ALLOW_MULTI_MODEL
 LOCAL_LOCALAI_URL="${LOCAL_LOCALAI_URL:-}"
 REMOTE_LOCALAI_URL="${REMOTE_LOCALAI_URL:-}"
 LOCAL_OPENAI_COMPAT_URL="${LOCAL_OPENAI_COMPAT_URL:-${LOCAL_LLAMA_CPP_URL}}"
-RESOLVED_REMOTE_OLLAMA_URL=""
-RESOLVED_REMOTE_OPENAI_COMPAT_URL=""
 REMOTE_SSH_USER="${XX_STACK_REMOTE_SSH_USER:-}"
 REMOTE_SSH_PASSWORD="${XX_STACK_REMOTE_SSH_PASSWORD:-}"
 REMOTE_SSH_MODE="${XX_STACK_REMOTE_SSH_MODE:-auto}"
@@ -203,55 +201,94 @@ fi
 # shellcheck source=/dev/null
 . "$SETUP_TAILSCALE_HELPERS"
 
+# `.opencode/` is a compatibility shim for runtime discovery that still expects
+# that path; `opencode/` is canonical. setup-opencode.sh creates it in workspace
+# mode, but setup.sh must not depend on that having run first — several steps
+# below resolve through it.
+if [ ! -e "$OPENCODE_RUNTIME_COMPAT_DIR" ] && [ -d "$OPENCODE_TARGET_DIR/$XX_STACK_OPENCODE_SOURCE_DIR" ]; then
+  ln -s "$XX_STACK_OPENCODE_SOURCE_DIR" "$OPENCODE_RUNTIME_COMPAT_DIR" \
+    && echo "  created compatibility shim: $OPENCODE_RUNTIME_COMPAT_DIR -> $XX_STACK_OPENCODE_SOURCE_DIR"
+fi
+
 echo "Exporting xx-stack skills for OpenCode discovery..."
 prune_obsolete_unmanaged_skill_shims "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_step_failure "prune_obsolete_unmanaged_skill_shims"
 export_skills_for_opencode "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_step_failure "export_skills_for_opencode"
 
+# Regenerate the registry from inventory.json first, so setup can never install
+# a stale topology. Non-fatal: a checkout without inventory.json still installs
+# the committed registry.
+XX_STACK_GENERATOR="$REPO_DIR/../xx-stack/scripts/generate-registries.mjs"
+if [ -f "$REPO_DIR/../inventory.json" ] && [ -f "$XX_STACK_GENERATOR" ]; then
+  echo "Regenerating platform registry from inventory.json..."
+  node "$XX_STACK_GENERATOR" || note_step_failure "generate_registries_from_inventory"
+elif [ -f "$XX_STACK_GENERATOR" ]; then
+  echo "  no inventory.json found — installing the committed registry."
+  echo "  to describe your own machines: cp inventory.example.json inventory.json"
+fi
+
 echo "Installing platform registry for orchestration-aware routing..."
-install_platform_registry "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "install_platform_registry"
+# Seed the LIVE registry from the generated repo registry, then enrich the live
+# copy in place. Everything below writes to the live registry, never to the repo:
+# opencode/platforms.json is generated from inventory.json, and mutating it here
+# would make `npm run inventory:check` fail and quietly fork the topology.
+# The live registry is also what the MCP server reads first at runtime.
+mkdir -p "$OPENCODE_CONFIG_HOME"
+if [ -f "$REPO_OPENCODE_DIR/$XX_STACK_OPENCODE_PLATFORMS_FILE" ]; then
+  cp -f "$REPO_OPENCODE_DIR/$XX_STACK_OPENCODE_PLATFORMS_FILE" "$GLOBAL_PLATFORM_REGISTRY_PATH"
+  echo "  seeded live registry from generated topology: $GLOBAL_PLATFORM_REGISTRY_PATH"
+else
+  note_step_failure "seed_platform_registry"
+fi
 
 echo "Detecting local hardware for routing and recommendations..."
-detect_local_hardware "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_local_hardware"
+detect_local_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_local_hardware"
 
 echo "Importing providers and model preferences from existing OpenCode config..."
-import_existing_opencode_config "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$OPENCODE_CONFIG_PATH" "$MODEL_RECOMMENDATIONS_PATH" || note_step_failure "import_existing_opencode_config"
+import_existing_opencode_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$OPENCODE_CONFIG_PATH" "$MODEL_RECOMMENDATIONS_PATH" || note_step_failure "import_existing_opencode_config"
 
-REMOTE_OLLAMA_URL="$(resolve_remote_ollama_url "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH")"
-confirm_remote_tailscale_ollama_url "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$REMOTE_OLLAMA_URL"
-REMOTE_OLLAMA_URL="$RESOLVED_REMOTE_OLLAMA_URL"
-REMOTE_OPENAI_COMPAT_URL="$(resolve_remote_openai_compatible_url "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH")"
-confirm_remote_tailscale_openai_compatible_url "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$REMOTE_OPENAI_COMPAT_URL" "$BACKEND"
-REMOTE_OPENAI_COMPAT_URL="$RESOLVED_REMOTE_OPENAI_COMPAT_URL"
+# Remote host topology comes from inventory.json, which the registry above was
+# generated from. Setup no longer runs its own interactive Tailscale discovery:
+# it wrote into the *installed* registry, which this script overwrites on every
+# run, so those findings were silently lost and never reached inventory.json.
+#
+#   npm run inventory:scan -- --write   discover peers and merge them
+#   npm run inventory:enable -- <host>  turn a lane on (all are off by default)
+#   npm run inventory:sync              regenerate this registry
+#
+REMOTE_OLLAMA_URL="$(resolve_remote_ollama_url "$GLOBAL_PLATFORM_REGISTRY_PATH")"
+REMOTE_OPENAI_COMPAT_URL="$(resolve_remote_openai_compatible_url "$GLOBAL_PLATFORM_REGISTRY_PATH")"
 
-prompt_openai_compatible_endpoints
+# `prompt_openai_compatible_endpoints` used to be called here but has never been
+# defined in this repo — setup died on it under `set -e`. Endpoint topology now
+# comes from inventory.json, so there is nothing to prompt for. Change endpoints
+# with `npm run inventory:scan` / by editing inventory.json, then re-run setup.
 
 if backend_includes "llama-cpp"; then
-  setup_llama_cpp_host "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || BACKEND="ollama"
+  setup_llama_cpp_host "$GLOBAL_PLATFORM_REGISTRY_PATH" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || BACKEND="ollama"
 fi
 
 if backend_includes "localai"; then
-  persist_openai_compatible_hosts_in_registry "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" "localai"
+  persist_openai_compatible_hosts_in_registry "$GLOBAL_PLATFORM_REGISTRY_PATH" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" "localai"
 fi
 
-apply_llama_cpp_rollout_phase "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH"
+apply_llama_cpp_rollout_phase "$GLOBAL_PLATFORM_REGISTRY_PATH"
 
-prompt_remote_ssh_user "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH"
+prompt_remote_ssh_user "$GLOBAL_PLATFORM_REGISTRY_PATH"
 
 echo "Detecting remote hardware from reachable Tailscale hosts (best effort)..."
-detect_remote_hardware "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_remote_hardware"
+detect_remote_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_remote_hardware"
 
 echo "Syncing discovered Ollama models into platform registry..."
-sync_platform_models "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_platform_models"
+sync_platform_models "$GLOBAL_PLATFORM_REGISTRY_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_platform_models"
 
-run_llama_cpp_regression_gate "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" || note_step_failure "run_llama_cpp_regression_gate"
-
-evaluate_llama_cpp_host_support_matrix "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH"
+# `run_llama_cpp_regression_gate` and `evaluate_llama_cpp_host_support_matrix`
+# were called here but are likewise undefined. Removed rather than stubbed —
+# reintroduce them alongside a real implementation.
 
 echo "Recommending local models when Ollama inventory is empty..."
-recommend_local_models_if_empty "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" || note_step_failure "recommend_local_models_if_empty"
+recommend_local_models_if_empty "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "recommend_local_models_if_empty"
 
-echo "Refreshing installed platform registry after sync..."
-install_platform_registry "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "install_platform_registry"
+# (No re-install step: enrichment already happened in the live registry.)
 
 echo "Backing up existing OpenCode config before mutation..."
 backup_global_config_once "$OPENCODE_CONFIG_PATH" || note_step_failure "backup_global_config_once"
@@ -263,7 +300,7 @@ echo "Merging xx-stack subagents into global OpenCode config..."
 merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_step_failure "merge_repo_agents_into_global_config"
 
 echo "Syncing discovered runtime models into global OpenCode config..."
-sync_runtime_models_into_global_config "$OPENCODE_RUNTIME_PLATFORM_REGISTRY_PATH" "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_runtime_models_into_global_config"
+sync_runtime_models_into_global_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_runtime_models_into_global_config"
 
 echo "Reapplying canonical xx-stack agent surface after model sync..."
 merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_step_failure "merge_repo_agents_into_global_config"
@@ -295,7 +332,8 @@ if [ "$XX_STACK_ENABLE_LLAMA_CPP" = "1" ]; then
 else
   echo "  llama.cpp rollout flag: disabled (set XX_STACK_ENABLE_LLAMA_CPP=1 to enable the TurboQuant llama.cpp lane)"
 fi
-print_llama_cpp_startup_recipes
+# `print_llama_cpp_startup_recipes` was called here but has never been defined —
+# the last of three such calls that made setup exit 127 before finishing.
 echo "  install mode: $INSTALL_MODE"
 echo "  skills root: $OPENCODE_TARGET_DIR"
 echo "  state dir: $STATE_DIR"

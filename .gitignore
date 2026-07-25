@@ -33,3 +33,6 @@ Thumbs.db
 # Local overrides that should never be committed
 platforms.local.json
 config.local.json
+
+# Runtime compatibility shim created by setup (symlink to opencode/)
+.opencode

@@ -2,6 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -159,8 +160,19 @@ async function main(): Promise<void> {
 }
 
 const isDirectExecution = ((): boolean => {
-  const modulePath = fileURLToPath(import.meta.url);
-  return Boolean(process.argv[1]) && resolve(process.argv[1]) === modulePath;
+  if (!process.argv[1]) return false;
+  // Compare real paths, not lexical ones. Components reach this server through
+  // a symlinked mcp-server/ directory, so the invoked path and import.meta.url
+  // legitimately differ; a lexical comparison made the server exit 0 without
+  // ever starting, which reads as "crashed silently" to every caller.
+  const realOrSelf = (candidate: string): string => {
+    try {
+      return realpathSync(candidate);
+    } catch {
+      return resolve(candidate);
+    }
+  };
+  return realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url));
 })();
 
 if (isDirectExecution) {
