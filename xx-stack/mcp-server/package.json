@@ -1,6 +1,6 @@
 {
   "name": "@xx-stack/mcp-server",
-  "version": "0.1.0",
+  "version": "1.63.0",
   "description": "MCP server for xx-stack platform routing \u2014 multi-provider inventory, health checks, task routing, and supervision",
   "main": "dist/index.js",
   "bin": "dist/index.js",

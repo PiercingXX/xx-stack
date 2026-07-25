@@ -5,9 +5,9 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — 2026-07-24
+## [1.63.0] — 2026-07-24
 
-First tagged release. The repository was reorganised into three top-level
+First tagged release of an existing project. The repository was reorganised into three top-level
 components and the routing server was made publishable.
 
 ### Added
@@ -70,4 +70,4 @@ components and the routing server was made publishable.
 - No private network addresses, tailnet names, or absolute home paths in the
   repository.
 
-[0.1.0]: https://github.com/piercingxx/xx-stack/releases/tag/v0.1.0
+[1.63.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.63.0
