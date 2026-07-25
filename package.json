@@ -1,6 +1,6 @@
 {
   "name": "xx-stack",
-  "version": "0.1.0",
+  "version": "1.63.0",
   "description": "Local-first agent orchestration: routing MCP server, agent contracts, and self-hosted inference control plane",
   "private": true,
   "//type": "Intentionally NOT \"module\". Shared helpers under xx-stack/scripts/*.js are CommonJS; ESM entrypoints use the .mjs extension. xx-stack/mcp-server declares its own \"type\": \"module\".",

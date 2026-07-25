@@ -145,8 +145,9 @@ Additional routing pattern:
 - Delegation planning across local, remote, and cloud model tiers
 
 23. ensemble-consensus
-- Ask several models the same question in parallel, then merge their answers
-  and report where they disagreed
+- Ask at least three models the same question in parallel — across machines, or
+  three local models when nothing can be delegated — then merge the answers and
+  report where they disagreed
 
 ## Recommended Feature Path
 

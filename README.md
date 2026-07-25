@@ -77,8 +77,8 @@ after another.
 
 ### Ask several models and merge the answers
 
-The `ensemble-consensus` skill sends **one** question to **several** models at
-once, then combines what comes back:
+The `ensemble-consensus` skill sends **one** question to **at least three**
+models at once, then combines what comes back:
 
 ```
 ## Answer
@@ -101,8 +101,14 @@ Disagreement between models is the useful part. One model spotting a bug the
 others missed is worth more than three models agreeing. The skill reports splits
 as splits rather than manufacturing false confidence.
 
+**No other machines? It still works.** Three is the floor, because two models
+only give you agreement or deadlock. If nothing can be delegated, it picks three
+*different* models on your local machine — running them one after another if
+they don't fit at once — and your local model distils the three answers into
+one. Slower, but you still get a real second and third opinion.
+
 Good for architecture calls, security review, and anything expensive to get
-wrong. Not for routine edits — it costs N times the compute.
+wrong. Not for routine edits — it costs at least 3x the compute.
 
 ### Keep long jobs from stalling silently
 
