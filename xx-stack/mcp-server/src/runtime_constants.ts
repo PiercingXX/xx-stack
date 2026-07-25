@@ -51,6 +51,10 @@ type RuntimeConstants = {
 // canonical xx-stack config directory; `opencode/` is the standalone
 // opencode-orchestration layout and is kept as a fallback.
 const CONSTANTS_CANDIDATES = [
+  // Bundled copy, written into the package root by `prepack`. This is what a
+  // published install resolves — the repo-relative paths below do not exist
+  // inside a tarball, and without this the server threw on startup.
+  "../runtime-constants.json",
   "../../runtime/runtime-constants.json",
   "../../opencode/runtime-constants.json",
 ] as const;

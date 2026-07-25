@@ -2,7 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -104,9 +104,26 @@ export const __testExports = {
 
 // --- MCP Server ---
 
+// Sourced from package.json so the version reported over MCP cannot drift from
+// the version actually published.
+const SERVER_VERSION: string = (() => {
+  for (const rel of ["../package.json", "../../package.json"]) {
+    try {
+      const url = new URL(rel, import.meta.url);
+      if (existsSync(url)) {
+        const pkg = JSON.parse(readFileSync(url, "utf8")) as { version?: string };
+        if (pkg.version) return pkg.version;
+      }
+    } catch {
+      /* fall through to the next candidate */
+    }
+  }
+  return "0.0.0";
+})();
+
 const server = new McpServer({
   name: "xx-stack-platform-routing",
-  version: "1.0.0",
+  version: SERVER_VERSION,
 });
 
 registerObservabilityTools(server, {

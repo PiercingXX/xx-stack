@@ -1,6 +1,6 @@
 {
   "name": "@xx-stack/mcp-server",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "MCP server for xx-stack platform routing \u2014 multi-provider inventory, health checks, task routing, and supervision",
   "main": "dist/index.js",
   "bin": "dist/index.js",
@@ -27,7 +27,9 @@
     "monitor:memory:json": "npm run build && node dist/monitor-memory.js --json",
     "preflight:parallel": "npm run build && node dist/parallel-preflight.js",
     "smoke:parallel": "npm run build && node dist/parallel-smoke.js",
-    "trace:provider": "npm run build && node dist/trace-provider-proxy.js"
+    "trace:provider": "npm run build && node dist/trace-provider-proxy.js",
+    "prepack": "npm run build && node -e \"require('fs').copyFileSync('../runtime/runtime-constants.json','runtime-constants.json')\"",
+    "postpack": "node -e \"require('fs').rmSync('runtime-constants.json',{force:true})\""
   },
   "keywords": [
     "mcp",
@@ -55,5 +57,10 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2"
-  }
+  },
+  "files": [
+    "dist/",
+    "runtime-constants.json",
+    "README.md"
+  ]
 }
