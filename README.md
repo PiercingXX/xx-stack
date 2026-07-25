@@ -7,8 +7,7 @@ a gaming PC, an old workstation, a server in the closet — they sit idle.
 
 xx-stack turns them into a private team. Your agent breaks work into pieces,
 sends each piece to whichever of your machines is best suited, and gets the
-results back. You can also ask **several models the same question at once** and
-get one merged answer that tells you where they disagreed.
+results back.
 
 All of it over your own network. Cloud APIs are **off** unless you switch them on.
 
