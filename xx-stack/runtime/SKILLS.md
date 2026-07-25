@@ -144,6 +144,10 @@ Additional routing pattern:
 22. orchestrate-platform-routing
 - Delegation planning across local, remote, and cloud model tiers
 
+23. ensemble-consensus
+- Ask several models the same question in parallel, then merge their answers
+  and report where they disagreed
+
 ## Recommended Feature Path
 
 execution-orchestrator -> plan-feature -> plan-architecture -> implement -> review-code -> test-qa -> benchmark-performance -> deploy-ship -> ops-deploy-land -> ops-canary
