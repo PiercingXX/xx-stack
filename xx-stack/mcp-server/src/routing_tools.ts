@@ -6,8 +6,10 @@ import type { Registry } from "./platform_types.js";
 import {
   buildWatchdogRouteCandidates,
   routeArchitectEditor,
+  routeCompetitiveTask,
   routeParallelTasks,
   routeTask,
+  scoreTiers,
 } from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
@@ -164,6 +166,69 @@ return jsonContent({
         fallback: result.fallback,
       });
       return jsonContent(result);
+    }
+  );
+
+  server.tool(
+    "route_competitive_task",
+    "Given a task description, produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default.",
+    {
+      description: z.string().describe("Description of the task to route"),
+      laneCount: z
+        .number()
+        .int()
+        .min(2)
+        .max(5)
+        .describe("Number of competitive lanes to request (2–5)"),
+    },
+    async ({ description, laneCount }) => {
+      const registry = await deps.loadRegistry();
+      const result = routeCompetitiveTask(description, registry, laneCount);
+      void logEvent("server", "route_competitive_task.result", {
+        description: description.slice(0, 200),
+        requestedLanes: result.requestedLanes,
+        returnedLanes: result.returnedLanes,
+        shortfall: result.shortfall,
+        fallback: result.fallback,
+      });
+      return jsonContent(result);
+    }
+  );
+
+  server.tool(
+    "score_candidates",
+    "Given a list of candidate task descriptions, score each against the tier keyword matcher and return a deterministic ranking with per-candidate rationale. Useful for selecting the best-matching lane from a set of options.",
+    {
+      candidates: z
+        .array(z.string())
+        .min(1)
+        .max(50)
+        .describe("Candidate task descriptions to score and rank"),
+    },
+    async ({ candidates }) => {
+      const registry = await deps.loadRegistry();
+      const scored = candidates.map((desc) => {
+        const scores = scoreTiers(desc, registry);
+        const total = Object.values(scores).reduce((sum, s) => sum + s, 0);
+        const breakdown = Object.entries(scores)
+          .filter(([, v]) => v > 0)
+          .map(([tier, score]) => `${tier}:${score}`)
+          .join(", ");
+        const topTier = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+        const rationale =
+          total > 0
+            ? `Score ${total} — matched ${breakdown}; best tier: "${topTier?.[0] ?? "none"}"`
+            : "No keyword matches against any tier";
+        return { description: desc, totalScore: total, tierScores: scores, rationale };
+      });
+      scored.sort((a, b) => b.totalScore - a.totalScore);
+
+      void logEvent("server", "score_candidates.result", {
+        candidateCount: candidates.length,
+        topScore: scored[0]?.totalScore ?? 0,
+        topCandidate: scored[0]?.description.slice(0, 100) ?? "",
+      });
+      return jsonContent({ ranked: scored });
     }
   );
 }
