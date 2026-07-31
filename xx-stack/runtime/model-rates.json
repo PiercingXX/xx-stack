@@ -1,0 +1,15 @@
+{
+  "comment": "Per-model rate table for cost estimation. Local lanes (ollama, sglang, vllm) cost zero. Unknown models return null, never 0.",
+  "rates": {
+    "ollama/*": { "costPer1kInputTokens": 0, "costPer1kOutputTokens": 0, "lane": "local" },
+    "sglang/*": { "costPer1kInputTokens": 0, "costPer1kOutputTokens": 0, "lane": "local" },
+    "vllm/*": { "costPer1kInputTokens": 0, "costPer1kOutputTokens": 0, "lane": "local" },
+    "gpt-4o": { "costPer1kInputTokens": 0.0025, "costPer1kOutputTokens": 0.01, "lane": "cloud" },
+    "gpt-4o-mini": { "costPer1kInputTokens": 0.00015, "costPer1kOutputTokens": 0.0006, "lane": "cloud" },
+    "gpt-4-turbo": { "costPer1kInputTokens": 0.01, "costPer1kOutputTokens": 0.03, "lane": "cloud" },
+    "gpt-3.5-turbo": { "costPer1kInputTokens": 0.0005, "costPer1kOutputTokens": 0.0015, "lane": "cloud" },
+    "claude-3-5-sonnet": { "costPer1kInputTokens": 0.003, "costPer1kOutputTokens": 0.015, "lane": "cloud" },
+    "claude-3-5-haiku": { "costPer1kInputTokens": 0.0008, "costPer1kOutputTokens": 0.004, "lane": "cloud" },
+    "claude-3-opus": { "costPer1kInputTokens": 0.015, "costPer1kOutputTokens": 0.075, "lane": "cloud" }
+  }
+}
