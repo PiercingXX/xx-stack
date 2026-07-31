@@ -16,7 +16,7 @@ interface VerifyEditResult {
  * truncate to MAX_OUTPUT_CHARS, and return structured ok + output.
  * On failure the output includes the tail of stderr/stdout.
  */
-async function runCaptured(
+export async function runCaptured(
   commandStr: string,
   cwd: string,
   label: string
