@@ -3,9 +3,82 @@ import { z } from "zod";
 import { resolve } from "node:path";
 
 import { CompletionMemorySyncGuard, getCompletionMemorySyncStatus } from "./memory_runtime.js";
+import type { SupervisorSessionState } from "./supervisor_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+
+/**
+ * Build a bounded continuation prompt for a supervisor session.
+ * Shared between supervisor_emit_continuation_prompt and review_to_continuation
+ * to ensure consistent prompt structure across supervisor tools.
+ */
+export function buildContinuationPrompt(
+  sessionId: string,
+  continuationCount: number,
+  currentRoute: SupervisorSessionState["currentRoute"],
+  completionMemorySync: SupervisorSessionState["completionMemorySync"],
+  memorySyncStatus: { driftDetected: boolean; helperPrompt?: string | null } | null,
+  completionRecoveryReason: string,
+  remediationChecklist: string[],
+  pendingTasks: string[],
+  extraSections?: string[]
+): string {
+  const pending =
+    pendingTasks.length > 0
+      ? pendingTasks.map((task, index) => `${index + 1}. ${task}`).join("\n")
+      : "1. Continue from the last verified artifact and produce deterministic output.\n2. Verify progress with a command, file diff, or explicit evidence.";
+
+  const remediationText = remediationChecklist
+    .map((item, index) => `${index + 1}. ${item}`)
+    .join("\n");
+
+  const lines = [
+    "Supervisor continuation directive:",
+    `- session: ${sessionId}`,
+    `- continuation-attempt: ${continuationCount}`,
+    `- current-route: ${currentRoute?.host ?? "<none>"}/${currentRoute?.model ?? "<none>"}`,
+    `- completion-recovery-reason: ${completionRecoveryReason}`,
+    `- memory-sync-guard: ${completionMemorySync ? "enabled" : "disabled"}`,
+    ...(completionMemorySync
+      ? [
+          `- memory-sync-agent: ${completionMemorySync.agentId}`,
+          `- memory-sync-scope: ${completionMemorySync.scope}`,
+          `- memory-sync-drift: ${memorySyncStatus?.driftDetected === true ? "detected" : "not-detected"}`,
+        ]
+      : []),
+    "- requirements:",
+    "  - do not restart from scratch",
+    "  - produce deterministic evidence in this attempt",
+    "  - if blocked, return explicit blocker and fallback recommendation",
+    "  - follow strict loop: implement -> verify -> record evidence -> judge -> repair (if needed)",
+    "- strict completion loop:",
+    "  1) Update completion contract for current slice and unresolved criteria",
+    "  2) Implement the smallest repair set",
+    "  3) Run verification commands and capture concrete outputs",
+    "  4) Call supervisor_record_completion_check with checkType='evidence'",
+    "  5) Run completion-judge and call supervisor_record_completion_check with checkType='judge'",
+    "  6) If judge fails, repair and repeat this loop",
+    ...(memorySyncStatus?.driftDetected
+      ? [
+          "  7) Resolve memory drift before completion by following memory helper guidance",
+          "- memory-sync helper:",
+          memorySyncStatus.helperPrompt ?? "Run agent_memory_snapshot_status and resolve drift.",
+        ]
+      : []),
+    "- remediation checklist:",
+    remediationText,
+    "- remaining tasks:",
+    pending,
+  ];
+
+  if (extraSections) {
+    lines.push(...extraSections);
+  }
+
+  return lines.join("\n");
+}
+
 export function registerSupervisorCompletionTools(
   server: McpServer,
   deps: SupervisorToolDeps
@@ -277,54 +350,16 @@ export function registerSupervisorCompletionTools(
         }
         const remediationChecklist = deps.buildCompletionRepairChecklist(completionRecoveryReason);
 
-        const pending =
-          pendingTasks.length > 0
-            ? pendingTasks.map((task, index) => `${index + 1}. ${task}`).join("\n")
-            : "1. Continue from the last verified artifact and produce deterministic output.\n2. Verify progress with a command, file diff, or explicit evidence.";
-
-        const remediationText = remediationChecklist
-          .map((item, index) => `${index + 1}. ${item}`)
-          .join("\n");
-
-        const prompt = [
-          "Supervisor continuation directive:",
-          `- session: ${sessionId}`,
-          `- continuation-attempt: ${state.continuationCount}`,
-          `- current-route: ${state.currentRoute?.host ?? "<none>"}/${state.currentRoute?.model ?? "<none>"}`,
-          `- completion-recovery-reason: ${completionRecoveryReason}`,
-          `- memory-sync-guard: ${state.completionMemorySync ? "enabled" : "disabled"}`,
-          ...(state.completionMemorySync
-            ? [
-                `- memory-sync-agent: ${state.completionMemorySync.agentId}`,
-                `- memory-sync-scope: ${state.completionMemorySync.scope}`,
-                `- memory-sync-drift: ${memorySyncStatus?.driftDetected === true ? "detected" : "not-detected"}`,
-              ]
-            : []),
-          "- requirements:",
-          "  - do not restart from scratch",
-          "  - produce deterministic evidence in this attempt",
-          "  - if blocked, return explicit blocker and fallback recommendation",
-          "  - follow strict loop: implement -> verify -> record evidence -> judge -> repair (if needed)",
-          "- strict completion loop:",
-          "  1) Update completion contract for current slice and unresolved criteria",
-          "  2) Implement the smallest repair set",
-          "  3) Run verification commands and capture concrete outputs",
-          "  4) Call supervisor_record_completion_check with checkType='evidence'",
-          "  5) Run completion-judge and call supervisor_record_completion_check with checkType='judge'",
-          "  6) If judge fails, repair and repeat this loop",
-          ...(memorySyncStatus?.driftDetected
-            ? [
-                "  7) Resolve memory drift before completion by following memory helper guidance",
-                "- memory-sync helper:",
-                memorySyncStatus.helperPrompt ??
-                  "Run agent_memory_snapshot_status and resolve drift.",
-              ]
-            : []),
-          "- remediation checklist:",
-          remediationText,
-          "- remaining tasks:",
-          pending,
-        ].join("\n");
+        const prompt = buildContinuationPrompt(
+          sessionId,
+          state.continuationCount,
+          state.currentRoute,
+          state.completionMemorySync,
+          memorySyncStatus,
+          completionRecoveryReason,
+          remediationChecklist,
+          pendingTasks
+        );
 
         return jsonContent({
           status: "ready",
