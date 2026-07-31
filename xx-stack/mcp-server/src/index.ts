@@ -38,6 +38,7 @@ import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
+import { registerReviewTools } from "./review_tools.js";
 import { registerVerifyEditTools } from "./verify_edit_tools.js";
 import {
   applySupervisorEventTransition,
@@ -172,6 +173,31 @@ registerTaskTools(server, {
 
 registerVerifyEditTools(server, {
   allowedCommands: ["echo", "cat", "node", "npm", "npx", "ruff", "pytest"],
+});
+
+registerReviewTools(server, {
+  withSupervisorStoreLock,
+  loadRegistry,
+  loadReliabilityConfig,
+  readSupervisorStore,
+  writeSupervisorStore,
+  pruneSupervisorStore,
+  buildWatchdogRouteCandidates,
+  applySupervisorEventTransition,
+  sessionEvent,
+  pushSessionEvent,
+  clearCompletionProof,
+  makeAttemptId,
+  makeRecoveryKey,
+  shouldAutoReleaseLock,
+  shouldDedupeContinuation,
+  isAbortWindowActive,
+  evaluateCompletionReadiness,
+  parseCompletionValidationReason,
+  buildCompletionRepairChecklist,
+  computeBackoffMs,
+  failureKey,
+  quickPingEndpoint,
 });
 
 // --- Start ---
