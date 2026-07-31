@@ -1,0 +1,1 @@
+GATE=test -f RESEARCH-orca.md && grep -q 'NOT borrowing' RESEARCH-orca.md && grep -q 'read their code' RESEARCH-orca.md
