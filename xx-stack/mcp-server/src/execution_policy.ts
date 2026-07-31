@@ -92,7 +92,7 @@ function parseLifecycleHooksConfigFromRoot(root: Record<string, unknown> | null)
   };
 }
 
-async function loadLifecycleHooksConfig(): Promise<LifecycleHooksConfig> {
+export async function loadLifecycleHooksConfig(): Promise<LifecycleHooksConfig> {
   const repoPath = getRepoConfigPath();
   const userPath = getUserConfigPath();
   const [repoRoot, userRoot] = await Promise.all([readJson(repoPath), readJson(userPath)]);

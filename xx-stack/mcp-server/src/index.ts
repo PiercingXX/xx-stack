@@ -13,7 +13,7 @@ import {
   missingRequiredMcpServers,
   validateAgentProfiles,
 } from "./config_runtime.js";
-import { validateExecRequest } from "./execution_policy.js";
+import { loadLifecycleHooksConfig, validateExecRequest } from "./execution_policy.js";
 import { atomicWriteTextFile } from "./io_runtime.js";
 import {
   buildMemoryResyncHelperPrompt,
@@ -37,6 +37,7 @@ import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
+import { registerVerifyEditTools } from "./verify_edit_tools.js";
 import {
   applySupervisorEventTransition,
   buildCompletionRepairChecklist,
@@ -171,6 +172,10 @@ registerTaskTools(server, {
 
 async function main(): Promise<void> {
   await initServerLog();
+  const lifecycleConfig = await loadLifecycleHooksConfig();
+  registerVerifyEditTools(server, {
+    allowedHookCommands: lifecycleConfig.allowedCommands,
+  });
   void logEvent("server", "server.start", { pid: process.pid, nodeVersion: process.version });
   const transport = new StdioServerTransport();
   await server.connect(transport);
