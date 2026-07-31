@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { Host, Registry } from "./platform_types.js";
+import type { ModelRatesFile } from "./platform_runtime.js";
+import { lookupModelCost } from "./platform_runtime.js";
 import {
   endpointFamilyForHost,
   fetchHostModels,
@@ -13,6 +15,12 @@ import { jsonContent } from "./agent_tool_helpers.js";
 interface ObservabilityToolDeps {
   loadRegistry: () => Promise<Registry>;
   detectHardware: () => Promise<Record<string, unknown>>;
+  logEvent: (
+    stream: "server" | { session: string },
+    type: string,
+    payload: Record<string, unknown>
+  ) => Promise<void>;
+  loadModelRates: () => Promise<ModelRatesFile>;
 }
 
 interface ToolCatalogEntry {
@@ -221,6 +229,12 @@ const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: "Generate a hardened coordinator worker contract prompt",
     keywords: ["coordinator", "contract", "worker", "prompt"],
   },
+  {
+    name: "record_telemetry",
+    category: "observability",
+    description: "Record a telemetry event with lane, tokensIn, tokensOut, and costUsd",
+    keywords: ["telemetry", "cost", "tokens", "lane", "usage"],
+  },
 ];
 
 export function registerObservabilityTools(server: McpServer, deps: ObservabilityToolDeps): void {
@@ -376,6 +390,70 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     "Detect local hardware (GPUs, VRAM, RAM) for routing decisions",
     {},
     async () => jsonContent(await deps.detectHardware())
+  );
+
+  server.tool(
+    "record_telemetry",
+    "Record a telemetry event with token usage and cost. Persists to the JSONL telemetry stream.",
+    {
+      skill: z.string().describe("Skill or operation name"),
+      outcome: z
+        .enum(["success", "failure", "error", "timeout", "cancelled"])
+        .describe("Outcome of the operation"),
+      durationMs: z.number().int().min(0).describe("Duration in milliseconds"),
+      lane: z
+        .string()
+        .optional()
+        .describe("Routing lane (e.g. local, cloud, tailscale-ollama)"),
+      tokensIn: z.number().int().min(0).optional().describe("Input tokens consumed"),
+      tokensOut: z.number().int().min(0).optional().describe("Output tokens generated"),
+      model: z.string().optional().describe("Model name for cost estimation"),
+      costUsd: z.number().min(0).optional().describe("Override cost in USD. If omitted, estimated from model-rates.json"),
+      sessionId: z.string().optional().describe("Optional session ID for per-session log stream"),
+    },
+    async ({ skill, outcome, durationMs, lane, tokensIn, tokensOut, model, costUsd, sessionId }) => {
+      let finalCostUsd: number | null = costUsd ?? null;
+
+      // Auto-estimate cost from model rates if not explicitly provided
+      if (finalCostUsd === null && (tokensIn !== undefined || tokensOut !== undefined)) {
+        const ratesFile = await deps.loadModelRates();
+        const estimated = lookupModelCost(
+          ratesFile.rates,
+          model ?? null,
+          tokensIn ?? 0,
+          tokensOut ?? 0
+        );
+        if (estimated !== null) {
+          finalCostUsd = estimated;
+        }
+        // Unknown model: finalCostUsd stays null (never zero)
+      }
+
+      const payload: Record<string, unknown> = {
+        skill,
+        outcome,
+        durationMs,
+      };
+
+      if (lane !== undefined) payload.lane = lane;
+      if (tokensIn !== undefined) payload.tokensIn = tokensIn;
+      if (tokensOut !== undefined) payload.tokensOut = tokensOut;
+      if (finalCostUsd !== null) payload.costUsd = finalCostUsd;
+      if (model !== undefined) payload.model = model;
+
+      void deps.logEvent(
+        sessionId ? { session: sessionId } : "server",
+        "telemetry.record",
+        payload
+      );
+
+      return jsonContent({
+        status: "recorded",
+        fields: Object.keys(payload),
+        costUsd: finalCostUsd,
+        costSource: costUsd !== undefined ? "explicit" : finalCostUsd !== null ? "estimated" : "unknown-model",
+      });
+    }
   );
 
   server.tool(
