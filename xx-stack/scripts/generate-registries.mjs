@@ -158,6 +158,8 @@ function buildTsHost(machine, runtime) {
   if (notes) host.connectionNotes = notes;
   if (machine.delegation) host.delegationPolicy = { ...machine.delegation };
   if (machine.hardware) host.hardware = JSON.parse(JSON.stringify(machine.hardware));
+  // Deep-copy models so every field (including editFormat, editFormatReliability,
+  // and any future model metadata) propagates to the registry automatically.
   host.models = JSON.parse(JSON.stringify(runtime.models ?? []));
   return host;
 }
@@ -174,6 +176,8 @@ function buildAggregatorHost(agg) {
   };
   if (agg.execution) host.executionPolicy = { ...agg.execution };
   if (agg.notes) host.connectionNotes = agg.notes;
+  // Deep-copy models so editFormat, editFormatReliability, and any future
+  // model metadata propagates to the registry automatically.
   host.models = JSON.parse(JSON.stringify(agg.models ?? []));
   return host;
 }
