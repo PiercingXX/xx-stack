@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { jsonContent } from "./agent_tool_helpers.js";
+import { buildContinuationPrompt, jsonContent } from "./agent_tool_helpers.js";
 
 /**
  * A single reviewer note attached to a file (and optionally a specific line).
@@ -70,24 +70,24 @@ export function reviewToContinuation(input: ReviewToContinuationInput): ReviewTo
   const diffLineCount = input.diff.split("\n").length;
 
   const mustAddressLines = sorted.map(
-    (n, i) =>
-      `  ${i + 1}. [${n.path}${n.line !== undefined ? `:${n.line}` : ""}] ${n.comment}`
+    (n) =>
+      `[${n.path}${n.line !== undefined ? `:${n.line}` : ""}] ${n.comment}`
   );
 
-  const prompt = [
+  const prompt = buildContinuationPrompt(
     "Review continuation directive:",
-    `- diff-lines: ${diffLineCount}`,
-    "- requirements:",
-    "  - do not restart from scratch",
-    "  - address every note in the mustAddress list below",
-    "  - produce deterministic evidence for each fix",
-    "  - if a note's path does not appear in the diff, the agent must still",
-    "    address it (the reviewer identified a missing change)",
-    "- diff:",
-    input.diff,
-    "- must-address notes:",
-    ...mustAddressLines,
-  ].join("\n");
+    { "diff-lines": String(diffLineCount) },
+    [
+      "do not restart from scratch",
+      "address every note in the mustAddress list below",
+      "produce deterministic evidence for each fix",
+      "if a note's path does not appear in the diff, the agent must still address it (the reviewer identified a missing change)",
+    ],
+    [
+      { heading: "diff", items: [input.diff] },
+      { heading: "must-address notes", items: mustAddressLines },
+    ]
+  );
 
   return { continuationPrompt: prompt, mustAddress: sorted };
 }

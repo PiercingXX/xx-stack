@@ -13,6 +13,42 @@ export function jsonContent(payload: unknown): JsonToolResult {
   };
 }
 
+/**
+ * Build a deterministic continuation prompt in the same structured format
+ * used by supervisor_emit_continuation_prompt.
+ *
+ * @param directive  Header line (e.g. "Review continuation directive:")
+ * @param metadata   Key-value pairs to emit as `- key: value` lines after the header
+ * @param requirements  Bullet-point requirements under `- requirements:`
+ * @param sections  Ordered list of `{ heading, items }` — each rendered as `- heading:` with numbered items
+ */
+export function buildContinuationPrompt(
+  directive: string,
+  metadata: Record<string, string>,
+  requirements: string[],
+  sections: Array<{ heading: string; items: string[] }>
+): string {
+  const lines: string[] = [directive];
+
+  for (const [key, value] of Object.entries(metadata)) {
+    lines.push(`- ${key}: ${value}`);
+  }
+
+  lines.push("- requirements:");
+  for (const req of requirements) {
+    lines.push(`  - ${req}`);
+  }
+
+  for (const { heading, items } of sections) {
+    lines.push(`- ${heading}:`);
+    for (let i = 0; i < items.length; i++) {
+      lines.push(`  ${i + 1}. ${items[i]}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export function buildCoordinatorContract(
   agentId: string,
   strict: boolean,
