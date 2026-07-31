@@ -99,6 +99,14 @@
                       },
                       "priority": {
                         "type": "string"
+                      },
+                      "editFormat": {
+                        "type": "string",
+                        "enum": ["whole", "diff", "diff-fenced", "udiff"]
+                      },
+                      "editFormatReliability": {
+                        "type": "string",
+                        "enum": ["validated", "unverified", "unreliable"]
                       }
                     }
                   }
