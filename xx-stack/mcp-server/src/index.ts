@@ -33,7 +33,7 @@ import {
 } from "./routing_runtime.js";
 import { registerAgentTools } from "./agent_tools.js";
 import { registerObservabilityTools } from "./observability_tools.js";
-import { loadRegistry, detectHardware, quickPingEndpoint } from "./platform_runtime.js";
+import { loadRegistry, detectHardware, loadModelRates, quickPingEndpoint } from "./platform_runtime.js";
 import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
@@ -132,6 +132,8 @@ const server = new McpServer({
 registerObservabilityTools(server, {
   loadRegistry,
   detectHardware,
+  logEvent,
+  loadModelRates,
 });
 
 registerRoutingTools(server, {

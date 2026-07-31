@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { guardedExecFile, INTERNAL_VRAM_PROBE } from "./execution_policy.js";
 import type { Registry } from "./platform_types.js";
@@ -119,6 +119,71 @@ export async function detectHardware(): Promise<Record<string, unknown>> {
 
   hardwareCache = hw;
   return hw;
+}
+
+export interface ModelRates {
+  [modelPattern: string]: {
+    costPer1kInputTokens: number;
+    costPer1kOutputTokens: number;
+    lane: string;
+  };
+}
+
+export interface ModelRatesFile {
+  comment: string;
+  rates: ModelRates;
+}
+
+let modelRatesCache: { value: ModelRatesFile; expiresAt: number } | null = null;
+const MODEL_RATES_CACHE_TTL_MS = 30_000;
+
+/**
+ * Load the per-model rate table from xx-stack/runtime/model-rates.json.
+ * Returns { rates: {} } on failure so callers always get a valid shape.
+ */
+export async function loadModelRates(): Promise<ModelRatesFile> {
+  const now = Date.now();
+  if (modelRatesCache && now < modelRatesCache.expiresAt) return modelRatesCache.value;
+
+  const repoRoot = resolve(
+    process.env.XX_STACK_REPO || resolve(homedir(), ".config/opencode/skills/xx-stack")
+  );
+  const candidates = repoFileCandidates(repoRoot, "model-rates.json");
+
+  for (const path of candidates) {
+    try {
+      const raw = await readFile(path, "utf-8");
+      const parsed = JSON.parse(raw) as ModelRatesFile;
+      if (parsed && typeof parsed.rates === "object") {
+        modelRatesCache = { value: parsed, expiresAt: now + MODEL_RATES_CACHE_TTL_MS };
+        return parsed;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Return empty rates on failure — never crash the server for a missing rate file.
+  const fallback: ModelRatesFile = { comment: "fallback — no rate file found", rates: {} };
+  modelRatesCache = { value: fallback, expiresAt: now + MODEL_RATES_CACHE_TTL_MS };
+  return fallback;
+}
+
+/**
+ * Look up cost for a model name. Returns null for unknown models.
+ */
+export function lookupModelCost(
+  rates: ModelRates,
+  modelName: string | null | undefined,
+  tokensIn: number,
+  tokensOut: number
+): number | null {
+  if (!modelName) return null;
+  const entry = rates[modelName];
+  if (!entry) return null;
+  const costIn = (tokensIn / 1000) * entry.costPer1kInputTokens;
+  const costOut = (tokensOut / 1000) * entry.costPer1kOutputTokens;
+  return Math.round((costIn + costOut) * 1e6) / 1e6;
 }
 
 export async function quickPingEndpoint(endpoint: string): Promise<boolean> {
