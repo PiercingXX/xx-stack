@@ -13,6 +13,33 @@ import {
 
 import { jsonContent } from "./agent_tool_helpers.js";
 import { logEvent } from "./log_worker.js";
+
+// Telemetry config. Resolved relative to this module so the server
+// can be relocated between components without editing source.
+const TELEMETRY_CONFIG_CANDIDATES = [
+  "../../runtime/telemetry.json",
+  "../../../runtime/telemetry.json",
+] as const;
+
+interface TelemetryConfig {
+  enabled: boolean;
+  fields: string[];
+}
+
+let _telemetryConfig: TelemetryConfig | null = null;
+
+function loadTelemetryConfig(): TelemetryConfig {
+  if (_telemetryConfig) return _telemetryConfig;
+  for (const candidate of TELEMETRY_CONFIG_CANDIDATES) {
+    const url = new URL(candidate, import.meta.url);
+    if (existsSync(url)) {
+      _telemetryConfig = JSON.parse(readFileSync(url, "utf8")) as TelemetryConfig;
+      return _telemetryConfig;
+    }
+  }
+  _telemetryConfig = { enabled: false, fields: [] };
+  return _telemetryConfig;
+}
 interface ObservabilityToolDeps {
   loadRegistry: () => Promise<Registry>;
   detectHardware: () => Promise<Record<string, unknown>>;
@@ -270,6 +297,11 @@ function computeCostUsd(model: string | null, tokensIn: number, tokensOut: numbe
  * Cost is an estimate computed from the static rate table; if the model
  * is not in the table, costUsd is null.
  */
+// Test-only export to verify telemetry config loading without side effects.
+export function __testLoadTelemetryConfig(): TelemetryConfig {
+  return loadTelemetryConfig();
+}
+
 export async function logTelemetry(params: {
   lane: string;
   skill: string;
@@ -279,6 +311,9 @@ export async function logTelemetry(params: {
   tokensIn: number;
   tokensOut: number;
 }): Promise<void> {
+  const config = loadTelemetryConfig();
+  if (!config.enabled) return;
+
   const costUsd = computeCostUsd(params.model, params.tokensIn, params.tokensOut);
   void logEvent("server", "skill.run", {
     ts: new Date().toISOString(),
