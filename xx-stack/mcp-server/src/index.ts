@@ -33,6 +33,7 @@ import {
 } from "./routing_runtime.js";
 import { registerAgentTools } from "./agent_tools.js";
 import { registerObservabilityTools } from "./observability_tools.js";
+import { registerReviewToContinuationTool } from "./review_to_continuation.js";
 import { loadRegistry, detectHardware, quickPingEndpoint } from "./platform_runtime.js";
 import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
@@ -173,6 +174,9 @@ registerTaskTools(server, {
 registerVerifyEditTools(server, {
   allowedCommands: ["echo", "cat", "node", "npm", "npx", "ruff", "pytest"],
 });
+
+// registerReviewToContinuationTool follows the registerXxxTools pattern
+registerReviewToContinuationTool(server);
 
 // --- Start ---
 
