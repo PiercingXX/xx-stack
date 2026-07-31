@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import { logEvent } from "./log_worker.js";
 import type { Registry } from "./platform_types.js";
-import { buildWatchdogRouteCandidates, routeParallelTasks, routeTask } from "./routing_runtime.js";
+import {
+  buildWatchdogRouteCandidates,
+  routeArchitectEditor,
+  routeParallelTasks,
+  routeTask,
+} from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
 interface RoutingToolDeps {
@@ -110,7 +115,7 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
         fallbackCount: candidates.candidates.length,
       });
 
-      return jsonContent({
+return jsonContent({
         status,
         reason,
         baseRoute,
@@ -125,6 +130,40 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
         selectedFailover,
         failoverCandidates,
       });
+    }
+  );
+
+  server.tool(
+    "route_architect_editor",
+    "Given a task description, recommend two lanes: an architect (deep reasoning) and an editor (fast execution). Reuses the existing tier-selection mechanism — the architect lane targets the coder-deep alias and the editor lane targets the coder-fast alias. Cloud hosts excluded by default.",
+    {
+      description: z.string().describe("Description of the task to route"),
+      preferArchitectHost: z
+        .string()
+        .optional()
+        .describe("Optional host ID override for the architect lane"),
+      preferEditorHost: z
+        .string()
+        .optional()
+        .describe("Optional host ID override for the editor lane"),
+    },
+    async ({ description, preferArchitectHost, preferEditorHost }) => {
+      const registry = await deps.loadRegistry();
+      const result = routeArchitectEditor(
+        description,
+        registry,
+        preferArchitectHost ?? undefined,
+        preferEditorHost ?? undefined
+      );
+      void logEvent("server", "route_architect_editor.result", {
+        description: description.slice(0, 200),
+        architectHost: result.architect.host,
+        architectModel: result.architect.model,
+        editorHost: result.editor.host,
+        editorModel: result.editor.model,
+        fallback: result.fallback,
+      });
+      return jsonContent(result);
     }
   );
 }
