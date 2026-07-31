@@ -1,65 +1,44 @@
 # Goal
 
-Add an MCP tool that, given a repo root and a token budget, returns the most
-relevant slice of the codebase (ranked files + key symbols) to feed into a
-routed task. xx-stack routes a task to a machine but never decides what code
-context goes in the prompt — and that matters most for the small local models
-this stack targets, where the window is tight.
+`buildRepoMap` does not respect its token budget on this repository, and
+the acceptance test that was supposed to catch that does not check it.
+
+Measured: `buildRepoMap({ root: <this repo>, tokenBudget: 4000 })` returns
+`tokensEstimated: 76187` — 19x the budget — and one file. The real-repo
+acceptance test calls exactly that and asserts elapsed time, non-empty
+results, method, and `tokensEstimated > 0`. It never asserts
+`tokensEstimated <= tokenBudget`, which is the single property the test
+exists to prove.
 
 # Requirements
 
-- Tool `build_repo_map`, args:
-  `{ root: string, tokenBudget?: number (default 8000), focusPaths?: string[],
-  includeSymbols?: boolean }`.
-- PHASE 1 ONLY in this task, no new dependencies: rank by cheap signals — git
-  recency, path proximity to `focusPaths`, and import/reference counts via
-  regex — returning a ranked file list with byte/line ranges that fit the
-  budget. Phase 2 (tree-sitter) is explicitly OUT of scope; leave the return
-  shape ready for it.
-- Return `{ files: [{ path, score, ranges, symbols? }], tokensEstimated,
-  method: "heuristic"|"treesitter" }` — `method` is "heuristic" here.
-- Respect `.xxignore` (an existing repo convention) and `.gitignore`.
-- No network calls. Must work with zero optional deps installed.
+1. `tokensEstimated` MUST be <= `tokenBudget` for any input. If a single
+   file exceeds the whole budget, include a truncated RANGE of it rather
+   than the whole file, or omit it and say so — never blow the budget.
+   The return shape already carries `ranges`; use it.
+2. Fix the real-repo acceptance test to assert
+   `result.tokensEstimated <= 4000` — the budget it passes in.
+3. Fix the synthetic budget test too: it currently allows `<= 160` for a
+   budget of 80 ("within 2x budget"). A 2x tolerance is not a budget.
+   Assert `<= tokenBudget`.
+4. Re-check every other assertion in that test file the same way: does it
+   assert the property its name claims? Report any others you find, and
+   fix them.
 
-# Files
+# Hard constraints
 
-- New: `xx-stack/mcp-server/src/repo_map_runtime.ts` (pure logic + ranking)
-- New: `xx-stack/mcp-server/src/repo_map_tools.ts` (the tool)
-- New: `xx-stack/mcp-server/src/repo_map_runtime.test.ts`
-- Edit: `xx-stack/mcp-server/src/index.ts` (register the tool group)
-
-# Ground rules for this repo (from its own TODO — non-negotiable)
-
-- New MCP tools register via `server.tool(name, description, zodSchema, handler)`
-  and are wired in `xx-stack/mcp-server/src/index.ts` through a
-  `registerXxxTools(server, deps)` function — see `routing_tools.ts` for the
-  canonical shape. Follow it; do not invent a second registration style.
-- Tests use the built-in `node:test` runner (see `reliability.test.ts`). Add a
-  `*.test.ts` beside new runtime files.
-- The MCP server is ESM (`"type": "module"`) — import local files WITH the `.js`
-  extension. Shared `xx-stack/scripts/*.js` helpers are CommonJS; ESM
-  entrypoints use `.mjs`.
-- After any change touching `inventory.json`/schema/registries: run
-  `npm run inventory:sync` then `npm run inventory:check` (CI fails on drift).
-- xx-stack is a HEADLESS, local-first MCP control plane. No GUI. Cloud stays
-  opt-in. `inventory.json` stays the single source of truth.
-- Final gate: `npm run verify` (layout + agents + drift + inventory + tests +
-  hermes). It is green on a clean checkout — keep it that way.
-
-# Rules carried from the Skippy side (earned the hard way)
-
-- SCOPE IS LAW: touch only the files this task names. Report anything else you
-  find; never fix it in passing.
-- A numeric limit or a security property needs an assertion against the REAL
-  artifact, not a fixture.
-- Verify commands must be quote-free shell and must be capable of FAILING if
-  the claim is false.
+- SCOPE IS LAW: repo_map_runtime.ts, repo_map_tools.ts if needed, and
+  repo_map_runtime.test.ts. Nothing else.
+- Do not weaken the budget to make the test pass — the budget is the
+  feature.
+- `npm test` compiles to dist/ and runs `dist/*.test.js`; tsc does NOT
+  clean dist, so stale compiled tests from other branches can run. Remove
+  dist before trusting a result.
 
 # Acceptance criteria
 
-1. Returns a budget-respecting ranked map on THIS repo in under 2 seconds —
-   assert against the real repository, not a fixture.
-2. `focusPaths` measurably reorders results toward the focus (test asserts a
-   file under the focus path outranks one outside it).
-3. Unit tests cover budget truncation, ignore-file filtering, focus reordering.
-4. `npm run verify` green.
+1. A direct call `buildRepoMap({ root: <repo root>, tokenBudget: 4000 })`
+   returns `tokensEstimated <= 4000`. Prove it in the loop report by
+   running it, not by describing it.
+2. Both budget tests assert `<= tokenBudget` with no multiplier.
+3. `npm run verify` green after `rm -rf xx-stack/mcp-server/dist`.

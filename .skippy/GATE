@@ -1,1 +1,1 @@
-GATE=npm run verify
+GATE=rm -rf xx-stack/mcp-server/dist && npm run verify

@@ -50,7 +50,7 @@ test("buildRepoMap respects token budget", async () => {
     const result = await buildRepoMap({ root, tokenBudget: 80 });
     assert.ok(result.files.length > 0, "should return at least one file");
     assert.ok(result.files.length < 5, "should truncate before including all files");
-    assert.ok(result.tokensEstimated <= 160, `tokensEstimated ${result.tokensEstimated} should be within 2x budget`);
+    assert.ok(result.tokensEstimated <= 80, `tokensEstimated ${result.tokensEstimated} should be within budget of 80`);
     assert.equal(result.method, "heuristic");
   });
 });
@@ -162,7 +162,7 @@ test("acceptance: buildRepoMap on real repo root returns under 2 seconds", async
   assert.ok(result.files.length > 0, "should return files from the real repo");
   assert.equal(result.method, "heuristic");
   assert.ok(result.tokensEstimated > 0, "should have non-zero token estimate");
-  assert.ok(result.tokensEstimated <= 8000, `tokensEstimated ${result.tokensEstimated} should be within default budget`);
+  assert.ok(result.tokensEstimated <= 4000, `tokensEstimated ${result.tokensEstimated} should be within budget of 4000`);
 });
 
 test("acceptance: focusPaths measurably reorders results on real repo", async () => {

@@ -310,13 +310,40 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
       fileTokens = 0;
     }
 
-    if (runningTokens + fileTokens > tokenBudget && selected.length > 0) {
-      if (runningTokens + fileTokens > tokenBudget * 2) break;
+    if (fileTokens === 0) continue;
+
+    // If this file alone exceeds the remaining budget, include a truncated range
+    const remaining = tokenBudget - runningTokens;
+    if (runningTokens + fileTokens > tokenBudget) {
+      if (remaining <= 0) break;
+
+      // Truncate the file to fit within remaining budget
+      const lines = fileContent.split("\n");
+      const totalLines = lines.length;
+      // Estimate how many lines fit: proportional to token ratio
+      const lineBudget = Math.max(1, Math.floor((remaining / fileTokens) * totalLines));
+      const truncatedContent = lines.slice(0, lineBudget).join("\n");
+      const truncatedTokens = estimateTokens(truncatedContent);
+
+      const ranges = [{ startLine: 1, endLine: lineBudget }];
+
+      let symbols: string[] | undefined;
+      if (includeSymbols) {
+        symbols = extractSymbols(truncatedContent);
+      }
+
+      selected.push({
+        path: s.path,
+        score: s.proximityScore,
+        ranges,
+        symbols,
+      });
+
+      runningTokens += truncatedTokens;
+      break;
     }
 
-    const ranges = fileTokens > 0
-      ? [{ startLine: 1, endLine: fileContent.split("\n").length }]
-      : [];
+    const ranges = [{ startLine: 1, endLine: fileContent.split("\n").length }];
 
     let symbols: string[] | undefined;
     if (includeSymbols) {
