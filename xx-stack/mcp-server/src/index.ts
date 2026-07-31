@@ -33,7 +33,13 @@ import {
 } from "./routing_runtime.js";
 import { registerAgentTools } from "./agent_tools.js";
 import { registerObservabilityTools } from "./observability_tools.js";
-import { loadRegistry, detectHardware, loadModelRates, quickPingEndpoint } from "./platform_runtime.js";
+import {
+  detectHardware,
+  loadModelRates,
+  loadRegistry,
+  lookupModelCost,
+  quickPingEndpoint,
+} from "./platform_runtime.js";
 import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
@@ -103,6 +109,8 @@ export const __testExports = {
   evaluateCompletionReadiness,
   parseCompletionValidationReason,
   buildCompletionRepairChecklist,
+  lookupModelCost,
+  loadModelRates,
 };
 
 // --- MCP Server ---
