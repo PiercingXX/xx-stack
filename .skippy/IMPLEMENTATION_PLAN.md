@@ -2,7 +2,7 @@
 
 - [x] Add `editFormat` and `editFormatReliability` enum fields to `inventory.schema.json`
 - [x] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.example.json`
-- [ ] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.json`
+- [x] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.json`
 - [ ] Propagate `editFormat` and `editFormatReliability` through `xx-stack/scripts/generate-registries.mjs`
 - [ ] Run `npm run inventory:sync && npm run inventory:check` to ensure no drift
 - [ ] Create `xx-stack/mcp-server/src/verify_edit_tools.ts` with `verify_edit` tool using `execution_policy.ts` and truncation to 4096 bytes

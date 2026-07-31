@@ -142,7 +142,9 @@
               "contextWindow": 262144,
               "supportsToolUse": true,
               "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
+              "jsonModeReliability": "validated",
+              "editFormat": "diff",
+              "editFormatReliability": "unverified"
             }
           ]
         },
@@ -197,6 +199,8 @@
           "priority": "medium",
           "toolCallReliability": "unverified",
           "jsonModeReliability": "unverified",
+          "editFormat": "diff",
+          "editFormatReliability": "unverified",
           "notes": "Virtual model name — Hermes resolves the real backend per its own lane policy."
         }
       ]
