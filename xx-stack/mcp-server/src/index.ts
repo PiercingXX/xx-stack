@@ -37,6 +37,7 @@ import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
+import { registerVerifyEditTools } from "./verify_edit_tools.js";
 import {
   applySupervisorEventTransition,
   buildCompletionRepairChecklist,
@@ -165,6 +166,10 @@ registerTaskTools(server, {
   loadReliabilityConfig,
   readSupervisorStore,
   pruneSupervisorStore,
+});
+
+registerVerifyEditTools(server, {
+  allowedCommands: ["echo", "cat", "node", "npm", "npx", "ruff", "pytest"],
 });
 
 // --- Start ---
