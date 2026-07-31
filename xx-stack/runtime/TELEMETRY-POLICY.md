@@ -37,6 +37,22 @@ If a telemetry event does not support measurable automation outcomes, remove it.
 - Default: disabled (`"enabled": false`)
 - Helper hooks: not shipped by default; if you add one locally, keep it minimal and local-first
 
+## Cost Fields
+
+The telemetry schema now includes four cost-related fields:
+
+| Field       | Type   | Description                                      |
+|-------------|--------|--------------------------------------------------|
+| `lane`      | string | The model lane used (e.g., `"gpt-4"`, `"local"`) |
+| `tokensIn`  | int    | Input token count for the operation              |
+| `tokensOut` | int    | Output token count for the operation             |
+| `costUsd`   | float  | Estimated cost in USD, or `null` if unknown      |
+
+- **Cost is an estimate.** Actual billing may differ due to provider-specific rounding, caching discounts, or tiered pricing. The value is computed from the static rate table (`rate-table.json`) and should not be treated as an invoice.
+- **Retention window is unchanged.** Cost telemetry follows the same retention and cleanup policy as all other telemetry fields.
+- **`local` lanes** always report `costUsd: 0` (no provider cost).
+- **Unknown models** report `costUsd: null` (model not found in rate table).
+
 ## Skills With Optional Telemetry Snippets
 - `review-code`
 - `test-qa`
