@@ -26,6 +26,7 @@ import {
   chooseModelForTask,
   effectiveParallelCapacity,
   endpointFamilyForProvider,
+  routeArchitectEditor,
   routeParallelTasks,
   routeTask,
   scoreTiers,
@@ -34,7 +35,7 @@ import { registerAgentTools } from "./agent_tools.js";
 import { registerObservabilityTools } from "./observability_tools.js";
 import { loadRegistry, detectHardware, quickPingEndpoint } from "./platform_runtime.js";
 import { repoFileCandidates } from "./runtime_constants.js";
-import { registerRoutingTools } from "./routing_tools.js";
+import { registerArchitectEditorTools, registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
 import {
@@ -80,6 +81,7 @@ export const __testExports = {
   makeRecoveryKey,
   scoreTiers,
   routeTask,
+  routeArchitectEditor,
   routeParallelTasks,
   routeParallelTasksRaw: routeParallelTasks,
   buildWatchdogRouteCandidates,
@@ -132,6 +134,10 @@ registerObservabilityTools(server, {
 });
 
 registerRoutingTools(server, {
+  loadRegistry,
+});
+
+registerArchitectEditorTools(server, {
   loadRegistry,
 });
 

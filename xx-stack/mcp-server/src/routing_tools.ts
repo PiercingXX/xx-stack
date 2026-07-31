@@ -3,7 +3,12 @@ import { z } from "zod";
 
 import { logEvent } from "./log_worker.js";
 import type { Registry } from "./platform_types.js";
-import { buildWatchdogRouteCandidates, routeParallelTasks, routeTask } from "./routing_runtime.js";
+import {
+  buildWatchdogRouteCandidates,
+  routeArchitectEditor,
+  routeParallelTasks,
+  routeTask,
+} from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
 interface RoutingToolDeps {
@@ -125,6 +130,37 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
         selectedFailover,
         failoverCandidates,
       });
+    }
+  );
+}
+
+export function registerArchitectEditorTools(server: McpServer, deps: RoutingToolDeps): void {
+  server.tool(
+    "route_architect_editor",
+    "Route a task to an architect (reasoning-strong, coder-deep lane) and an editor (low-latency, coder-fast lane) using the existing registry. Returns separate host/model/reasoning for each role plus a combined fallback.",
+    {
+      description: z.string().describe("Description of the task to route"),
+      preferArchitectHost: z
+        .string()
+        .optional()
+        .describe("Optional host ID override for the architect lane"),
+      preferEditorHost: z
+        .string()
+        .optional()
+        .describe("Optional host ID override for the editor lane"),
+    },
+    async ({ description, preferArchitectHost, preferEditorHost }) => {
+      const registry = await deps.loadRegistry();
+      const result = routeArchitectEditor(description, registry, preferArchitectHost, preferEditorHost);
+      void logEvent("server", "route_architect_editor.result", {
+        description: description.slice(0, 200),
+        architectHost: result.architect.host,
+        architectModel: result.architect.model,
+        editorHost: result.editor.host,
+        editorModel: result.editor.model,
+        fallback: result.fallback,
+      });
+      return jsonContent(result);
     }
   );
 }
