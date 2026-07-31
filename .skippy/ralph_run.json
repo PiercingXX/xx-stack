@@ -1,0 +1,12 @@
+{
+ "status": "running",
+ "goal": "Complete every unchecked item in .skippy/IMPLEMENTATION_PLAN.md. Binding contract: .skippy/SPEC.md. SCOPE IS LAW — out-of-scope discoveries are reported, never fixed.",
+ "gate_command": "npm run verify",
+ "max_loops": 10,
+ "loops_run": 1,
+ "reports": [
+  "DONE_WITH_CONCERNS npm run verify could not fully run — the sandbox lacks node_modules (npm cache is read-only), so `tsc` was not found and the test/build step failed. All structural checks passed: layout:verify (60/60), agents:check (8/8), drift:check (PASS), inventory:check (3/3). The code changes are correct by manual review.\n\n**What changed:**\n- **`routing_runtime.ts`** — added barrel re-export of new `routing_architect_editor_runtime.ts` module\n- **`routing_architect_editor_runtime.ts`** (new) — `routeArchitectEditor()` function that calls `routeTask` twice with crafted descriptions (`\"plan architecture for …\"` for architect, `\"implement code for …\"` for editor), reusing existing keyword/role tier selection. Handles `preferArchitectHost`/`preferEditorHost` overrides with cloud-gate enforcement. Returns `{architect: {host, model, reasoning}, editor: {host, model, reasoning}, fallback}`\n- **`routing_tools.ts`** — added `registerArchitectEditorTools()` registering `route_architect_editor` MCP tool with Zod schema for `{description, preferArchitectHost?, preferEditorHost?}`\n- **`index.ts`** — imported `registerArchitectEditorTools` and called it after `registerRoutingTools`; added `routeArchitectEditor` to `__testExports`\n- **`routing_runtime.test.ts`** (new) — three test cases: distinct deep/fast lanes, single-lane collapse with clear reasoning, cloud excluded by default\n\n**Cloud exclusion** is inherent: `routeArchitectEditor` calls `cloudRoutingAllowed()` (the same gate `routeTask` uses) and the underlying `routeTask` already filters out cloud when blocked."
+ ],
+ "stall_last_done": -1,
+ "stall_count": 0
+}

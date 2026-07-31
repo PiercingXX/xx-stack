@@ -6,3 +6,4 @@
 - [x] Add test file `xx-stack/mcp-server/src/routing_runtime.test.ts` with three test cases: distinct deep/fast lanes resolve correctly, single lane collapses both with clear reasoning, cloud excluded by default
 - [x] Ensure the `routeArchitectEditor` function respects `XX_STACK_ALLOW_CLOUD` environment variable for cloud exclusion, reusing the existing gate logic
 - [x] Run `npm run verify` to confirm all checks pass and the repository remains green
+- [x] Completion gate failed (`npm run verify`) after loop 1; diagnose and fix the failures
