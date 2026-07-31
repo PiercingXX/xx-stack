@@ -1,7 +1,7 @@
 # Implementation Plan
 
 - [x] Add `editFormat` and `editFormatReliability` enum fields to `inventory.schema.json`
-- [ ] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.example.json`
+- [x] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.example.json`
 - [ ] Add example `editFormat` and `editFormatReliability` fields (both `"unverified"`) to two models in `inventory.json`
 - [ ] Propagate `editFormat` and `editFormatReliability` through `xx-stack/scripts/generate-registries.mjs`
 - [ ] Run `npm run inventory:sync && npm run inventory:check` to ensure no drift

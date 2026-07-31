@@ -1,0 +1,12 @@
+{
+ "status": "running",
+ "goal": "Complete every unchecked item in .skippy/IMPLEMENTATION_PLAN.md. Binding contract: .skippy/SPEC.md. SCOPE IS LAW — out-of-scope discoveries are reported, never fixed.",
+ "gate_command": "npm run verify",
+ "max_loops": 10,
+ "loops_run": 1,
+ "reports": [
+  "DONE. Task 1: Added `editFormat` (enum `[\"whole\",\"diff\",\"diff-fenced\",\"udiff\"]`) and `editFormatReliability` (enum `[\"validated\",\"unverified\",\"unreliable\"]`) fields to the `model` definition in `inventory.schema.json`. Verified the file is valid JSON via `python3 -c \"import json; json.load(...)\"`."
+ ],
+ "stall_last_done": -1,
+ "stall_count": 0
+}

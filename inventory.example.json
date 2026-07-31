@@ -131,6 +131,8 @@
           "priority": "medium",
           "toolCallReliability": "unverified",
           "jsonModeReliability": "unverified",
+          "editFormat": "diff",
+          "editFormatReliability": "unverified",
           "notes": "Virtual model name — Hermes resolves the real backend per its own lane policy."
         }
       ]
