@@ -76,14 +76,14 @@ export function reviewToContinuation(input: ReviewToContinuationInput): ReviewTo
 
   const prompt = [
     "Review continuation directive:",
-    "- task: address all reviewer notes against the provided diff",
+    `- diff-lines: ${diffLineCount}`,
     "- requirements:",
     "  - do not restart from scratch",
     "  - address every note in the mustAddress list below",
     "  - produce deterministic evidence for each fix",
     "  - if a note's path does not appear in the diff, the agent must still",
     "    address it (the reviewer identified a missing change)",
-    `- diff (${diffLineCount} lines):`,
+    "- diff:",
     input.diff,
     "- must-address notes:",
     ...mustAddressLines,
