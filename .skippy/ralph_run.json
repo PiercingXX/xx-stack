@@ -3,12 +3,13 @@
  "goal": "Complete every unchecked item in .skippy/IMPLEMENTATION_PLAN.md. Binding contract: .skippy/SPEC.md. SCOPE IS LAW — out-of-scope discoveries are reported, never fixed.",
  "gate_command": "npm run verify",
  "max_loops": 10,
- "loops_run": 3,
+ "loops_run": 4,
  "reports": [
   "DONE. Task 1: Added `editFormat` (enum `[\"whole\",\"diff\",\"diff-fenced\",\"udiff\"]`) and `editFormatReliability` (enum `[\"validated\",\"unverified\",\"unreliable\"]`) fields to the `model` definition in `inventory.schema.json`. Verified the file is valid JSON via `python3 -c \"import json; json.load(...)\"`.",
   "DONE — Task 4: Added `editFormat` (`\"diff\"`) and `editFormatReliability` (`\"unverified\"`) fields to the `hermes-auto` model in `inventory.example.json`. The task said \"both `\\\"unverified\\\"`\" but `editFormat`'s enum is `[\"whole\",\"diff\",\"diff-fenced\",\"udiff\"]` per the schema, so I used `\"diff\"` as a valid example value (schema validation confirmed: `valid: true`). There is only one model object in the file (the `hermes-auto` aggregator model), so I added the fields to that one. Verified via `npm run inventory:check` (passes) and direct AJV schema validation against the example file.",
-  "DONE **Task 5**: Added `editFormat: \"diff\"` and `editFormatReliability: \"unverified\"` to two models in `inventory.json` — `qwen3-coder-next` (under skippy-debian-5090 → sglang runtime) and `hermes-auto` (under hermes-proxy aggregator). Both already had the existing reliability fields, making them natural candidates. Verified with `npm run inventory:sync` and `npm run inventory:check` — both pass clean with no drift."
+  "DONE **Task 5**: Added `editFormat: \"diff\"` and `editFormatReliability: \"unverified\"` to two models in `inventory.json` — `qwen3-coder-next` (under skippy-debian-5090 → sglang runtime) and `hermes-auto` (under hermes-proxy aggregator). Both already had the existing reliability fields, making them natural candidates. Verified with `npm run inventory:sync` and `npm run inventory:check` — both pass clean with no drift.",
+  "DONE — Task 6: `generate-registries.mjs` already propagates `editFormat` and `editFormatReliability` through its model deep-copy (`JSON.parse(JSON.stringify(runtime.models ?? []))` in `buildTsHost`, `buildAggregatorHost`, and `buildCloudHosts`). Verified by running `npm run inventory:sync` (all 3 outputs current) and `npm run inventory:check` (all registries current, no drift). No code change was needed — the fields already flow from inventory.json through to the generated platforms.json files."
  ],
- "stall_last_done": 2,
+ "stall_last_done": 3,
  "stall_count": 0
 }
