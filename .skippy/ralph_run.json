@@ -3,10 +3,11 @@
  "goal": "Complete every unchecked item in .skippy/IMPLEMENTATION_PLAN.md. Binding contract: .skippy/SPEC.md. SCOPE IS LAW — out-of-scope discoveries are reported, never fixed.",
  "gate_command": "test -f RESEARCH-orca.md && grep -q 'NOT borrowing' RESEARCH-orca.md && grep -q 'read their code' RESEARCH-orca.md",
  "max_loops": 10,
- "loops_run": 1,
+ "loops_run": 2,
  "reports": [
-  "DONE Clone the stablyai/orca repository to a temporary directory for analysis. Cloned `https://github.com/stablyai/orca.git` (depth 1) into `.skippy/orca-source/`. Verified by checking the directory exists and contains `README.md`."
+  "DONE Clone the stablyai/orca repository to a temporary directory for analysis. Cloned `https://github.com/stablyai/orca.git` (depth 1) into `.skippy/orca-source/`. Verified by checking the directory exists and contains `README.md`.",
+  "DONE Task #2: Read the core agent orchestration source files in the orca repository to identify overlapping concepts. I read the orchestration RPC contract (orchestration-rpc-contract.ts), task summary/display, check output, worker output, compatibility evidence, CLI handler (orchestration.ts), command specs (orchestration.ts, orchestration-worker-specs.ts), the orchestration skill guide (SKILL.md, skill-guides/orchestration.md), runtime orchestration types (types.ts), agent-kind mapping, and federation modules. Key concepts identified: Run/Task/Dispatch/Worker primitives, message mailbox with delivery/ack, decision gates, worker lifecycle (start/stop/abandon/read), federation across servers, legacy compatibility/adoption, skill-based CLI, and agent type catalog. No verification command needed — this was a read-only analysis task."
  ],
- "stall_last_done": -1,
+ "stall_last_done": 1,
  "stall_count": 0
 }
