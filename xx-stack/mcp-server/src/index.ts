@@ -37,6 +37,7 @@ import { repoFileCandidates } from "./runtime_constants.js";
 import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
+import { registerRepoMapTools } from "./repo_map_tools.js";
 import {
   applySupervisorEventTransition,
   buildCompletionRepairChecklist,
@@ -166,6 +167,8 @@ registerTaskTools(server, {
   readSupervisorStore,
   pruneSupervisorStore,
 });
+
+registerRepoMapTools(server, {});
 
 // --- Start ---
 
