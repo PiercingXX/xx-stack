@@ -163,6 +163,8 @@
         "supportsToolUse": { "type": "boolean" },
         "toolCallReliability": { "enum": ["validated", "unverified", "unreliable"] },
         "jsonModeReliability": { "enum": ["validated", "unverified", "unreliable"] },
+        "editFormat": { "enum": ["whole", "diff", "diff-fenced", "udiff"] },
+        "editFormatReliability": { "enum": ["validated", "unverified", "unreliable"] },
         "notes": { "type": "string" }
       }
     },

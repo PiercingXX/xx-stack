@@ -206,7 +206,9 @@
               "contextWindow": 262144,
               "supportsToolUse": true,
               "toolCallReliability": "validated",
-              "jsonModeReliability": "validated"
+              "jsonModeReliability": "validated",
+              "editFormat": "whole",
+              "editFormatReliability": "unverified"
             }
           ]
         }
