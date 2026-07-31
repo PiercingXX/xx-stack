@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -10,6 +12,7 @@ import {
 } from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+import { logEvent } from "./log_worker.js";
 interface ObservabilityToolDeps {
   loadRegistry: () => Promise<Registry>;
   detectHardware: () => Promise<Record<string, unknown>>;
@@ -222,6 +225,73 @@ const TOOL_CATALOG: ToolCatalogEntry[] = [
     keywords: ["coordinator", "contract", "worker", "prompt"],
   },
 ];
+
+// Rate table for cost estimation. Resolved relative to this module so the server
+// can be relocated between components without editing source.
+const RATE_TABLE_CANDIDATES = [
+  "../../runtime/rate-table.json",
+  "../../../runtime/rate-table.json",
+] as const;
+
+type RateTable = Record<string, number>;
+
+let _rateTable: RateTable | null = null;
+
+function loadRateTable(): RateTable {
+  if (_rateTable) return _rateTable;
+  for (const candidate of RATE_TABLE_CANDIDATES) {
+    const url = new URL(candidate, import.meta.url);
+    if (existsSync(url)) {
+      _rateTable = JSON.parse(readFileSync(url, "utf8")) as RateTable;
+      return _rateTable;
+    }
+  }
+  _rateTable = {};
+  return _rateTable;
+}
+
+/**
+ * Compute estimated cost in USD for a given model and token counts.
+ * Returns null when the model is not in the rate table (honest gap over
+ * a misleading zero).
+ */
+function computeCostUsd(model: string | null, tokensIn: number, tokensOut: number): number | null {
+  if (!model) return null;
+  const rate = loadRateTable()[model];
+  if (rate === undefined) return null;
+  // Rate is USD per 1K tokens (input+output combined at the same rate).
+  return rate * ((tokensIn + tokensOut) / 1000);
+}
+
+/**
+ * Log a telemetry event with per-lane usage and cost fields.
+ *
+ * The event is written to the existing server JSONL sink via logEvent.
+ * Cost is an estimate computed from the static rate table; if the model
+ * is not in the table, costUsd is null.
+ */
+export async function logTelemetry(params: {
+  lane: string;
+  skill: string;
+  outcome: string;
+  durationMs: number;
+  model: string | null;
+  tokensIn: number;
+  tokensOut: number;
+}): Promise<void> {
+  const costUsd = computeCostUsd(params.model, params.tokensIn, params.tokensOut);
+  void logEvent("server", "skill.run", {
+    ts: new Date().toISOString(),
+    skill: params.skill,
+    outcome: params.outcome,
+    durationMs: params.durationMs,
+    lane: params.lane,
+    tokensIn: params.tokensIn,
+    tokensOut: params.tokensOut,
+    costUsd,
+    model: params.model,
+  });
+}
 
 export function registerObservabilityTools(server: McpServer, deps: ObservabilityToolDeps): void {
   server.tool(
