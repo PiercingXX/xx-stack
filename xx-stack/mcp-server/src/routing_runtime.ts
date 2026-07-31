@@ -123,6 +123,13 @@ export function routeCompetitiveTask(
   registry: Registry,
   laneCount: number
 ): CompetitiveRoute {
+  // Reject laneCount outside the supported range rather than clamping silently.
+  if (laneCount < 2 || laneCount > 5) {
+    throw new RangeError(
+      `laneCount must be between 2 and 5 inclusive for fanout, got ${laneCount}`
+    );
+  }
+
   const cloudBlocked = !cloudRoutingAllowed(registry);
   const cloudNote = cloudBlocked
     ? "; cloud tier excluded (cloud escalation requires opt-in via selectionPolicy.cloudEscalation.optIn or XX_STACK_ALLOW_CLOUD=1)"
