@@ -27,6 +27,7 @@ import {
   effectiveParallelCapacity,
   endpointFamilyForProvider,
   routeArchitectEditor,
+  routeCompetitiveTask, // registers "route_competitive_task" MCP tool
   routeParallelTasks,
   routeTask,
   scoreTiers,
@@ -90,6 +91,7 @@ export const __testExports = {
   scoreTiers,
   routeTask,
   routeArchitectEditor,
+  routeCompetitiveTask,
   routeParallelTasks,
   routeParallelTasksRaw: routeParallelTasks,
   buildWatchdogRouteCandidates,
