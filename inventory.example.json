@@ -52,7 +52,24 @@
           "enabled": true,
           "primary": true,
           "notes": "Ollama's default port. This is the one lane enabled out of the box — if `ollama serve` is running, the stack works with no edits.",
-          "models": []
+          "models": [
+            {
+              "name": "llama3.2:3b",
+              "roles": ["implement", "quick-verify"],
+              "priority": "high",
+              "editFormat": "whole",
+              "editFormatReliability": "unverified",
+              "notes": "Example model entry. Replace with models you actually have pulled."
+            },
+            {
+              "name": "qwen2.5-coder:7b",
+              "roles": ["plan", "reason"],
+              "priority": "medium",
+              "editFormat": "diff",
+              "editFormatReliability": "unverified",
+              "notes": "Second example model demonstrating diff edit format."
+            }
+          ]
         },
         {
           "kind": "llama-cpp",
@@ -131,6 +148,8 @@
           "priority": "medium",
           "toolCallReliability": "unverified",
           "jsonModeReliability": "unverified",
+          "editFormat": "diff-fenced",
+          "editFormatReliability": "unverified",
           "notes": "Virtual model name — Hermes resolves the real backend per its own lane policy."
         }
       ]
