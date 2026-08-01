@@ -181,5 +181,49 @@ export function routeCompetitiveTask(
   };
 }
 
+/**
+ * Result shape for a scored candidate.
+ */
+export interface ScoredCandidate {
+  description: string;
+  totalScore: number;
+  tierScores: Record<string, number>;
+  rationale: string;
+}
+
+/**
+ * Score and rank candidate task descriptions against the tier keyword
+ * matcher. Returns a deterministic ranking with per-candidate rationale.
+ *
+ * Tie-breaking: when two candidates have the same totalScore, their relative
+ * order is the input order (stable sort) — the caller's original sequence
+ * is preserved among equal scores, making the output fully deterministic
+ * across repeated calls with the same inputs.
+ */
+export function scoreCandidates(
+  candidates: string[],
+  registry: Registry
+): ScoredCandidate[] {
+  const scored = candidates.map((desc) => {
+    const scores = scoreTiers(desc, registry);
+    const total = Object.values(scores).reduce((sum, s) => sum + s, 0);
+    const breakdown = Object.entries(scores)
+      .filter(([, v]) => v > 0)
+      .map(([tier, score]) => `${tier}:${score}`)
+      .join(", ");
+    const topTier = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+    const rationale =
+      total > 0
+        ? `Score ${total} — matched ${breakdown}; best tier: "${topTier?.[0] ?? "none"}"`
+        : "No keyword matches against any tier";
+    return { description: desc, totalScore: total, tierScores: scores, rationale };
+  });
+
+  // Stable sort by totalScore descending — equal scores keep input order.
+  scored.sort((a, b) => b.totalScore - a.totalScore);
+
+  return scored;
+}
+
 export * from "./routing_endpoint_runtime.js";
 export * from "./routing_selection_runtime.js";
