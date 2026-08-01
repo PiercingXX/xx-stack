@@ -1,0 +1,91 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { compactOutput } from "./output_compaction.js";
+
+test("compactOutput with cap keeps both head and tail when input exceeds cap", () => {
+  // Build input: 100 lines of "header line", then a unique middle marker,
+  // then 100 lines of "footer line".  This is well over a cap of 200 chars.
+  const lines: string[] = [];
+  for (let i = 0; i < 100; i++) lines.push("header line");
+  lines.push("--- UNIQUE MIDDLE ---");
+  for (let i = 0; i < 100; i++) lines.push("footer line");
+  const input = lines.join("\n");
+
+  const result = compactOutput(input, { cap: 200 });
+
+  // Both the head and tail should be present.
+  assert.ok(result.output.startsWith("header line"), "output should start with head content");
+  assert.ok(result.output.endsWith("footer line"), "output should end with tail content");
+
+  // The truncation notice should be present.
+  assert.ok(result.output.includes("[truncated"), "output should contain truncation notice");
+
+  // The dropped array should report truncation.
+  assert.ok(
+    result.dropped.some((d) => d.startsWith("truncated")),
+    "dropped should include truncation report"
+  );
+});
+
+test("compactOutput with cap below input length preserves head proportion", () => {
+  // A short input with a clear head and tail boundary.
+  const input = "AAAAA\nBBBBB\nCCCCC\nDDDDD\nEEEEE";
+  const cap = 18; // smaller than input length (30 chars)
+  const result = compactOutput(input, { cap });
+
+  // Head should be roughly 60% of cap, tail the remainder.
+  assert.ok(result.output.startsWith("AAAAA"), "output should start with head");
+  assert.ok(result.output.endsWith("EEEEE"), "output should end with tail");
+  assert.ok(result.dropped.length > 0, "should report dropped content");
+});
+
+test("compactOutput with cap larger than input returns unchanged", () => {
+  const input = "short string";
+  const result = compactOutput(input, { cap: 1000 });
+  assert.equal(result.output, input);
+  assert.equal(result.dropped.length, 0);
+});
+
+test("compactOutput with cap=0 (no cap) returns unchanged", () => {
+  const input = "some\nlong\ninput\nhere";
+  const result = compactOutput(input, { cap: 0 });
+  assert.equal(result.output, input);
+  assert.equal(result.dropped.length, 0);
+});
+
+test("compactOutput with cap and collapseRepeats reports accurate dropped counts", () => {
+  // 10 identical lines + 1 unique line = 11 lines input
+  const input = "same\n".repeat(10) + "unique";
+  const result = compactOutput(input, { collapseRepeats: true, cap: 200 });
+
+  // Collapse should report 10 identical lines collapsed.
+  const collapseDrops = result.dropped.filter((d) => d.startsWith("collapsed"));
+  assert.ok(collapseDrops.length > 0, "should report collapsed lines");
+
+  // The collapsed output should have fewer lines than input.
+  const inputLines = input.split("\n").length;
+  const outputLines = result.output.split("\n").length;
+  assert.ok(outputLines < inputLines, "output should have fewer lines than input");
+});
+
+test("compactOutput collapseRepeats dropped line count equals input lines minus output lines", () => {
+  // 20 identical lines + 5 unique lines = 25 lines input
+  const input = "A\n".repeat(20) + "B\nC\nD\nE\nF";
+  const result = compactOutput(input, { collapseRepeats: true });
+
+  const inputLines = input.split("\n").length;
+  const outputLines = result.output.split("\n").length;
+  const linesDropped = inputLines - outputLines;
+
+  // The dropped array should contain one entry for the collapsed run of 20 lines.
+  // The collapsed run of 20 identical lines becomes 2 lines (the line itself + collapse notice),
+  // so 18 lines are removed.  The remaining 5 unique lines pass through unchanged.
+  assert.equal(linesDropped, 18, "should have dropped 18 lines (20 -> 2)");
+
+  // Verify the dropped message mentions the correct count.
+  assert.ok(
+    result.dropped.some((d) => d.includes("20")),
+    "dropped should mention the run length of 20"
+  );
+});
