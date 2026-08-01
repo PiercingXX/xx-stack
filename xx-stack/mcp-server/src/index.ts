@@ -30,6 +30,7 @@ import {
   routeCompetitiveTask, // registers "route_competitive_task" MCP tool
   routeParallelTasks,
   routeTask,
+  scoreCandidates,
   scoreTiers,
 } from "./routing_runtime.js";
 import { registerAgentTools } from "./agent_tools.js";
@@ -88,6 +89,7 @@ export const __testExports = {
   DEFAULT_RELIABILITY,
   pushSessionEvent,
   makeRecoveryKey,
+  scoreCandidates,
   scoreTiers,
   routeTask,
   routeArchitectEditor,

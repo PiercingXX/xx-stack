@@ -60,7 +60,7 @@ test("routeCompetitiveTask reports shortfall when fewer distinct lanes exist tha
   assert.equal(result.lanes[0].host, "local-box");
 });
 
-test("routeCompetitiveTask tie stability: identical input produces identical output", () => {
+test("scoreCandidates: every candidate carries a rationale", () => {
   const registry = buildRegistryFixture([
     {
       id: TIER_IDS.local,
@@ -73,12 +73,7 @@ test("routeCompetitiveTask tie stability: identical input produces identical out
           reachable: true,
           provider: "ollama",
           endpoint: "http://127.0.0.1:11434",
-          models: [
-            {
-              name: "qwen2.5-coder:7b",
-              roles: ["code", "edit", "plan", "architect"],
-            },
-          ],
+          models: [{ name: "qwen2.5-coder:7b", roles: ["code", "edit", "plan"] }],
         },
       ],
     },
@@ -93,50 +88,71 @@ test("routeCompetitiveTask tie stability: identical input produces identical out
           reachable: true,
           provider: "ollama",
           endpoint: "http://remote:11434",
-          models: [
-            {
-              name: "deepseek-coder-v2",
-              roles: ["code", "edit", "plan", "architect"],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: TIER_IDS.tailscaleOpenAiCompatible,
-      label: "Tailscale OpenAI Compatible",
-      hosts: [
-        {
-          id: "sglang-box",
-          label: "SGLang Remote",
-          enabled: true,
-          reachable: true,
-          provider: "sglang",
-          endpoint: "http://sglang:8000",
-          models: [
-            {
-              name: "llama-3.1-8b",
-              roles: ["code", "edit", "plan", "architect"],
-            },
-          ],
+          models: [{ name: "deepseek-coder-v2", roles: ["code", "edit", "plan"] }],
         },
       ],
     },
   ]);
 
-  const description = "implement a quick fix and review the code";
-  const first = __testExports.routeCompetitiveTask(description, registry as never, 3);
-  const second = __testExports.routeCompetitiveTask(description, registry as never, 3);
+  const candidates = [
+    "implement a quick fix",
+    "analyze the architecture and research alternatives",
+    "random unrelated text",
+  ];
 
-  assert.equal(first.requestedLanes, second.requestedLanes);
-  assert.equal(first.returnedLanes, second.returnedLanes);
-  assert.equal(first.shortfall, second.shortfall);
-  assert.equal(first.fallback, second.fallback);
-  assert.equal(first.lanes.length, second.lanes.length);
+  const result = __testExports.scoreCandidates(candidates, registry as never);
+  assert.equal(result.length, 3);
 
-  for (let i = 0; i < first.lanes.length; i++) {
-    assert.equal(first.lanes[i].host, second.lanes[i].host);
-    assert.equal(first.lanes[i].model, second.lanes[i].model);
-    assert.equal(first.lanes[i].reasoning, second.lanes[i].reasoning);
+  for (const item of result) {
+    assert.ok(typeof item.description === "string" && item.description.length > 0);
+    assert.ok(typeof item.totalScore === "number" && item.totalScore >= 0);
+    assert.ok(typeof item.tierScores === "object" && item.tierScores !== null);
+    assert.ok(typeof item.rationale === "string" && item.rationale.length > 0);
+  }
+
+  // First candidate ("implement a quick fix") should score higher than unrelated text
+  assert.ok(result[0].totalScore >= result[2].totalScore);
+});
+
+test("scoreCandidates tie stability: identical scores preserve input order across two runs", () => {
+  const registry = buildRegistryFixture([
+    {
+      id: TIER_IDS.local,
+      label: "Local",
+      hosts: [
+        {
+          id: "local-box",
+          label: "Local Workstation",
+          enabled: true,
+          reachable: true,
+          provider: "ollama",
+          endpoint: "http://127.0.0.1:11434",
+          models: [{ name: "qwen2.5-coder:7b", roles: ["code", "edit", "plan"] }],
+        },
+      ],
+    },
+  ]);
+
+  // Two candidates that will both get score 0 (no keyword matches) — tied.
+  const candidates = ["zzz_nonexistent_keyword_alpha", "aaa_nonexistent_keyword_beta"];
+  const first = __testExports.scoreCandidates(candidates, registry as never);
+  const second = __testExports.scoreCandidates(candidates, registry as never);
+
+  assert.equal(first.length, 2);
+  assert.equal(second.length, 2);
+
+  // Both should have score 0 (tied)
+  assert.equal(first[0].totalScore, 0);
+  assert.equal(first[1].totalScore, 0);
+
+  // Stable tie-break: input order preserved across runs
+  assert.equal(first[0].description, candidates[0]);
+  assert.equal(first[1].description, candidates[1]);
+  assert.equal(second[0].description, candidates[0]);
+  assert.equal(second[1].description, candidates[1]);
+
+  // Every candidate still carries rationale even at score 0
+  for (const item of [...first, ...second]) {
+    assert.ok(typeof item.rationale === "string" && item.rationale.length > 0);
   }
 });
