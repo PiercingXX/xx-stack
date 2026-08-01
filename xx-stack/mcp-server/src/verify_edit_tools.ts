@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { guardedExecFile } from "./execution_policy.js";
 import { jsonContent } from "./agent_tool_helpers.js";
+import { compactOutput, type CompactOptions } from "./output_compaction.js";
 
 const OUTPUT_CAP = 4096;
 
@@ -59,11 +60,27 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
       cwd: z.string().describe("Working directory for the commands"),
       lintCmd: z.string().optional().describe("Lint command to run (e.g. 'npx eslint .')"),
       testCmd: z.string().optional().describe("Test command to run (e.g. 'npm test')"),
+      compactOptions: z.object({
+        cap: z.number().optional().describe("Maximum output length in characters"),
+        stripAnsi: z.boolean().optional().describe("Strip ANSI escape sequences"),
+        collapseRepeats: z.boolean().optional().describe("Collapse repeated consecutive lines"),
+      }).optional().describe("If provided, compact command outputs using these options"),
     },
-    async ({ cwd, lintCmd, testCmd }) => {
-      const result: { lint: CmdResult | null; test: CmdResult | null } = {
+    async ({ cwd, lintCmd, testCmd, compactOptions }) => {
+      const result: { lint: CmdResult | null; test: CmdResult | null; compacted?: string[] } = {
         lint: null,
         test: null,
+      };
+
+      const compactResults: string[] = [];
+
+      const maybeCompact = (output: string): string => {
+        if (!compactOptions) return output;
+        const { output: compacted, dropped } = compactOutput(output, compactOptions);
+        if (dropped.length > 0) {
+          compactResults.push(...dropped);
+        }
+        return compacted;
       };
 
       if (lintCmd) {
@@ -71,6 +88,9 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
         const command = parts[0]!;
         const args = parts.slice(1);
         result.lint = await runCommand(command, args, cwd, deps.allowedCommands);
+        if (result.lint) {
+          result.lint.output = maybeCompact(result.lint.output);
+        }
       }
 
       if (testCmd) {
@@ -78,6 +98,13 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
         const command = parts[0]!;
         const args = parts.slice(1);
         result.test = await runCommand(command, args, cwd, deps.allowedCommands);
+        if (result.test) {
+          result.test.output = maybeCompact(result.test.output);
+        }
+      }
+
+      if (compactResults.length > 0) {
+        result.compacted = compactResults;
       }
 
       return jsonContent(result);
