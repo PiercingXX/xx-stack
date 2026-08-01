@@ -29,14 +29,19 @@ test("compactOutput with cap keeps both head and tail when input exceeds cap", (
 });
 
 test("compactOutput with cap below input length preserves head proportion", () => {
-  // A short input with a clear head and tail boundary.
-  const input = "AAAAA\nBBBBB\nCCCCC\nDDDDD\nEEEEE";
-  const cap = 18; // smaller than input length (30 chars)
+  // Build input long enough that the truncation notice fits within cap.
+  // The truncation notice template is ~30 chars, so cap must be well above that.
+  // Use lines without trailing newlines so the tail assertion is exact.
+  const lines: string[] = [];
+  for (let i = 0; i < 100; i++) lines.push("A-line");
+  for (let i = 0; i < 100; i++) lines.push("B-line");
+  const input = lines.join("\n");
+  const cap = 200; // smaller than input length (~1400 chars)
   const result = compactOutput(input, { cap });
 
   // Head should be roughly 60% of cap, tail the remainder.
-  assert.ok(result.output.startsWith("AAAAA"), "output should start with head");
-  assert.ok(result.output.endsWith("EEEEE"), "output should end with tail");
+  assert.ok(result.output.startsWith("A-line"), "output should start with head");
+  assert.ok(result.output.endsWith("B-line"), "output should end with tail");
   assert.ok(result.dropped.length > 0, "should report dropped content");
 });
 
