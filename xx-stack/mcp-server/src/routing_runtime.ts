@@ -1,5 +1,5 @@
 import type { Registry } from "./platform_types.js";
-import { routeTask, cloudRoutingAllowed } from "./routing_selection_runtime.js";
+import { routeTask, cloudRoutingAllowed, scoreTiers } from "./routing_selection_runtime.js";
 
 /**
  * Result shape for the architect+editor routing recommendation.
