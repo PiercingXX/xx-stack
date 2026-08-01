@@ -88,4 +88,40 @@ test("compactOutput collapseRepeats dropped line count equals input lines minus 
     result.dropped.some((d) => d.includes("20")),
     "dropped should mention the run length of 20"
   );
+
+  // Verify the reported dropped count matches actual lines dropped.
+  // Each "collapsed N consecutive identical lines" report means N lines became 2 lines,
+  // so N - 2 lines were dropped per report.
+  let reportedDroppedLines = 0;
+  for (const msg of result.dropped) {
+    const m = msg.match(/^collapsed (\d+) consecutive identical lines$/);
+    if (m) {
+      reportedDroppedLines += parseInt(m[1]!, 10) - 2;
+    }
+  }
+  assert.equal(reportedDroppedLines, linesDropped, "reported dropped count should match actual lines dropped");
+});
+
+test("compactOutput truncation reported dropped bytes match actual bytes removed", () => {
+  // A long enough input that truncation kicks in.
+  const input = "A\n".repeat(200) + "B\n".repeat(200);
+  const cap = 500;
+  const result = compactOutput(input, { cap });
+
+  // Truncation should have occurred.
+  const truncMsg = result.dropped.find((d) => d.startsWith("truncated"));
+  assert.ok(truncMsg, "should report truncation");
+
+  // Parse the reported truncated byte count.
+  const m = truncMsg!.match(/^truncated (\d+) bytes/);
+  assert.ok(m, "truncation message should contain byte count");
+  const reportedTruncated = parseInt(m[1]!, 10);
+
+  // The reported truncated bytes should equal input length minus cap
+  // (the cap determines how many bytes are kept; the rest are truncated).
+  assert.equal(
+    reportedTruncated,
+    input.length - cap,
+    "reported truncated bytes should equal input length minus cap"
+  );
 });
