@@ -9,7 +9,7 @@ import {
   routeCompetitiveTask,
   routeParallelTasks,
   routeTask,
-  scoreTiers,
+  scoreCandidates,
 } from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
@@ -207,28 +207,14 @@ return jsonContent({
     },
     async ({ candidates }) => {
       const registry = await deps.loadRegistry();
-      const scored = candidates.map((desc) => {
-        const scores = scoreTiers(desc, registry);
-        const total = Object.values(scores).reduce((sum, s) => sum + s, 0);
-        const breakdown = Object.entries(scores)
-          .filter(([, v]) => v > 0)
-          .map(([tier, score]) => `${tier}:${score}`)
-          .join(", ");
-        const topTier = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
-        const rationale =
-          total > 0
-            ? `Score ${total} — matched ${breakdown}; best tier: "${topTier?.[0] ?? "none"}"`
-            : "No keyword matches against any tier";
-        return { description: desc, totalScore: total, tierScores: scores, rationale };
-      });
-      scored.sort((a, b) => b.totalScore - a.totalScore);
+      const ranked = scoreCandidates(candidates, registry);
 
       void logEvent("server", "score_candidates.result", {
         candidateCount: candidates.length,
-        topScore: scored[0]?.totalScore ?? 0,
-        topCandidate: scored[0]?.description.slice(0, 100) ?? "",
+        topScore: ranked[0]?.totalScore ?? 0,
+        topCandidate: ranked[0]?.description.slice(0, 100) ?? "",
       });
-      return jsonContent({ ranked: scored });
+      return jsonContent({ ranked });
     }
   );
 }
