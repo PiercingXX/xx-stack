@@ -54,3 +54,5 @@ Do not assume every repo has a production deploy surface. In docs/config/setup r
 - deployment, publish, or packaging summary
 - rollback status or stop reason
 - follow-up actions
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

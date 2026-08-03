@@ -60,3 +60,5 @@ Use this agent when another agent needs to:
 ### Recommended next step
 <one concrete action for the calling agent>
 ```
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

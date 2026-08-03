@@ -47,3 +47,5 @@ Deliver exactly:
 - **Assumptions** (anything you assumed that the user must confirm)
 
 Do not pad with alternatives after a recommendation is made. Do not add generic caveats.
+
+Rule books: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md and packs/rules/clean-architecture/clean-architecture.mini.md (see packs/rules/coverage.json)

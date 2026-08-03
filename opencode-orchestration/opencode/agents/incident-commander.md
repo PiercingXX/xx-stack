@@ -52,3 +52,5 @@ Use this agent when the task is active outage response, degraded service triage,
 - root cause and contributing factors
 - mitigation or rollback details
 - preventive action plan with owners
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

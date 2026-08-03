@@ -115,3 +115,5 @@ Wave discipline:
 2. Execute first, explain second.
 3. Avoid menu-like or help-only responses.
 4. Never output local-only evidence as final completion.
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md (see packs/rules/coverage.json)

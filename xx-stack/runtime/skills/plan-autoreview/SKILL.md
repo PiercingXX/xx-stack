@@ -71,3 +71,5 @@ Provide this exact structure:
 ## Principle
 
 One integrated plan beats three disconnected good ideas.
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

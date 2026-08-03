@@ -173,4 +173,4 @@ For other lanes:
 - current loop state
 - blocker or next action
 
-
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

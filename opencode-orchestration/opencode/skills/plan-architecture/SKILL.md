@@ -237,3 +237,5 @@ If this is a greenfield design, list the files that will anchor the implementati
 ## Principle
 
 Good architecture forces hidden assumptions into the open. Diagrams are conversations, not ornaments.
+
+Rule books: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md and packs/rules/clean-architecture/clean-architecture.mini.md (see packs/rules/coverage.json)

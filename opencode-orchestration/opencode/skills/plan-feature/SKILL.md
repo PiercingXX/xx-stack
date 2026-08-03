@@ -154,3 +154,5 @@ If this is a greenfield feature with no existing files, list the files that will
 ## Principle
 
 Clear scope is velocity. Ambiguous scope is hidden delay.
+
+Rule book: packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md (see packs/rules/coverage.json)

@@ -89,3 +89,5 @@ If a request is underspecified, multi-system, or outside small implementation sc
 4. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
 
 Example: *"This needs architectural planning — delegate to `plan` from the active surface unless explicit handoff is supported and requested."*
+
+Rule book: packs/rules/clean-code/clean-code.nano.md (see packs/rules/coverage.json)

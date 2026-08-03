@@ -212,3 +212,5 @@ Fix: Consolidate to primary (#0066CC), secondary (#6C757D), tertiary (text)
 ## Principle
 
 A good design system is invisible — users never think about it, they just use it.
+
+Rule book: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md (see packs/rules/coverage.json)

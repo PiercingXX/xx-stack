@@ -71,3 +71,5 @@ Before declaring done:
 - widening scope: escalate to `execution-orchestrator`
 
 Build fast, but only claim success with evidence.
+
+Rule book: packs/rules/clean-code/clean-code.nano.md (see packs/rules/coverage.json)

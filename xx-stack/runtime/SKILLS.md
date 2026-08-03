@@ -36,6 +36,19 @@ When writing or editing a skill:
 - match instruction strictness to task fragility: loose heuristics for robust tasks, templates for structured output, exact scripts for fragile sequences
 - test every skill against the weakest model it will run on — for this stack that rule is load-bearing (tight-context local lanes are the audience), and it is the acceptance test for any nano-tier skill variant
 
+## Guidance Tiers (full / nano)
+
+The critical workflow surface ships in two sizes, following the same tier convention as the rules pack (`packs/rules/manifest.json`):
+
+- full: the canonical file — `runtime/skills/<name>/SKILL.md` for skills, `runtime/agents/<name>.md` for agents. Always the source of truth.
+- nano (~1-2KB): `SKILL.nano.md` beside the canonical skill, `runtime/agents/<name>.nano.md` beside the canonical agent. Decision rules and gates only — severity ladders, merge gates, iron laws, activation and degradation rules. No examples, no output templates.
+
+Nano variants exist for the five critical surfaces: `execution-orchestrator` and `fast-build` are agents (nano lives in `runtime/agents/`); `review-code`, `debug-investigate`, and `deploy-ship` are skills (nano lives beside each `SKILL.md`).
+
+Hosts and routers pick the tier from the target lane's context window, under the same budget convention as the rules pack's `defaultTier`: full when the lane comfortably holds the canonical file plus the task and code; nano for tight-context lanes that would otherwise drop the guidance entirely. The nano is derived from the canonical file and never contradicts it. Drift is enforced by `scripts/check-nano-tiers.mjs` (`npm run nano:check`), which pins each canonical file's hash — a canonical edit without a nano review fails CI — and requires the opencode mirror of each nano to stay byte-identical.
+
+The weakest-model acceptance test from the Skill Authoring Contract above applies doubly here: every nano must be tested against the weakest model that will run it — the nano tier exists for exactly those lanes.
+
 ## Discovery And Shadowing
 
 Skill precedence for xx-stack is:
