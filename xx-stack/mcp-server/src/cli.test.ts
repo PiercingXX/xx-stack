@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   CliUsageError,
+  CliWriteConflictError,
   commandHelpText,
   diagnoseHosts,
+  EXIT_CONFLICT,
   EXIT_OK,
   EXIT_SERVER,
   EXIT_USAGE,
@@ -15,8 +20,10 @@ import {
   formatTasksText,
   helpText,
   parseCliArgs,
+  runCli,
   summarizePlatforms,
 } from "./cli.js";
+import { getAgentMemoryEntrypoint, hashMemoryContent } from "./memory_runtime.js";
 import type { Registry, RouteRecommendation } from "./platform_types.js";
 import type { PersistentTask, TaskStore } from "./task_runtime.js";
 
@@ -234,14 +241,14 @@ test("parseCliArgs: tasks list rejects invalid status and limit", () => {
 test("top-level help stays under 40 lines and names every command", () => {
   const text = helpText();
   assert.ok(text.split("\n").length < 40, "top-level help must stay under 40 lines");
-  for (const command of ["route", "platforms", "diagnose", "tasks list"]) {
+  for (const command of ["route", "platforms", "diagnose", "tasks list", "memory apply"]) {
     assert.ok(text.includes(command), `help must mention "${command}"`);
   }
   assert.ok(text.includes("--json"));
 });
 
 test("per-command help exists for each command and is distinct from the top level", () => {
-  for (const topic of ["route", "platforms", "diagnose", "tasks"]) {
+  for (const topic of ["route", "platforms", "diagnose", "tasks", "memory"]) {
     const text = commandHelpText(topic);
     assert.ok(text.length > 0);
     assert.notEqual(text, helpText());
@@ -417,8 +424,139 @@ test("formatTasksText renders id, status, priority, and title per line", () => {
 
 // --- Exit code constants (part of the public contract) ---
 
-test("exit code constants follow the 0/1/2 convention", () => {
+test("exit code constants follow the 0/1/2 convention plus 5 for write conflicts", () => {
   assert.equal(EXIT_OK, 0);
   assert.equal(EXIT_USAGE, 1);
   assert.equal(EXIT_SERVER, 2);
+  assert.equal(EXIT_CONFLICT, 5);
+  assert.ok(helpText().includes("5 write conflict"), "the convention must be documented");
+});
+
+// --- memory: compare-and-swap writes and exit code 5 ---
+
+test("parseCliArgs: memory subcommands, flags, and usage errors", () => {
+  assert.deepEqual(parseCliArgs(["memory", "status", "--agent", "skippy"]), {
+    kind: "memory-status",
+    agentId: "skippy",
+    scope: undefined,
+    cwd: undefined,
+    json: false,
+  });
+  assert.deepEqual(
+    parseCliArgs([
+      "memory",
+      "apply",
+      "--agent",
+      "skippy",
+      "--scope",
+      "project",
+      "--cwd",
+      "/tmp/x",
+      "--expect-hash",
+      "abc123",
+      "--json",
+    ]),
+    {
+      kind: "memory-apply",
+      agentId: "skippy",
+      scope: "project",
+      cwd: "/tmp/x",
+      expectHash: "abc123",
+      json: true,
+    }
+  );
+  assert.deepEqual(parseCliArgs(["memory", "--help"]), { kind: "help", topic: "memory" });
+
+  assert.throws(() => parseCliArgs(["memory"]), CliUsageError, "subcommand required");
+  assert.throws(() => parseCliArgs(["memory", "wipe", "--agent", "a"]), CliUsageError);
+  assert.throws(() => parseCliArgs(["memory", "status"]), CliUsageError, "--agent required");
+  assert.throws(
+    () => parseCliArgs(["memory", "apply", "--agent", "a", "--scope", "galaxy"]),
+    CliUsageError
+  );
+  assert.throws(
+    () => parseCliArgs(["memory", "status", "--agent", "a", "--expect-hash", "abc"]),
+    CliUsageError,
+    "--expect-hash is a write-command flag"
+  );
+});
+
+interface CapturedRun {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+async function runCaptured(argv: string[]): Promise<CapturedRun> {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const code = await runCli(
+    argv,
+    { write: (text: string) => stdout.push(text) },
+    { write: (text: string) => stderr.push(text) }
+  );
+  return { code, stdout: stdout.join(""), stderr: stderr.join("") };
+}
+
+test("xx memory apply: stale --expect-hash exits 5 with JSON on stderr and writes nothing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-cli-cas-"));
+  try {
+    const agent = "cli-cas-agent";
+    const scoped = ["--agent", agent, "--scope", "project", "--cwd", dir];
+
+    // Read first: status reports the live hashes (this is where a caller gets
+    // the hash it later asserts).
+    const status = await runCaptured(["memory", "status", ...scoped, "--json"]);
+    assert.equal(status.code, EXIT_OK);
+    const statusPayload = JSON.parse(status.stdout) as Record<string, string>;
+    const memoryPath = getAgentMemoryEntrypoint(agent, "project", dir);
+    assert.equal(statusPayload.memoryPath, memoryPath);
+    assert.equal(statusPayload.memoryHash, hashMemoryContent(await readFile(memoryPath, "utf-8")));
+
+    const before = await readFile(memoryPath, "utf-8");
+
+    const conflict = await runCaptured([
+      "memory",
+      "apply",
+      ...scoped,
+      "--expect-hash",
+      "0000000000000000",
+    ]);
+    assert.equal(conflict.code, EXIT_CONFLICT, "write conflict must exit 5");
+    assert.equal(conflict.stdout, "", "stdout stays clean on conflict");
+
+    const payload = JSON.parse(conflict.stderr) as Record<string, string>;
+    assert.equal(payload.status, "write_conflict");
+    assert.equal(payload.agentId, agent);
+    assert.equal(payload.expectedHash, "0000000000000000");
+    assert.equal(payload.currentHash, statusPayload.memoryHash);
+    assert.equal(payload.hint, "re-read and retry");
+    assert.equal(payload.targetPath, memoryPath);
+
+    // Genuinely nothing written.
+    assert.equal(await readFile(memoryPath, "utf-8"), before);
+
+    // Re-read and retry with the current hash: the apply lands, exit 0.
+    const ok = await runCaptured([
+      "memory",
+      "apply",
+      ...scoped,
+      "--expect-hash",
+      payload.currentHash,
+      "--json",
+    ]);
+    assert.equal(ok.code, EXIT_OK);
+    const okPayload = JSON.parse(ok.stdout) as Record<string, unknown>;
+    assert.equal(okPayload.status, "ok");
+    assert.equal(okPayload.direction, "apply");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("CliWriteConflictError carries the conflict payload runCli emits", () => {
+  const error = new CliWriteConflictError({ status: "write_conflict", currentHash: "abc" });
+  assert.ok(error instanceof Error);
+  assert.equal(error.name, "CliWriteConflictError");
+  assert.deepEqual(error.conflict, { status: "write_conflict", currentHash: "abc" });
 });

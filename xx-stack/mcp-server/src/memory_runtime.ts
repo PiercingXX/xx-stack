@@ -481,3 +481,213 @@ export function markMemoryEntriesSuperseded(
   const missing = entryIds.filter((id) => !found.has(id));
   return { content: lines.join("\n"), marked, alreadySuperseded, missing };
 }
+
+// ---------------------------------------------------------------------------
+// Compare-and-swap writes (UPSTREAM-BORROW-TODO task 29)
+//
+// Concurrent agents share one memory scope, and both write paths below are
+// read-modify-write over the same file. An optional expectedHash (obtained
+// from a prior get/status call, hashed with hashMemoryContent) acts as a
+// precondition on the exact bytes the write would clobber. On mismatch the
+// call returns a structured write_conflict and writes nothing: the caller
+// re-reads, merges, and retries. The server never merges, never locks, and
+// keeps no extra state. Omitting expectedHash is byte-identical to the
+// pre-task-29 behavior.
+// ---------------------------------------------------------------------------
+
+export const MEMORY_WRITE_CONFLICT_HINT = "re-read and retry";
+
+export interface MemoryWriteConflict {
+  status: "write_conflict";
+  /** Hash of the target file as it actually is right now. */
+  currentHash: string;
+  /** Hash the caller asserted the target file would still have. */
+  expectedHash: string;
+  hint: string;
+}
+
+/**
+ * Evaluate an optimistic-concurrency precondition. Returns null when there is
+ * no precondition (expectedHash omitted) or when it holds; otherwise the
+ * structured conflict the caller should surface instead of writing.
+ */
+export function detectMemoryWriteConflict(
+  currentContent: string,
+  expectedHash?: string
+): MemoryWriteConflict | null {
+  if (expectedHash === undefined) return null;
+  const currentHash = hashMemoryContent(currentContent);
+  if (currentHash === expectedHash) return null;
+  return {
+    status: "write_conflict",
+    currentHash,
+    expectedHash,
+    hint: MEMORY_WRITE_CONFLICT_HINT,
+  };
+}
+
+export interface AgentMemoryTarget {
+  agentId: string;
+  scope: AgentMemoryScope;
+  cwd: string;
+}
+
+export interface SnapshotSyncRequest extends AgentMemoryTarget {
+  direction?: "capture" | "apply";
+  retainHistory?: boolean;
+  /**
+   * Precondition on the file this sync would overwrite: MEMORY.md for
+   * direction "apply", SNAPSHOT.md for direction "capture". Both hashes are
+   * reported by agent_memory_snapshot_status.
+   */
+  expectedHash?: string;
+}
+
+export interface SnapshotSyncOk {
+  status: "ok";
+  direction: "capture" | "apply";
+  memoryPath: string;
+  snapshotPath: string;
+  metaPath: string;
+  snapshotsDir: string | null;
+  historyEntryId: string | null;
+  meta: Record<string, unknown>;
+}
+
+export interface SnapshotSyncConflict extends MemoryWriteConflict {
+  direction: "capture" | "apply";
+  memoryPath: string;
+  snapshotPath: string;
+  /** The file the write would have clobbered. */
+  targetPath: string;
+}
+
+export type SnapshotSyncOutcome = SnapshotSyncOk | SnapshotSyncConflict;
+
+/**
+ * Snapshot sync (capture: memory -> snapshot; apply: snapshot -> memory).
+ * Shared by the agent_memory_snapshot_sync MCP tool and the xx CLI so neither
+ * forks the orchestration.
+ */
+export async function syncAgentMemorySnapshot(
+  request: SnapshotSyncRequest
+): Promise<SnapshotSyncOutcome> {
+  const { agentId, scope, cwd } = request;
+  const direction = request.direction ?? "capture";
+  const shouldRetainHistory = request.retainHistory === true;
+  const memoryPath = getAgentMemoryEntrypoint(agentId, scope, cwd);
+  const snapshotPath = getAgentMemorySnapshotPath(agentId, scope, cwd);
+  const metaPath = getAgentMemorySnapshotMetaPath(agentId, scope, cwd);
+  const snapshotsDir = getAgentMemorySnapshotsDir(agentId, scope, cwd);
+
+  await ensureMemoryEntrypoint(memoryPath);
+  await mkdir(dirname(snapshotPath), { recursive: true });
+
+  const memoryContent = await readMemoryEntrypoint(memoryPath);
+  const snapshotContent = await readMemoryEntrypoint(snapshotPath);
+  const sourceContent = direction === "capture" ? memoryContent : snapshotContent;
+  const targetPath = direction === "capture" ? snapshotPath : memoryPath;
+  const targetContent = direction === "capture" ? snapshotContent : memoryContent;
+
+  const conflict = detectMemoryWriteConflict(targetContent, request.expectedHash);
+  if (conflict) {
+    // Nothing has been written: the entrypoint scaffolding above is the same
+    // read-path guarantee agent_memory_get already makes.
+    return { ...conflict, direction, memoryPath, snapshotPath, targetPath };
+  }
+
+  await atomicWriteTextFile(
+    targetPath,
+    sourceContent.length > 0 ? sourceContent : "# Agent Memory\n\n"
+  );
+
+  const updatedMemory = await readMemoryEntrypoint(memoryPath);
+  const updatedSnapshot = await readMemoryEntrypoint(snapshotPath);
+  const meta = {
+    agentId,
+    scope,
+    direction,
+    syncedAt: new Date().toISOString(),
+    lastSyncedMemoryHash: hashMemoryContent(updatedMemory),
+    lastSyncedSnapshotHash: hashMemoryContent(updatedSnapshot),
+    historyRetentionEnabled: shouldRetainHistory,
+  };
+  await atomicWriteTextFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
+
+  let historyEntryId: string | null = null;
+  if (shouldRetainHistory) {
+    historyEntryId = await writeSnapshotHistoryEntry(
+      snapshotsDir,
+      direction,
+      updatedMemory,
+      updatedSnapshot,
+      meta
+    );
+  }
+
+  return {
+    status: "ok",
+    direction,
+    memoryPath,
+    snapshotPath,
+    metaPath,
+    snapshotsDir: shouldRetainHistory ? snapshotsDir : null,
+    historyEntryId,
+    meta,
+  };
+}
+
+export interface MarkSupersededRequest extends AgentMemoryTarget {
+  entryIds: string[];
+  supersededBy: string;
+  /** Precondition on MEMORY.md, the file marking rewrites in place. */
+  expectedHash?: string;
+}
+
+export interface MarkSupersededOk {
+  status: "ok";
+  path: string;
+  supersededBy: string;
+  marked: string[];
+  alreadySuperseded: string[];
+  missing: string[];
+}
+
+export interface MarkSupersededConflict extends MemoryWriteConflict {
+  path: string;
+  supersededBy: string;
+}
+
+export type MarkSupersededOutcome = MarkSupersededOk | MarkSupersededConflict;
+
+/**
+ * Mark entries superseded on disk. Shared by the agent_memory_mark_superseded
+ * MCP tool and the xx CLI.
+ */
+export async function markAgentMemorySupersededOnDisk(
+  request: MarkSupersededRequest
+): Promise<MarkSupersededOutcome> {
+  const { agentId, scope, cwd, entryIds, supersededBy } = request;
+  const path = getAgentMemoryEntrypoint(agentId, scope, cwd);
+  await ensureMemoryEntrypoint(path);
+  const content = await readMemoryEntrypoint(path);
+
+  const conflict = detectMemoryWriteConflict(content, request.expectedHash);
+  if (conflict) {
+    return { ...conflict, path, supersededBy };
+  }
+
+  const result = markMemoryEntriesSuperseded(content, entryIds, supersededBy);
+  if (result.marked.length > 0) {
+    await atomicWriteTextFile(path, result.content);
+  }
+
+  return {
+    status: "ok",
+    path,
+    supersededBy,
+    marked: result.marked,
+    alreadySuperseded: result.alreadySuperseded,
+    missing: result.missing,
+  };
+}
