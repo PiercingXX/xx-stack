@@ -1,6 +1,6 @@
 ---
 name: deploy-ship
-description: Nano tier of deploy-ship — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/deploy-ship/SKILL.md.
+description: "Nano tier of deploy-ship — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/deploy-ship/SKILL.md."
 ---
 
 # Ship to Production (nano)

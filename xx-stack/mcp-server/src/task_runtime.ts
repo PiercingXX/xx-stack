@@ -4,6 +4,9 @@ import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
 import { atomicWriteTextFile } from "./io_runtime.js";
+// StoreAccessError / isMissingFileError live beside the supervisor store reader
+// so both stores raise one error shape for an unreadable state file (MCP-1).
+import { isMissingFileError, StoreAccessError } from "./supervisor_store_runtime.js";
 import type { SupervisorSessionState } from "./supervisor_runtime.js";
 
 export const TASK_STATUS_VALUES = [
@@ -370,18 +373,47 @@ export function buildResumeDirective(
   return lines.join("\n");
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Read the task store. Only a genuinely missing file means "empty store"
+ * (MCP-1): every handler is read → mutate → write-whole-document, so healing a
+ * parse error or an EACCES into an empty store makes the next write delete
+ * every task. Anything but ENOENT raises StoreAccessError and the caller fails
+ * loudly. StoreAccessError is shared with the supervisor store so both readers
+ * report one error shape.
+ */
 export async function readTaskStore(): Promise<TaskStore> {
   const path = getTaskStatePath();
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<TaskStore>;
-    return {
-      version: TASK_STORE_VERSION,
-      tasks: parsed.tasks ?? {},
-    };
-  } catch {
-    return emptyTaskStore();
+    raw = await readFile(path, "utf-8");
+  } catch (error) {
+    if (isMissingFileError(error)) return emptyTaskStore();
+    throw new StoreAccessError("task", path, error);
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new StoreAccessError("task", path, error);
+  }
+
+  if (!isPlainRecord(parsed)) {
+    throw new StoreAccessError("task", path, new Error("store root is not a JSON object"));
+  }
+  const tasks = parsed.tasks;
+  if (tasks !== undefined && !isPlainRecord(tasks)) {
+    throw new StoreAccessError("task", path, new Error("tasks is not a JSON object"));
+  }
+
+  return {
+    version: TASK_STORE_VERSION,
+    tasks: (tasks as TaskStore["tasks"]) ?? {},
+  };
 }
 
 export async function writeTaskStore(store: TaskStore): Promise<void> {

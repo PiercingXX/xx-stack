@@ -14,7 +14,6 @@ let consecutiveFailures = 0;
 
 process.on("SIGINT", () => {
   process.stderr.write("\nharness:watch — interrupted, exiting.\n");
-  running = false;
   process.exit(0);
 });
 
@@ -41,6 +40,6 @@ while (running) {
   const elapsed = Date.now() - start;
   const wait = Math.max(0, INTERVAL_MS - elapsed);
   if (running && wait > 0) {
-    await new Promise((resolve) => setTimeout(resolve, wait));
+    await new Promise((done) => setTimeout(done, wait));
   }
 }

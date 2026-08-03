@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { emitLifecycleHooks } from "./execution_policy.js";
+import { guardStoreAccess } from "./supervisor_store_runtime.js";
 import {
   ANTI_REWARD_HACKING_CLAUSE,
   buildResumeDirective,
@@ -22,6 +23,7 @@ import {
   withTaskStoreLock,
   writeTaskStore,
   type PersistentTask,
+  type TaskLeaseCheck,
 } from "./task_runtime.js";
 import type {
   ReliabilityConfig,
@@ -40,6 +42,32 @@ function missingTask(taskId: string): JsonToolResult {
   return jsonContent({ status: "missing", taskId });
 }
 
+/**
+ * Structured rejection for a fenced write (UPSTREAM-BORROW task 27, MCP-4).
+ * Every path that mutates and persists a task shares this shape so a lane can
+ * tell "my claim is dead" apart from "the task does not exist".
+ */
+function leaseRejection(
+  operation: string,
+  taskId: string,
+  task: PersistentTask,
+  leaseCheck: TaskLeaseCheck
+): JsonToolResult {
+  return jsonContent({
+    status: "rejected",
+    reasonCode: leaseCheck.reasonCode,
+    operation,
+    taskId,
+    lease: task.lease ?? null,
+    serverTime: new Date().toISOString(),
+    detail:
+      leaseCheck.reasonCode === "lease_revoked"
+        ? `This task's lease was revoked; another lane holds the claim. The ${operation} was not applied.`
+        : `This task's lease expired against the server clock. The ${operation} was not applied.`,
+    selfFencingClause: LEASE_SELF_FENCING_CLAUSE,
+  });
+}
+
 export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
   server.tool(
     "task_suspend",
@@ -52,25 +80,37 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       parentCwd: z.string().max(4096).optional().describe("Optional parent workspace path"),
     },
     async ({ taskId, checkpoint, error, worktreePath, parentCwd }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const task = store.tasks[taskId];
-        if (!task) {
-          return missingTask(taskId);
-        }
+      guardStoreAccess(() =>
+        withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          const task = store.tasks[taskId];
+          if (!task) {
+            return missingTask(taskId);
+          }
 
-        task.status = "suspended";
-        task.lastCheckpoint = trimOptional(checkpoint) ?? task.lastCheckpoint;
-        task.lastError = trimOptional(error) ?? task.lastError;
-        task.worktreePath = trimOptional(worktreePath) ?? task.worktreePath;
-        task.parentCwd = trimOptional(parentCwd) ?? task.parentCwd;
-        task.resumable = task.resumable !== false;
-        task.updatedAt = new Date().toISOString();
-        store.tasks[taskId] = task;
-        await writeTaskStore(store);
+          // MCP-4: the lease fence guards every path that mutates and persists a
+          // task, not just task_update. A lane whose claim was revoked by
+          // failover must not be able to suspend the task the fallback lane now
+          // owns. task_suspend carries no lease input, so there is no
+          // re-lease carve-out here — re-assignment goes through task_update.
+          const leaseCheck = evaluateTaskLease(task.lease, Date.now());
+          if (!leaseCheck.ok) {
+            return leaseRejection("task_suspend", taskId, task, leaseCheck);
+          }
 
-        return jsonContent({ status: "suspended", task });
-      })
+          task.status = "suspended";
+          task.lastCheckpoint = trimOptional(checkpoint) ?? task.lastCheckpoint;
+          task.lastError = trimOptional(error) ?? task.lastError;
+          task.worktreePath = trimOptional(worktreePath) ?? task.worktreePath;
+          task.parentCwd = trimOptional(parentCwd) ?? task.parentCwd;
+          task.resumable = task.resumable !== false;
+          task.updatedAt = new Date().toISOString();
+          store.tasks[taskId] = task;
+          await writeTaskStore(store);
+
+          return jsonContent({ status: "suspended", task });
+        })
+      )
   );
 
   server.tool(
@@ -86,45 +126,68 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       clearError: z.boolean().optional().describe("Clear stored lastError on resume"),
     },
     async ({ taskId, checkpoint, clearError }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const task = store.tasks[taskId];
-        if (!task) {
-          return missingTask(taskId);
-        }
+      guardStoreAccess(() =>
+        withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          const task = store.tasks[taskId];
+          if (!task) {
+            return missingTask(taskId);
+          }
 
-        if (task.resumable === false) {
-          return jsonContent({ status: "blocked", reason: "task marked non-resumable", taskId });
-        }
+          // MCP-4: same fence as task_update/task_suspend. Re-assignment after a
+          // failover is the supervisor's job and goes through task_update with a
+          // replacement lease; a dead lane cannot resume its own claim.
+          const leaseCheck = evaluateTaskLease(task.lease, Date.now());
+          if (!leaseCheck.ok) {
+            return leaseRejection("task_resume", taskId, task, leaseCheck);
+          }
 
-        task.status = "in_progress";
-        task.attemptCount = (task.attemptCount ?? 0) + 1;
-        task.resumeCount = (task.resumeCount ?? 0) + 1;
-        task.lastCheckpoint = trimOptional(checkpoint) ?? task.lastCheckpoint;
-        if (clearError === true) task.lastError = undefined;
-        task.updatedAt = new Date().toISOString();
+          // A terminal task is finished. Without this guard a resume flips a
+          // done / canceled / force_synthesized task back to in_progress and
+          // undoes applyForceSynthesisOutcome (MCP-4, related hardening).
+          if (TASK_TERMINAL_STATUSES.has(task.status)) {
+            return jsonContent({
+              status: "rejected",
+              reasonCode: "task_terminal",
+              taskId,
+              taskStatus: task.status,
+              reason: `task is terminal (${task.status}); a terminal outcome is never reopened by resume`,
+            });
+          }
 
-        let linkedSession: SupervisorSessionState | undefined;
-        if (task.sessionId) {
-          const reliability = await deps.loadReliabilityConfig();
-          const supervisorStore = deps.pruneSupervisorStore(
-            await deps.readSupervisorStore(),
-            reliability
-          );
-          linkedSession = supervisorStore.sessions[task.sessionId];
-        }
+          if (task.resumable === false) {
+            return jsonContent({ status: "blocked", reason: "task marked non-resumable", taskId });
+          }
 
-        const directive = buildResumeDirective(task, linkedSession);
-        store.tasks[taskId] = task;
-        await writeTaskStore(store);
+          task.status = "in_progress";
+          task.attemptCount = (task.attemptCount ?? 0) + 1;
+          task.resumeCount = (task.resumeCount ?? 0) + 1;
+          task.lastCheckpoint = trimOptional(checkpoint) ?? task.lastCheckpoint;
+          if (clearError === true) task.lastError = undefined;
+          task.updatedAt = new Date().toISOString();
 
-        return jsonContent({
-          status: "resumed",
-          task,
-          linkedSupervisorRoute: linkedSession?.currentRoute ?? null,
-          directive,
-        });
-      })
+          let linkedSession: SupervisorSessionState | undefined;
+          if (task.sessionId) {
+            const reliability = await deps.loadReliabilityConfig();
+            const supervisorStore = deps.pruneSupervisorStore(
+              await deps.readSupervisorStore(),
+              reliability
+            );
+            linkedSession = supervisorStore.sessions[task.sessionId];
+          }
+
+          const directive = buildResumeDirective(task, linkedSession);
+          store.tasks[taskId] = task;
+          await writeTaskStore(store);
+
+          return jsonContent({
+            status: "resumed",
+            task,
+            linkedSupervisorRoute: linkedSession?.currentRoute ?? null,
+            directive,
+          });
+        })
+      )
   );
 
   const LEASE_INPUT = TASK_LEASE_SCHEMA.optional().describe(
@@ -201,38 +264,46 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       blockedBy,
       dueAt,
     }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const now = new Date().toISOString();
-        const taskId = generateTaskId();
+      guardStoreAccess(async () => {
+        // MCP-12: withTaskStoreLock is a non-reentrant promise-chain mutex and
+        // lifecycle hooks are external subprocesses that may call back into
+        // these very tools. The hook is emitted only after the lock is
+        // released; everything it needs is captured while holding it.
+        const task = await withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          const now = new Date().toISOString();
+          const taskId = generateTaskId();
 
-        const task: PersistentTask = {
-          taskId,
-          title: title.trim(),
-          description: trimOptional(description),
-          status: status ?? "todo",
-          resumable: resumable ?? true,
-          sessionId: trimOptional(sessionId),
-          attemptCount: status === "in_progress" ? 1 : 0,
-          resumeCount: 0,
-          worktreePath: trimOptional(worktreePath),
-          parentCwd: trimOptional(parentCwd),
-          lastCheckpoint: trimOptional(lastCheckpoint),
-          goalContract: sanitizeGoalContract(goalContract),
-          lease: sanitizeTaskLease(lease),
-          priority,
-          tags: sanitizeTags(tags),
-          owner: trimOptional(owner),
-          blockedBy: sanitizeIdList(blockedBy),
-          dueAt: trimOptional(dueAt),
-          createdAt: now,
-          updatedAt: now,
-        };
+          const task: PersistentTask = {
+            taskId,
+            title: title.trim(),
+            description: trimOptional(description),
+            status: status ?? "todo",
+            resumable: resumable ?? true,
+            sessionId: trimOptional(sessionId),
+            attemptCount: status === "in_progress" ? 1 : 0,
+            resumeCount: 0,
+            worktreePath: trimOptional(worktreePath),
+            parentCwd: trimOptional(parentCwd),
+            lastCheckpoint: trimOptional(lastCheckpoint),
+            goalContract: sanitizeGoalContract(goalContract),
+            lease: sanitizeTaskLease(lease),
+            priority,
+            tags: sanitizeTags(tags),
+            owner: trimOptional(owner),
+            blockedBy: sanitizeIdList(blockedBy),
+            dueAt: trimOptional(dueAt),
+            createdAt: now,
+            updatedAt: now,
+          };
 
-        store.tasks[taskId] = task;
-        await writeTaskStore(store);
+          store.tasks[taskId] = task;
+          await writeTaskStore(store);
+          return task;
+        });
+
         const hookSummary = await emitLifecycleHooks("task.created", {
-          taskId,
+          taskId: task.taskId,
           status: task.status,
           title: task.title,
         });
@@ -248,14 +319,16 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       taskId: z.string().min(1).describe("Task ID"),
     },
     async ({ taskId }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const task = store.tasks[taskId];
-        if (!task) {
-          return missingTask(taskId);
-        }
-        return jsonContent({ status: "ok", task });
-      })
+      guardStoreAccess(() =>
+        withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          const task = store.tasks[taskId];
+          if (!task) {
+            return missingTask(taskId);
+          }
+          return jsonContent({ status: "ok", task });
+        })
+      )
   );
 
   server.tool(
@@ -309,66 +382,72 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       blockedBy,
       dueAt,
     }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const task = store.tasks[taskId];
-        if (!task) {
-          return missingTask(taskId);
-        }
+      guardStoreAccess(async () => {
+        // MCP-12: the lifecycle hook is emitted after the store lock is
+        // released. The locked section returns either a finished result (the
+        // paths that write nothing) or the persisted task to announce.
+        type UpdateOutcome =
+          { kind: "result"; result: JsonToolResult } | { kind: "updated"; task: PersistentTask };
 
-        // Self-enforced lease invariant (UPSTREAM-BORROW task 27). Exactly one
-        // server-side check, on the task-result write-back path: a lane whose
-        // lease was revoked by failover — or whose deadline passed against the
-        // server's own clock — is rejected instead of silently overwriting the
-        // lane that took over. A request that carries a replacement lease is
-        // the supervisor re-leasing the task for a new lane, not a result
-        // write-back, so it is not fenced.
-        const replacementLease = sanitizeTaskLease(lease);
-        if (!replacementLease) {
-          const leaseCheck = evaluateTaskLease(task.lease, Date.now());
-          if (!leaseCheck.ok) {
-            return jsonContent({
-              status: "rejected",
-              reasonCode: leaseCheck.reasonCode,
-              taskId,
-              lease: task.lease ?? null,
-              serverTime: new Date().toISOString(),
-              detail:
-                leaseCheck.reasonCode === "lease_revoked"
-                  ? "This task's lease was revoked; another lane holds the claim. The write-back was not applied."
-                  : "This task's lease expired against the server clock. The write-back was not applied.",
-              selfFencingClause: LEASE_SELF_FENCING_CLAUSE,
-            });
+        const outcome = await withTaskStoreLock(async (): Promise<UpdateOutcome> => {
+          const store = await readTaskStore();
+          const task = store.tasks[taskId];
+          if (!task) {
+            return { kind: "result", result: missingTask(taskId) };
           }
-        }
 
-        if (typeof title === "string") task.title = title.trim();
-        if (typeof description === "string") task.description = trimOptional(description);
-        if (status) task.status = status;
-        if (typeof resumable === "boolean") task.resumable = resumable;
-        if (typeof sessionId === "string") task.sessionId = trimOptional(sessionId);
-        if (typeof worktreePath === "string") task.worktreePath = trimOptional(worktreePath);
-        if (typeof parentCwd === "string") task.parentCwd = trimOptional(parentCwd);
-        if (typeof lastCheckpoint === "string") task.lastCheckpoint = trimOptional(lastCheckpoint);
-        if (typeof lastError === "string") task.lastError = trimOptional(lastError);
-        if (goalContract) task.goalContract = sanitizeGoalContract(goalContract);
-        if (replacementLease) task.lease = replacementLease;
-        if (priority) task.priority = priority;
-        if (Array.isArray(tags)) task.tags = sanitizeTags(tags);
-        if (typeof owner === "string") task.owner = trimOptional(owner);
-        if (Array.isArray(blockedBy)) task.blockedBy = sanitizeIdList(blockedBy);
-        if (typeof dueAt === "string") task.dueAt = trimOptional(dueAt);
-        task.updatedAt = new Date().toISOString();
+          // Self-enforced lease invariant (UPSTREAM-BORROW task 27). The
+          // task-result write-back path: a lane whose lease was revoked by
+          // failover — or whose deadline passed against the server's own clock —
+          // is rejected instead of silently overwriting the lane that took over.
+          // A request that carries a replacement lease is the supervisor
+          // re-leasing the task for a new lane, not a result write-back, so it is
+          // deliberately not fenced. task_suspend and task_resume carry the same
+          // fence without this carve-out (MCP-4).
+          const replacementLease = sanitizeTaskLease(lease);
+          if (!replacementLease) {
+            const leaseCheck = evaluateTaskLease(task.lease, Date.now());
+            if (!leaseCheck.ok) {
+              return {
+                kind: "result",
+                result: leaseRejection("write-back", taskId, task, leaseCheck),
+              };
+            }
+          }
 
-        store.tasks[taskId] = task;
-        await writeTaskStore(store);
-        const hookSummary = await emitLifecycleHooks("task.updated", {
-          taskId,
-          status: task.status,
-          title: task.title,
+          if (typeof title === "string") task.title = title.trim();
+          if (typeof description === "string") task.description = trimOptional(description);
+          if (status) task.status = status;
+          if (typeof resumable === "boolean") task.resumable = resumable;
+          if (typeof sessionId === "string") task.sessionId = trimOptional(sessionId);
+          if (typeof worktreePath === "string") task.worktreePath = trimOptional(worktreePath);
+          if (typeof parentCwd === "string") task.parentCwd = trimOptional(parentCwd);
+          if (typeof lastCheckpoint === "string")
+            task.lastCheckpoint = trimOptional(lastCheckpoint);
+          if (typeof lastError === "string") task.lastError = trimOptional(lastError);
+          if (goalContract) task.goalContract = sanitizeGoalContract(goalContract);
+          if (replacementLease) task.lease = replacementLease;
+          if (priority) task.priority = priority;
+          if (Array.isArray(tags)) task.tags = sanitizeTags(tags);
+          if (typeof owner === "string") task.owner = trimOptional(owner);
+          if (Array.isArray(blockedBy)) task.blockedBy = sanitizeIdList(blockedBy);
+          if (typeof dueAt === "string") task.dueAt = trimOptional(dueAt);
+          task.updatedAt = new Date().toISOString();
+
+          store.tasks[taskId] = task;
+          await writeTaskStore(store);
+          return { kind: "updated", task };
         });
 
-        return jsonContent({ status: "updated", task, hooks: hookSummary });
+        if (outcome.kind === "result") return outcome.result;
+
+        const hookSummary = await emitLifecycleHooks("task.updated", {
+          taskId,
+          status: outcome.task.status,
+          title: outcome.task.title,
+        });
+
+        return jsonContent({ status: "updated", task: outcome.task, hooks: hookSummary });
       })
   );
 
@@ -383,26 +462,29 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       limit: z.number().int().min(1).max(500).optional().describe("Maximum tasks to return"),
     },
     async ({ status, tag, owner, includeCompleted, limit }) =>
-      withTaskStoreLock(async () => {
-        const store = await readTaskStore();
-        const tagFilter = tag?.trim().toLowerCase();
-        const ownerFilter = owner?.trim().toLowerCase();
+      guardStoreAccess(() =>
+        withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          const tagFilter = tag?.trim().toLowerCase();
+          const ownerFilter = owner?.trim().toLowerCase();
 
-        const tasks = Object.values(store.tasks)
-          .filter((task) => !status || task.status === status)
-          .filter((task) => includeCompleted === true || !TASK_TERMINAL_STATUSES.has(task.status))
-          .filter(
-            (task) => !tagFilter || task.tags.some((taskTag) => taskTag.toLowerCase() === tagFilter)
-          )
-          .filter((task) => !ownerFilter || (task.owner ?? "").toLowerCase() === ownerFilter)
-          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+          const tasks = Object.values(store.tasks)
+            .filter((task) => !status || task.status === status)
+            .filter((task) => includeCompleted === true || !TASK_TERMINAL_STATUSES.has(task.status))
+            .filter(
+              (task) =>
+                !tagFilter || task.tags.some((taskTag) => taskTag.toLowerCase() === tagFilter)
+            )
+            .filter((task) => !ownerFilter || (task.owner ?? "").toLowerCase() === ownerFilter)
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
-        const capped = tasks.slice(0, limit ?? 100);
-        return jsonContent({
-          total: tasks.length,
-          returned: capped.length,
-          tasks: capped,
-        });
-      })
+          const capped = tasks.slice(0, limit ?? 100);
+          return jsonContent({
+            total: tasks.length,
+            returned: capped.length,
+            tasks: capped,
+          });
+        })
+      )
   );
 }

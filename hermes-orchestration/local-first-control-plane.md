@@ -23,13 +23,16 @@ The contract below must match those files.
 - Lanes are named config entries (`sglang`, `ollama`, `cloud`) with a `role`
   (`self_hosted` or `cloud`) and numeric `priority`; higher priority is tried first
   and cloud lanes are always policy-gated regardless of priority.
-- Mandatory lane order for a primary task (`policy.primary_lane_order`):
-  1. `skippy-sglang-5090` (sglang, port 30000)
-  2. `skippy-ollama-5090` (ollama, port 11434)
+- `policy.primary_lane_order` is machine-generated from raw object insertion
+  order, so it selects *which* lanes participate; the order itself is always
+  re-derived from `priority` (cloud last while `policy.self_hosted_first` is on).
+- Mandatory lane order for a primary task:
+  1. `skippy-debian-5090-sglang` (sglang, port 30000)
+  2. `skippy-debian-5090-ollama` (ollama, port 11434)
   3. Cloud lane when enabled and needed
 - Mandatory lane order for delegated subagent slices (`execution.subagent_profile_orders`):
-  1. `skippy-sglang-5090` (preferred — batched parallel serving on 8x 5090)
-  2. `skippy-ollama-5090`
+  1. `skippy-debian-5090-sglang` (preferred — batched parallel serving on 8x 5090)
+  2. `skippy-debian-5090-ollama`
   3. Cloud lane for eligible presets only after self-hosted lanes are unavailable or unsuitable
 
 ## 3) Current default model mapping
@@ -38,9 +41,9 @@ The contract below must match those files.
   - `qwen3-coder-next` (262k context window)
 - ollama lane default:
   - `qwen3-coder:30b` (update to match `ollama list` on the rig)
-- Preferred cloud model when escalation is approved:
+- Preferred cloud model when escalation is approved (`lanes.cloud.model`):
   - `gpt-5.3-codex`
-- Cloud fallback model:
+- Cloud fallback model (`lanes.cloud.fallback_models`):
   - `gpt-5.4`
 - Optional cloud lane:
   - local `hermes` CLI premium GitHub lane
@@ -105,10 +108,18 @@ python3 scripts/hermes_orchestrator.py subagents --task "check one||check two"
   (`execution.max_parallel_subagents`, default 4).
 - Every chat call (run, subagents, proxy) is logged to
   `execution.routing_log_file` (`logs/routing.jsonl`) with lane, model, latency,
-  and token usage. Prompt bodies are never logged.
+  and token usage. Proxy records also carry `attempts` (per-lane skip/failure
+  reasons), and a proxied request that no lane could serve writes its own
+  `ok: false` record. Prompt bodies are never logged, and no config key exists
+  that would enable logging them.
 - Shell actions from executable plans are parsed with `shlex`, rejected on any
-  shell metacharacter, matched as whole argv tokens against the allowlist, and
-  executed without a shell.
+  shell metacharacter (and on `+`, the `find -exec` terminator), matched as
+  whole argv tokens against the allowlist, screened argument-by-argument against
+  a denylist of process-spawning/escape flags with every path argument confined
+  to the working directory, and executed without a shell. The shipped allowlist
+  deliberately excludes `find` and `rg`. See the README section "Executable
+  plans and command execution" for the residual limits — this is defense in
+  depth behind the double gate, not a sandbox.
 - The `serve` command exposes a loopback-only OpenAI-compatible proxy
   (`/healthz`, `/v1/models`, `/v1/chat/completions`) that enforces this routing
   policy; it requires a bearer token and excludes cloud lanes unless explicitly
@@ -121,7 +132,8 @@ python3 scripts/hermes_orchestrator.py subagents --task "check one||check two"
 - Subagent lane selection uses capability cache by default.
 - Cache file: `logs/capability-cache.json`.
 - Cache auto-refresh: every 600s maximum staleness (`execution.capability_cache_max_age_seconds`).
-- Strict mode is enabled by default: delegated subagent lanes must pass tool-call probe.
+- Strict mode is enabled by default and profile-independent: delegated subagent
+  lanes must pass the tool-call probe under every routing preset.
 - `qwen3-coder-next` on the sglang lane passes the tool-call probe.
 - Tool probe results are reused while a lane's selected model is unchanged
   (`execution.reuse_tool_probe_for_same_model`); `--force-probe` re-probes.

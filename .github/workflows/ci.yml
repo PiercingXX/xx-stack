@@ -84,6 +84,12 @@ jobs:
       - name: Run golden task checks
         run: npm run design:golden
 
+      # Structural gate over every HTML template and example in the design
+      # pack. Generic gates only in sweep mode; the per-skill acceptance
+      # profiles run when an agent invokes it with --skill on its own output.
+      - name: Run HTML quality gate
+        run: npm run design:html-gate
+
   hermes:
     name: Hermes Control Plane
     runs-on: ubuntu-latest

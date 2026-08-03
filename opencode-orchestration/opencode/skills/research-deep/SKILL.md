@@ -76,7 +76,8 @@ Each round: pick **one** action, execute it, update the gap queue and ledger.
   Extract findings into the ledger with citations. For URLs, prefer a local
   reader service when the inventory declares one enabled (a machine's
   `services` entry with `kind: "reader"` — see
-  `runtime/READER-SERVICE-RUNBOOK.md`): it returns LLM-friendly markdown.
+  `xx-stack/runtime/READER-SERVICE-RUNBOOK.md`): it returns LLM-friendly
+  markdown.
   When none is declared, disabled, or unreachable, fall back to plain fetch —
   absence degrades, it never escalates to a cloud reader.
 - **reflect** — reread the ledger against the gap queue: close answered gaps,
@@ -112,7 +113,7 @@ to escalate to a cloud surface.
 ## Termination — judge-gated
 
 Drafting an answer does not end the loop. The **completion-judge agent**
-(`runtime/agents/completion-judge.md`) applies the bar: definitive, every
+(`opencode/agents/completion-judge.md`) applies the bar: definitive, every
 claim cited from the ledger, no open gap ignored.
 
 - **PASS** — deliver the answer with its citations.

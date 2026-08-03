@@ -46,9 +46,11 @@ If a change affects local-vs-remote routing, OpenCode install behavior, platform
 
 Content packs are domain payloads used by agents and skills, but they are not the runtime itself.
 
-The current repo has one major content pack: design.
+The current repo has two content packs: design and rules. Both reach this
+component through the `packs/` symlink to `../xx-stack/packs`, so they are one
+copy shared with the core component, not a second set.
 
-It includes:
+The design pack includes:
 
 - brand design systems
 - style libraries
@@ -66,6 +68,18 @@ Canonical design content-pack paths:
 - `packs/design/scripts/`
 
 If a change affects design systems, design prompts, design examples, or design eval fixtures, it belongs to the design pack.
+
+The rules pack includes:
+
+- 11 vendored engineering rule books, each in context-tiered sizes
+- `packs/rules/manifest.json` describing every book and its default tier
+- `packs/rules/coverage.json` mapping each skill and agent to the books that
+  apply, with `books: []` as an explicit "no book changes this decision" decision
+- `packs/rules/LICENSE` covering the vendored material
+- a CI gate, `npm run rules:check`, which fails when a skill or agent has no
+  coverage entry
+
+If a change affects rule-book content, tiers, or which entries cite which books, it belongs to the rules pack.
 
 ## Canonical Surfaces
 

@@ -1,6 +1,6 @@
 ---
 name: "design-engineer"
-description: "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 138 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills."
+description: "\"AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.\""
 tools:
   - codebase
   - readFile
@@ -24,7 +24,7 @@ Read `runtime/skills/design-prototype/SKILL.md` for the complete workflow protoc
 ## Asset Map
 
 ```
-packs/design/design-systems/  ← design content pack: 138 brand DESIGN.md files
+packs/design/design-systems/  ← design content pack: 137 brand DESIGN.md files
 packs/design/design-skills/   ← design content pack: 57 aesthetic SKILL.md + DESIGN.md pairs
 packs/design/workflow-skills/  ← canonical workflow skills consumed by stack core
 runtime/skills/design/               ← compatibility shim for legacy consumers

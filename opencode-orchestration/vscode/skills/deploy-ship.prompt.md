@@ -2,7 +2,6 @@
 name: deploy-ship
 description: Production release workflow with hard quality gates, CI verification, and post-deploy health checks.
 mode: agent
-model: sglang-remote/qwen3-coder-next
 tools:
   - codebase
   - editFiles

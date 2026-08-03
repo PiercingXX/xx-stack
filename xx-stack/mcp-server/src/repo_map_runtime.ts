@@ -1,9 +1,9 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
-import { ContextCandidate, selectContext } from "./context_selection_runtime.js";
+import { ContextCandidate, estimateTokens, selectContext } from "./context_selection_runtime.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -192,10 +192,16 @@ interface FileSignals {
 function getGitTimestamp(filePath: string, cwd: string): number {
   try {
     const rel = relative(cwd, filePath);
-    const out = execSync(`git log -1 --format=%ct -- "${rel}" 2>/dev/null || echo "0"`, {
+    // execFileSync with an argv array, never a shell string: `rel` is a
+    // repo-controlled filename, and a tracked file named with a quote or
+    // `$( )` would otherwise execute arbitrary shell during a repo map.
+    // The `|| echo 0` shell fallback the old command carried is replaced by
+    // the catch below, which already returns 0 on any git failure.
+    const out = execFileSync("git", ["log", "-1", "--format=%ct", "--", rel], {
       cwd,
       encoding: "utf8",
       timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
     });
     const ts = parseInt(out.trim(), 10);
     return Number.isFinite(ts) ? ts * 1000 : 0;
@@ -242,14 +248,6 @@ function commonPrefixLength(a: string, b: string): number {
   let i = 0;
   while (i < a.length && i < b.length && a[i] === b[i]) i++;
   return i;
-}
-
-// ---------------------------------------------------------------------------
-// Token estimation
-// ---------------------------------------------------------------------------
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
 }
 
 // ---------------------------------------------------------------------------

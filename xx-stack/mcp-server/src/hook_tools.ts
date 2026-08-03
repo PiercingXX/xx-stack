@@ -2,7 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import type { AgentMemoryScope } from "./config_runtime.js";
-import type { CompletionMemorySyncGuard } from "./memory_runtime.js";
+import type {
+  CompletionMemorySyncGuard,
+  CompletionMemorySyncStatusOptions,
+} from "./memory_runtime.js";
 import type {
   ReliabilityConfig,
   SupervisorSessionState,
@@ -26,7 +29,11 @@ import {
  * and returns state to re-inject into the fresh context.
  *
  * Provider-side contract this module honors:
- * - fast: only two single-file JSON store reads, no filesystem walks or scans.
+ * - fast and read-only: two single-file JSON store reads plus, for at most
+ *   MAX_MEMORY_DRIFT_CHECKS guarded sessions, a bounded pair of memory-file
+ *   reads. No filesystem walks or scans, and nothing here creates or writes a
+ *   file — the memory status check is called with ensureFiles: false precisely
+ *   so a hook cannot scaffold MEMORY.md as a side effect.
  *   Callers time out at ~2.5s and treat a timeout as "no objection".
  * - deterministic: identical store state produces byte-identical output
  *   (every collection is explicitly sorted, every list explicitly capped).
@@ -74,7 +81,8 @@ export interface HookToolDeps {
     reliability: ReliabilityConfig
   ) => { ok: boolean; reasonCode: string };
   getCompletionMemorySyncStatus: (
-    guard: CompletionMemorySyncGuard
+    guard: CompletionMemorySyncGuard,
+    options?: CompletionMemorySyncStatusOptions
   ) => Promise<{ driftDetected: boolean }>;
   getAgentMemoryEntrypoint: (agentId: string, scope: AgentMemoryScope, cwd: string) => string;
   /** Injectable for deterministic tests; defaults to the server clock. */
@@ -180,7 +188,11 @@ export async function buildStopObjections(deps: HookToolDeps, scope: HookScope):
     .filter((session) => session.completionMemorySync)
     .slice(0, MAX_MEMORY_DRIFT_CHECKS);
   for (const session of guarded) {
-    const status = await deps.getCompletionMemorySyncStatus(session.completionMemorySync!);
+    // ensureFiles: false — `_Stop` is a read path under a ~2.5s budget, and the
+    // default status check mkdir's and writes MEMORY.md/SNAPSHOT.md scaffolding.
+    const status = await deps.getCompletionMemorySyncStatus(session.completionMemorySync!, {
+      ensureFiles: false,
+    });
     if (status.driftDetected) {
       objections.push(
         `session ${session.sessionId} — memory snapshot drift is unresolved for agent ${session.completionMemorySync!.agentId}`

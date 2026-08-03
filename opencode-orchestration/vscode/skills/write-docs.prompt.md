@@ -2,7 +2,6 @@
 name: write-docs
 description: Generate project documentation. API docs, README, installation guide, deployment guide, changelog. Clear, discoverable, user-friendly.
 mode: agent
-model: sglang-remote/qwen3-coder-next
 tools:
   - codebase
   - editFiles

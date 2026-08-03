@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   asRecord,
@@ -108,16 +109,37 @@ export function loadDangerousPatternsFromFile(filePath: string): DangerousPatter
 
 let cachedDenylist: DangerousPatternsLoadResult | null = null;
 
+/**
+ * Resolve the first existing candidate pattern file to a real filesystem path.
+ *
+ * `fileURLToPath`, never `url.pathname`: pathname is percent-encoded, so an
+ * install path containing a space, `#`, or any non-ASCII byte would hand
+ * `readFileSync` a literal `%20`/`%23` that does not exist — and
+ * `loadDangerousPatternsFromFile` fails open to an EMPTY denylist, killing the
+ * catastrophic-command layer on exactly the hosts where the file is present.
+ * It also strips the leading slash a Windows drive letter carries
+ * (`/C:/...` -> `C:\...`).
+ *
+ * @param baseUrl module URL the candidates resolve against; injectable for tests.
+ */
+export function resolveDangerousPatternsFile(baseUrl: string = import.meta.url): string | null {
+  for (const candidate of DANGEROUS_PATTERNS_CANDIDATES) {
+    const url = new URL(candidate, baseUrl);
+    if (existsSync(url)) {
+      return fileURLToPath(url);
+    }
+  }
+  return null;
+}
+
 function loadDenylist(): DangerousPatternsLoadResult {
   const override = process.env.XX_STACK_DANGEROUS_PATTERNS_FILE;
   if (override && override.trim().length > 0) {
     return loadDangerousPatternsFromFile(override.trim());
   }
-  for (const candidate of DANGEROUS_PATTERNS_CANDIDATES) {
-    const url = new URL(candidate, import.meta.url);
-    if (existsSync(url)) {
-      return loadDangerousPatternsFromFile(url.pathname);
-    }
+  const resolved = resolveDangerousPatternsFile();
+  if (resolved !== null) {
+    return loadDangerousPatternsFromFile(resolved);
   }
   // Fail-open: no pattern file found — deny layer inert, flagged as not loaded.
   return {

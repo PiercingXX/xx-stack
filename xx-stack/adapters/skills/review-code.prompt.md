@@ -2,7 +2,6 @@
 name: review-code
 description: Production-grade pre-merge review. Finds high-risk defects, verifies tests, and blocks unsafe merges.
 mode: agent
-model: self-hosted-api/coder-main
 tools:
   - codebase
   - readFile

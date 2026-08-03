@@ -37,6 +37,36 @@ If a telemetry event does not support measurable automation outcomes, remove it.
 - Default: disabled (`"enabled": false`)
 - Helper hooks: not shipped by default; if you add one locally, keep it minimal and local-first
 
+## Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ts` | string | yes | ISO-8601 timestamp |
+| `skill` | string | yes | Skill or operation name |
+| `outcome` | string | yes | One of: success, failure, error, timeout, cancelled |
+| `durationMs` | number | yes | Wall-clock duration in milliseconds |
+| `lane` | string | no | Routing lane label (e.g. local, cloud, tailscale-ollama) |
+| `tokensIn` | number | no | Input tokens consumed |
+| `tokensOut` | number | no | Output tokens generated |
+| `costUsd` | number \| null | no | Estimated or explicit cost in USD |
+| `model` | string | no | Model name used for cost estimation |
+
+## Cost Estimation
+
+Cost is computed from `model-rates.json` when `tokensIn` and/or `tokensOut` are provided and no explicit `costUsd` override is given.
+
+- **Known models**: cost is computed as `(tokensIn / 1000) * costPer1kInputTokens + (tokensOut / 1000) * costPer1kOutputTokens`.
+- **Unknown models**: `costUsd` is recorded as `null` (never zero) to distinguish "no cost data" from "zero cost".
+- **Local lanes** (ollama/*, sglang/*, vllm/*): rates are zero, so `costUsd` is zero — these models run locally at no API cost.
+- **Explicit override**: passing `costUsd` directly skips estimation entirely.
+
+The response from `record_telemetry` includes a `costSource` field with one of:
+- `"explicit"` — caller provided `costUsd` directly
+- `"estimated"` — computed from model-rates.json
+- `"unknown-model"` — no rate found, cost is null
+
+This is an **estimate**, not a bill. Actual API charges depend on provider pricing, caching, and rounding policies.
+
 ## Skills With Optional Telemetry Snippets
 - `review-code`
 - `test-qa`

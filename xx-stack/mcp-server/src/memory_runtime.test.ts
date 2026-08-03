@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -12,13 +13,17 @@ import {
   detectMemoryWriteConflict,
   getAgentMemoryEntrypoint,
   getAgentMemorySnapshotPath,
+  getCompletionMemorySyncStatus,
   hashMemoryContent,
+  lineDiffSummary,
   markMemoryEntriesSuperseded,
   MEMORY_WRITE_CONFLICT_HINT,
   parseMemoryEntries,
+  sanitizeNameForPath,
   selectMemoryForBudget,
 } from "./memory_runtime.js";
 import { registerAgentMemoryTools } from "./agent_memory_tools.js";
+import { PATH_CONSTANTS } from "./runtime_constants.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -618,6 +623,237 @@ test("agent_memory_snapshot_sync without expectedHash is unchanged", async () =>
     });
     assert.ok(withHistory.snapshotsDir);
     assert.ok(typeof withHistory.historyEntryId === "string");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MCP-7: sanitizeNameForPath kept "." in its character class, so an agentId of
+// ".." survived intact and resolved one directory ABOVE the scoped memory dir.
+// ---------------------------------------------------------------------------
+
+test("a dot-only agent id cannot climb out of its memory scope", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-traversal-"));
+  try {
+    for (const hostile of ["..", ".", "...", "../..", "/", ""]) {
+      const sanitized = sanitizeNameForPath(hostile);
+      assert.ok(!/^\.+$/.test(sanitized), `${JSON.stringify(hostile)} stayed dot-only`);
+      assert.notEqual(sanitized, "");
+
+      const entrypoint = getAgentMemoryEntrypoint(hostile, "project", dir);
+      const scopeRoot = resolve(dir, PATH_CONSTANTS.stateDir, "agent-memory");
+      const compatRoot = resolve(dir, PATH_CONSTANTS.compatDir, "agent-memory");
+      assert.ok(
+        entrypoint.startsWith(scopeRoot + sep) || entrypoint.startsWith(compatRoot + sep),
+        `${JSON.stringify(hostile)} escaped the agent-memory root: ${entrypoint}`
+      );
+      // One level below the root and no deeper: "<root>/<agent>/MEMORY.md".
+      const root = entrypoint.startsWith(scopeRoot + sep) ? scopeRoot : compatRoot;
+      assert.equal(entrypoint.slice(root.length + 1).split(sep).length, 2);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ordinary agent ids are still sanitized exactly as before", () => {
+  assert.equal(sanitizeNameForPath("reviewer.v2"), "reviewer.v2");
+  assert.equal(sanitizeNameForPath("build_agent-3"), "build_agent-3");
+  assert.equal(sanitizeNameForPath("weird name/with:chars"), "weird-name-with-chars");
+  assert.equal(sanitizeNameForPath("a..b"), "a..b");
+});
+
+// ---------------------------------------------------------------------------
+// MCP-9a: lineDiffSummary allocated a full (rows+1)x(cols+1) matrix over an
+// append-only file. The rolling-row rewrite must return identical numbers.
+// ---------------------------------------------------------------------------
+
+/** The pre-fix implementation, kept here purely as the reference oracle. */
+function referenceLineDiffSummary(
+  previousContent: string,
+  nextContent: string
+): { added: number; removed: number; changed: number } {
+  const previous = previousContent.split(/\r?\n/);
+  const next = nextContent.split(/\r?\n/);
+  const rows = previous.length;
+  const cols = next.length;
+  const dp: number[][] = Array.from({ length: rows + 1 }, () => Array<number>(cols + 1).fill(0));
+  for (let i = 1; i <= rows; i += 1) {
+    for (let j = 1; j <= cols; j += 1) {
+      if (previous[i - 1] === next[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+  const lcs = dp[rows][cols];
+  const added = Math.max(0, cols - lcs);
+  const removed = Math.max(0, rows - lcs);
+  return { added, removed, changed: Math.min(added, removed) };
+}
+
+test("the rolling-row LCS returns exactly what the full-matrix LCS returned", () => {
+  const fixtures: Array<[string, string]> = [
+    ["", ""],
+    ["", "a"],
+    ["a", ""],
+    ["a\nb\nc", "a\nb\nc"],
+    ["a\nb\nc", "a\nc"],
+    ["a\nc", "a\nb\nc"],
+    ["a\nb\nc\nd", "d\nc\nb\na"],
+    [FIXTURE_CONTENT, FIXTURE_CONTENT],
+    [FIXTURE_CONTENT, `${FIXTURE_CONTENT}\n- 2026-02-01T00:00:00.000Z a brand new note`],
+    [`${FIXTURE_CONTENT}\n- extra`, FIXTURE_CONTENT],
+    ["x\r\ny\r\nz", "x\ny\nz"],
+    // Asymmetric shapes exercise the "iterate over the longer side" swap.
+    [Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n"), "line 0\nline 39"],
+    ["line 0\nline 39", Array.from({ length: 40 }, (_, i) => `line ${i}`).join("\n")],
+  ];
+
+  // Plus a deterministic pseudo-random corpus.
+  let seed = 12345;
+  const nextRandom = (): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let n = 0; n < 40; n += 1) {
+    const left: string[] = [];
+    const right: string[] = [];
+    for (let i = 0; i < 25; i += 1) {
+      const token = `note-${Math.floor(nextRandom() * 8)}`;
+      if (nextRandom() > 0.25) left.push(token);
+      if (nextRandom() > 0.25) right.push(token);
+    }
+    fixtures.push([left.join("\n"), right.join("\n")]);
+  }
+
+  for (const [left, right] of fixtures) {
+    assert.deepEqual(
+      lineDiffSummary(left, right),
+      referenceLineDiffSummary(left, right),
+      `mismatch for ${JSON.stringify(left).slice(0, 60)} vs ${JSON.stringify(right).slice(0, 60)}`
+    );
+  }
+});
+
+test("lineDiffSummary does not allocate a full matrix for a large append-only file", () => {
+  const lines = 6000;
+  const base = Array.from({ length: lines }, (_, i) => `- note ${i}`).join("\n");
+  const grown = `${base}\n- note ${lines}\n- note ${lines + 1}`;
+
+  const before = process.memoryUsage().heapUsed;
+  const diff = lineDiffSummary(base, grown);
+  const grew = process.memoryUsage().heapUsed - before;
+
+  assert.deepEqual(diff, { added: 2, removed: 0, changed: 0 });
+  // The full (rows+1)x(cols+1) matrix here is ~36M numbers — hundreds of MB,
+  // and MEMORY.md is append-only, so real files only get longer. Two rolling
+  // rows is ~12k numbers, i.e. well under a megabyte.
+  assert.ok(
+    grew < 64 * 1024 * 1024,
+    `drift check allocated ${Math.round(grew / 1024 / 1024)} MB; a rolling-row LCS needs ~0`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// MCP-9b: the completion-memory status check is a READ path; the _Stop hook
+// must be able to run it without mkdir'ing and writing MEMORY.md/SNAPSHOT.md.
+// ---------------------------------------------------------------------------
+
+test("getCompletionMemorySyncStatus with ensureFiles:false creates nothing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-readpath-"));
+  try {
+    const guard = { agentId: "reader", scope: "project" as const, cwd: dir };
+    const status = await getCompletionMemorySyncStatus(guard, { ensureFiles: false });
+
+    assert.equal(existsSync(status.memoryPath), false, "the read path must not create MEMORY.md");
+    assert.equal(
+      existsSync(status.snapshotPath),
+      false,
+      "the read path must not create SNAPSHOT.md"
+    );
+    assert.equal(existsSync(dirname(status.memoryPath)), false, "no directory may be created");
+    assert.equal(status.driftDetected, false);
+
+    // ...and it reports exactly what the ensuring mode reports.
+    const ensured = await getCompletionMemorySyncStatus(guard);
+    assert.equal(existsSync(ensured.memoryPath), true, "the default mode still scaffolds");
+    assert.deepEqual(
+      { hash: status.memoryHash, drift: status.driftDetected, diff: status.diff },
+      { hash: ensured.memoryHash, drift: ensured.driftDetected, diff: ensured.diff }
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ensureFiles:false and the default mode agree once memory has drifted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-readpath-drift-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "drifter";
+    await callTool(handlers, "agent_memory_append", {
+      agentId,
+      scope: "project",
+      cwd: dir,
+      note: "a note that the snapshot has never seen",
+    });
+
+    const guard = { agentId, scope: "project" as const, cwd: dir };
+    const readOnly = await getCompletionMemorySyncStatus(guard, { ensureFiles: false });
+    assert.equal(readOnly.driftDetected, true);
+    assert.equal(existsSync(readOnly.snapshotPath), false);
+
+    const ensured = await getCompletionMemorySyncStatus(guard);
+    assert.equal(ensured.driftDetected, true);
+    assert.deepEqual(readOnly.diff, ensured.diff);
+    assert.equal(readOnly.memoryHash, ensured.memoryHash);
+    assert.equal(readOnly.snapshotHash, ensured.snapshotHash);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MCP-10: agent_memory_append was read-then-write. atomicWriteTextFile makes
+// the REPLACE atomic, not the read-modify-write around it, so concurrent
+// appends silently lost entries.
+// ---------------------------------------------------------------------------
+
+test("concurrent agent_memory_append calls never lose an entry", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-append-race-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "racer";
+    const total = 40;
+
+    await Promise.all(
+      Array.from({ length: total }, (_, i) =>
+        callTool(handlers, "agent_memory_append", {
+          agentId,
+          scope: "project",
+          cwd: dir,
+          note: `concurrent-note-${i}`,
+        })
+      )
+    );
+
+    const path = getAgentMemoryEntrypoint(agentId, "project", dir);
+    const content = await readFile(path, "utf-8");
+    for (let i = 0; i < total; i += 1) {
+      assert.ok(
+        content.includes(`concurrent-note-${i}`),
+        `entry ${i} was lost by a concurrent append`
+      );
+    }
+
+    // Every line is intact — no interleaved or truncated writes.
+    const entries = parseMemoryEntries(content).entries;
+    assert.equal(entries.length, total);
+    assert.ok(content.startsWith("# Agent Memory\n\n"), "the preamble must survive");
+    assert.ok(content.endsWith("\n"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

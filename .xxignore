@@ -30,3 +30,8 @@ hermes-orchestration/logs/
 .env
 .env.*
 *.local.json
+
+# Live agent workspace: session traces and verbatim prompt history. Agent
+# scratch, not repo content — sweeping it into context re-reads past sessions
+# as if they were source. Also gitignored.
+.skippy/

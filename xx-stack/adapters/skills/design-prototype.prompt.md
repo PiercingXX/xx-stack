@@ -2,7 +2,6 @@
 name: design-prototype
 description: AI-driven design workflow. Generate web prototypes, decks, mobile apps, dashboards, and editorial pages using open-design skills and brand design systems.
 mode: agent
-model: self-hosted-api/coder-deep
 tools:
   - codebase
   - readFile
@@ -99,7 +98,7 @@ Before delivering the artifact, silently score it 1–5 across:
 Anything under 3/5 is a regression. Fix and rescore. Two passes is normal.
 
 ## Reference
-- Design systems: `packs/design/design-systems/` (design content pack: 138 brand DESIGN.md files)
+- Design systems: `packs/design/design-systems/` (design content pack: 137 brand DESIGN.md files)
 - Aesthetic skills: `packs/design/design-skills/` (design content pack: 57 style SKILL.md+DESIGN.md pairs — glassmorphism, brutalism, minimal, etc.)
 - Workflow skills: `packs/design/workflow-skills/` (canonical prototype/deck/doc skills)
 - Compatibility shim: `runtime/skills/design/`

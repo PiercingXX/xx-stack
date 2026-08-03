@@ -240,6 +240,11 @@ export function applySupervisorEventTransition(
 
   const markProgress = (): void => {
     state.lastProgressAt = now;
+    // Genuine progress, so it also anchors the failure-streak decay (MCP-11).
+    state.lastObservedProgressAt = now;
+    // Progress supersedes a backoff window: a session that is demonstrably
+    // moving must not be reported as cooling down (MCP-11).
+    state.cooldownUntil = undefined;
     state.status = "running";
     state.recoveryInFlight = false;
     stateChanged = true;
@@ -293,6 +298,68 @@ export function applySupervisorEventTransition(
       pushSessionEvent(state, eventType, note);
       return { stateChanged, reasonCode: "event_recorded" };
   }
+}
+
+/**
+ * Should the consecutive-failure streak decay this tick? (MCP-11)
+ *
+ * The streak is "consecutive failures with no progress in between", so it may
+ * only decay when deterministic progress was observed *after* the most recent
+ * failure and the configured reset window has elapsed since that failure.
+ *
+ * The historical condition anchored on `lastProgressAt`, which a fallback bumps
+ * even though no progress happened — so a poller slower than the reset window
+ * zeroed `failureCount` every tick and `maxConsecutiveFailures` could never
+ * trip. Applying a fallback is failure recovery, not progress.
+ */
+export function shouldResetFailureStreak(
+  state: SupervisorSessionState,
+  now: number,
+  reliability: ReliabilityConfig
+): boolean {
+  if (state.failureCount <= 0) return false;
+  const lastFailureAt = state.lastFailureAt;
+  if (typeof lastFailureAt !== "number") return false;
+  const progressAt = state.lastObservedProgressAt;
+  if (typeof progressAt !== "number" || progressAt <= lastFailureAt) return false;
+  return now - lastFailureAt >= reliability.failureResetWindowMs;
+}
+
+/**
+ * Did pruning actually drop anything? Pruning only ever removes entries, so
+ * comparing counts is exact. Inspection paths use this to avoid rewriting the
+ * whole store on a read-only poll (MCP-1).
+ */
+export function pruningRemovedEntries(before: SupervisorStore, after: SupervisorStore): boolean {
+  return (
+    Object.keys(after.sessions).length !== Object.keys(before.sessions).length ||
+    Object.keys(after.hostModelFailures).length !== Object.keys(before.hostModelFailures).length
+  );
+}
+
+/**
+ * Session records that are not usable state (MCP-DEAD-2). Persistence is only
+ * proven if what came back off disk is what the supervisor can actually run on:
+ * keyed by its own id, with the numeric clocks and the event log every
+ * transition mutates.
+ */
+export function findMalformedSessions(store: SupervisorStore): string[] {
+  const malformed: string[] = [];
+  for (const [key, session] of Object.entries(store.sessions)) {
+    const record = session as Partial<SupervisorSessionState> | null;
+    const ok =
+      typeof record === "object" &&
+      record !== null &&
+      record.sessionId === key &&
+      typeof record.startedAt === "number" &&
+      Number.isFinite(record.startedAt) &&
+      typeof record.lastProgressAt === "number" &&
+      Number.isFinite(record.lastProgressAt) &&
+      typeof record.status === "string" &&
+      Array.isArray(record.events);
+    if (!ok) malformed.push(key);
+  }
+  return malformed.sort();
 }
 
 export function computeBackoffMs(reliability: ReliabilityConfig, failureCount: number): number {
