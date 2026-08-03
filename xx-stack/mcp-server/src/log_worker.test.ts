@@ -231,6 +231,218 @@ test(
   })
 );
 
+// ---------------------------------------------------------------------------
+// A torn write concatenates with the next record.
+//
+// JSONL is only parseable while every record ends in a newline. Both append
+// sites wrote a `\n`-terminated line without ever checking that the file
+// already ended in one, so a write torn by ENOSPC, a killed process, or an
+// external truncation left the file mid-record and the NEXT event glued itself
+// onto it — producing one line that fails to parse and silently losing two
+// events instead of one.
+//
+// A separate harness from `withFakeIo` on purpose: these tests need `stat` and
+// `open` to reflect real bytes, while the failure-path tests above need `stat`
+// to report a fresh install.
+// ---------------------------------------------------------------------------
+
+interface FileIoHarness {
+  files: Map<string, Buffer>;
+  appendCalls: Array<{ path: string; payload: string }>;
+  renames: Array<{ from: string; to: string }>;
+}
+
+function enoent(): NodeJS.ErrnoException {
+  return Object.assign(new Error("ENOENT: no such file or directory"), { code: "ENOENT" });
+}
+
+/**
+ * An in-memory filesystem behind `__logIo`. `appendFile` really concatenates,
+ * `stat` really reports the resulting size, and `open(...).read` really returns
+ * the byte at the requested position — so the last-byte check is exercised
+ * rather than mocked into agreeing with itself.
+ */
+function withFileIo(
+  seed: Record<string, string>,
+  body: (io: FileIoHarness) => Promise<void>
+): () => Promise<void> {
+  return async () => {
+    const realIo = { ...__logIo };
+    const io: FileIoHarness = {
+      files: new Map(
+        Object.entries(seed).map(([path, text]) => [path, Buffer.from(text, "utf-8")])
+      ),
+      appendCalls: [],
+      renames: [],
+    };
+
+    __logIo.mkdir = (async () => undefined) as unknown as typeof __logIo.mkdir;
+    __logIo.stat = (async (path: unknown) => {
+      const buf = io.files.get(String(path));
+      if (buf === undefined) throw enoent();
+      return { size: buf.length };
+    }) as unknown as typeof __logIo.stat;
+    __logIo.open = (async (path: unknown) => {
+      const buf = io.files.get(String(path));
+      if (buf === undefined) throw enoent();
+      return {
+        read: async (target: Buffer, offset: number, length: number, position: number) => {
+          const bytesRead = buf.copy(target, offset, position, position + length);
+          return { bytesRead, buffer: target };
+        },
+        close: async () => undefined,
+      };
+    }) as unknown as typeof __logIo.open;
+    __logIo.appendFile = (async (path: unknown, payload: unknown) => {
+      const key = String(path);
+      io.appendCalls.push({ path: key, payload: String(payload) });
+      const existing = io.files.get(key) ?? Buffer.alloc(0);
+      io.files.set(key, Buffer.concat([existing, Buffer.from(String(payload), "utf-8")]));
+    }) as unknown as typeof __logIo.appendFile;
+    __logIo.rename = (async (from: unknown, to: unknown) => {
+      io.renames.push({ from: String(from), to: String(to) });
+      const buf = io.files.get(String(from));
+      if (buf !== undefined) {
+        io.files.set(String(to), buf);
+        io.files.delete(String(from));
+      }
+    }) as unknown as typeof __logIo.rename;
+    resetTelemetryHealth();
+
+    try {
+      await body(io);
+    } finally {
+      Object.assign(__logIo, realIo);
+      resetTelemetryHealth();
+    }
+  };
+}
+
+const SERVER_LOG = join(LOG_DIR, "mcp-server.jsonl");
+/** A record cut off mid-write — the shape ENOSPC or a kill -9 leaves behind. */
+const TORN = '{"at":"2026-08-02T00:00:00.000Z","type":"tick.start"}\n{"at":"2026-08-02T00:00';
+
+function parsedLines(text: string): unknown[] {
+  return text
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
+}
+
+test(
+  "an append onto a torn server log does not concatenate into an unparseable record",
+  withFileIo({ [SERVER_LOG]: TORN }, async (io) => {
+    const result = await logEvent("server", "telemetry.record", { skill: "demo" });
+    assert.equal(result.ok, true);
+
+    const text = io.files.get(SERVER_LOG)!.toString("utf-8");
+    const lines = text.split("\n").filter((line) => line.length > 0);
+    assert.equal(lines.length, 3, "the torn record stays its own line; the new event is its own");
+    // Pre-fix this was `...{"at":"2026-08-02T00:00{"at":"...","type":"telemetry.record"...}`.
+    assert.equal(
+      lines[1],
+      '{"at":"2026-08-02T00:00',
+      "the torn record must not absorb the new one"
+    );
+    assert.equal(JSON.parse(lines[2]!).type, "telemetry.record");
+  })
+);
+
+test(
+  "the healing newline rides in the same append call that writes the record",
+  withFileIo({ [SERVER_LOG]: TORN }, async (io) => {
+    await logEvent("server", "telemetry.record", {});
+
+    // A second append would re-open the exact tear window it is closing.
+    assert.equal(io.appendCalls.length, 1, "one append call, not two");
+    assert.ok(
+      io.appendCalls[0]!.payload.startsWith("\n"),
+      `the newline must be part of the record write: ${JSON.stringify(io.appendCalls[0]!.payload)}`
+    );
+    assert.ok(io.appendCalls[0]!.payload.endsWith("\n"));
+  })
+);
+
+test(
+  "a well-formed log gains no spurious blank line",
+  withFileIo({ [SERVER_LOG]: '{"type":"a"}\n' }, async (io) => {
+    await logEvent("server", "b", {});
+    await logEvent("server", "c", {});
+
+    const text = io.files.get(SERVER_LOG)!.toString("utf-8");
+    assert.ok(!text.includes("\n\n"), `no blank line may appear: ${JSON.stringify(text)}`);
+    assert.deepEqual(
+      parsedLines(text).map((entry) => (entry as { type: string }).type),
+      ["a", "b", "c"]
+    );
+    for (const call of io.appendCalls) {
+      assert.ok(!call.payload.startsWith("\n"), "a healthy file needs no healing newline");
+    }
+  })
+);
+
+test(
+  "an absent or empty log file is appended to unchanged",
+  withFileIo({ [SERVER_LOG]: "" }, async (io) => {
+    await logEvent("server", "first", {});
+    assert.ok(!io.appendCalls[0]!.payload.startsWith("\n"), "size 0 needs no healing newline");
+
+    // And a session log that does not exist at all.
+    await logEvent({ session: "sx-fresh" }, "tick.start", {});
+    const sessionCall = io.appendCalls[1]!;
+    assert.ok(sessionCall.path.endsWith("sx-fresh.jsonl"));
+    assert.ok(!sessionCall.payload.startsWith("\n"), "an absent file needs no healing newline");
+  })
+);
+
+test(
+  "the session log gets the same protection as the server log",
+  withFileIo({ [join(SESSIONS_DIR, "sx-torn.jsonl")]: TORN }, async (io) => {
+    await logEvent({ session: "sx-torn" }, "tick.result", { ok: true });
+
+    const text = io.files.get(join(SESSIONS_DIR, "sx-torn.jsonl"))!.toString("utf-8");
+    const lines = text.split("\n").filter((line) => line.length > 0);
+    assert.equal(lines.length, 3);
+    assert.equal(JSON.parse(lines[2]!).type, "tick.result");
+    assert.equal(io.appendCalls.length, 1);
+    assert.ok(io.appendCalls[0]!.payload.startsWith("\n"));
+  })
+);
+
+test(
+  "the check runs after rotation, so a rotated-away file is not measured",
+  withFileIo({ [SERVER_LOG]: "x".repeat(5 * 1024 * 1024 + 1) }, async (io) => {
+    // The oversized file has no trailing newline. Hoisting the check above
+    // `rotateLargeLog` would measure it and prepend a newline to the FIRST line
+    // of the brand-new, empty post-rotation file.
+    await logEvent("server", "after.rotation", {});
+
+    assert.deepEqual(io.renames, [{ from: SERVER_LOG, to: `${SERVER_LOG}.1` }]);
+    assert.equal(io.appendCalls.length, 1);
+    assert.ok(
+      !io.appendCalls[0]!.payload.startsWith("\n"),
+      "the post-rotation file is size 0 — the check must look at it, not at the rotated file"
+    );
+    assert.equal(io.files.get(SERVER_LOG)!.toString("utf-8"), io.appendCalls[0]!.payload);
+  })
+);
+
+test(
+  "a stat failure falls back to the plain append instead of failing the caller",
+  withFileIo({ [SERVER_LOG]: TORN }, async (io) => {
+    __logIo.stat = (async () => {
+      throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+    }) as unknown as typeof __logIo.stat;
+
+    // Telemetry never fails a caller's operation, so an unreadable file takes
+    // the unhealed append rather than throwing out of the check.
+    const result = await logEvent("server", "telemetry.record", {});
+    assert.deepEqual(result, { ok: true, outcome: "written" });
+    assert.equal(io.appendCalls.length, 1);
+    assert.ok(!io.appendCalls[0]!.payload.startsWith("\n"));
+  })
+);
+
 test(
   "a removed log directory is re-created rather than killing telemetry forever",
   withFakeIo(async (io) => {

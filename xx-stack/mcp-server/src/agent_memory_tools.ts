@@ -1,4 +1,4 @@
-import { appendFile } from "node:fs/promises";
+import { appendFile, open, stat } from "node:fs/promises";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -20,31 +20,76 @@ import {
   syncAgentMemorySnapshot,
 } from "./memory_runtime.js";
 import { jsonContent, resolveAgentContext } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
+
+/**
+ * Does MEMORY.md need a healing `\n` before the next entry?
+ *
+ * `parseMemoryEntries` is line-based: an entry is one `- <iso> <note>` line.
+ * A file that does not end in a newline concatenates the next append onto its
+ * last line, which merges two entries into one unparseable record. Two ways
+ * that happens here, and the second is not a rare race:
+ *
+ *   1. A torn write — ENOSPC mid-line, a killed process, an external truncation.
+ *   2. The very first append onto a file whose scaffold or hand-edited tail has
+ *      no trailing newline. `ensureMemoryEntrypoint` writes a well-formed
+ *      template, but MEMORY.md is a user-visible file people edit by hand.
+ *
+ * Reading the last byte answers the question the append depends on. A `stat`
+ * that fails yields false, so the append proceeds unchanged and reports its own
+ * error rather than one from the check.
+ *
+ * The same shape exists in `log_worker.ts` and is deliberately not shared: that
+ * one must route every filesystem call through the `__logIo` test seam, and
+ * importing a telemetry seam into the memory path would couple them for two
+ * dozen lines.
+ */
+async function needsLeadingNewline(path: string): Promise<boolean> {
+  let size: number;
+  try {
+    size = (await stat(path)).size;
+  } catch {
+    return false;
+  }
+  if (size === 0) return false;
+  const handle = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(1);
+    const { bytesRead } = await handle.read(buf, 0, 1, size - 1);
+    return bytesRead === 1 && buf[0] !== 0x0a;
+  } finally {
+    await handle.close();
+  }
+}
 
 export function registerAgentMemoryTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "agent_memory_get",
-    "Read persistent memory entrypoint for an agent and scope. When tokenBudget is set, entries are fitted to the budget via submodular selection (relevant to the optional query + diverse, stable original order).",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
-      tokenBudget: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Optional token budget; when set, recall is fitted to this budget"),
-      query: z
-        .string()
-        .optional()
-        .describe("Optional relevance query for budgeted recall (ignored without tokenBudget)"),
-      includeSuperseded: z
-        .boolean()
-        .optional()
-        .describe(
-          "When true, budgeted recall also considers superseded entries (ignored without tokenBudget)"
-        ),
+      description:
+        "Read persistent memory entrypoint for an agent and scope. When tokenBudget is set, entries are fitted to the budget via submodular selection (relevant to the optional query + diverse, stable original order).",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        tokenBudget: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Optional token budget; when set, recall is fitted to this budget"),
+        query: z
+          .string()
+          .optional()
+          .describe("Optional relevance query for budgeted recall (ignored without tokenBudget)"),
+        includeSuperseded: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, budgeted recall also considers superseded entries (ignored without tokenBudget)"
+          ),
+      },
+      annotations: toolAnnotations("agent_memory_get"),
     },
     async ({ agentId, scope, cwd, tokenBudget, query, includeSuperseded }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -83,14 +128,17 @@ export function registerAgentMemoryTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_memory_append",
-    "Append a timestamped memory note for an agent and scope",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      note: z.string().min(1).max(8000).describe("Memory note content"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
+      description: "Append a timestamped memory note for an agent and scope",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        note: z.string().min(1).max(8000).describe("Memory note content"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+      },
+      annotations: toolAnnotations("agent_memory_append"),
     },
     async ({ agentId, note, scope, cwd }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -105,7 +153,13 @@ export function registerAgentMemoryTools(server: McpServer): void {
       // memory write with no expectedHash precondition, so it gets O_APPEND —
       // which the kernel serializes — instead of an optimistic-concurrency
       // dance the caller would have to retry.
-      await appendFile(path, entry, "utf-8");
+      //
+      // The healing newline rides in the SAME appendFile call. A separate
+      // append re-opens the exact tear window it is closing — and, under
+      // O_APPEND with concurrent writers, would let another entry land between
+      // the two calls and be split by the newline meant for the previous one.
+      const heal = (await needsLeadingNewline(path)) ? "\n" : "";
+      await appendFile(path, heal + entry, "utf-8");
 
       return jsonContent({
         status: "ok",
@@ -117,13 +171,16 @@ export function registerAgentMemoryTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_memory_snapshot_status",
-    "Check whether agent memory and snapshot are in sync and report drift",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
+      description: "Check whether agent memory and snapshot are in sync and report drift",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+      },
+      annotations: toolAnnotations("agent_memory_snapshot_status"),
     },
     async ({ agentId, scope, cwd }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -164,28 +221,32 @@ export function registerAgentMemoryTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_memory_snapshot_sync",
-    "Sync memory snapshots by capturing current memory or applying snapshot back to live memory. Pass expectedHash (from agent_memory_snapshot_status) for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
-      direction: z
-        .enum(["capture", "apply"])
-        .optional()
-        .describe("capture: memory -> snapshot; apply: snapshot -> memory"),
-      retainHistory: z
-        .boolean()
-        .optional()
-        .describe("When true, store timestamped copies under .snapshots/"),
-      expectedHash: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "Optional precondition on the file this sync overwrites (memoryHash for direction 'apply', snapshotHash for 'capture', both from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
-        ),
+      description:
+        "Sync memory snapshots by capturing current memory or applying snapshot back to live memory. Pass expectedHash (from agent_memory_snapshot_status) for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        direction: z
+          .enum(["capture", "apply"])
+          .optional()
+          .describe("capture: memory -> snapshot; apply: snapshot -> memory"),
+        retainHistory: z
+          .boolean()
+          .optional()
+          .describe("When true, store timestamped copies under .snapshots/"),
+        expectedHash: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Optional precondition on the file this sync overwrites (memoryHash for direction 'apply', snapshotHash for 'capture', both from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
+          ),
+      },
+      annotations: toolAnnotations("agent_memory_snapshot_sync"),
     },
     async ({ agentId, scope, cwd, direction, retainHistory, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -229,19 +290,23 @@ export function registerAgentMemoryTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_memory_compaction_prompt",
-    "Emit a deterministic distillation prompt plus candidate memory entries for rule abstraction. The server never calls models: the agent produces the rules, writes them back via agent_memory_append, then marks the sources via agent_memory_mark_superseded.",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
-      maxEntries: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Optional cap on how many oldest non-superseded entries to distill"),
+      description:
+        "Emit a deterministic distillation prompt plus candidate memory entries for rule abstraction. The server never calls models: the agent produces the rules, writes them back via agent_memory_append, then marks the sources via agent_memory_mark_superseded.",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        maxEntries: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Optional cap on how many oldest non-superseded entries to distill"),
+      },
+      annotations: toolAnnotations("agent_memory_compaction_prompt"),
     },
     async ({ agentId, scope, cwd, maxEntries }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -265,28 +330,32 @@ export function registerAgentMemoryTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_memory_mark_superseded",
-    "Mark memory entries as superseded by abstracted rules. Entries are annotated in place — never deleted — and remain recoverable in MEMORY.md (and via agent_memory_get with includeSuperseded). Pass expectedHash for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      entryIds: z
-        .array(z.string().min(1))
-        .min(1)
-        .describe("Entry ids (from agent_memory_compaction_prompt) to mark superseded"),
-      supersededBy: z
-        .string()
-        .min(1)
-        .describe("Reference to what replaced the entries (e.g. the compactionId)"),
-      scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-      cwd: z.string().optional().describe("Optional project root for project/local scope"),
-      expectedHash: z
-        .string()
-        .min(1)
-        .optional()
-        .describe(
-          "Optional precondition on MEMORY.md (memoryHash from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
-        ),
+      description:
+        "Mark memory entries as superseded by abstracted rules. Entries are annotated in place — never deleted — and remain recoverable in MEMORY.md (and via agent_memory_get with includeSuperseded). Pass expectedHash for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        entryIds: z
+          .array(z.string().min(1))
+          .min(1)
+          .describe("Entry ids (from agent_memory_compaction_prompt) to mark superseded"),
+        supersededBy: z
+          .string()
+          .min(1)
+          .describe("Reference to what replaced the entries (e.g. the compactionId)"),
+        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
+        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        expectedHash: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Optional precondition on MEMORY.md (memoryHash from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
+          ),
+      },
+      annotations: toolAnnotations("agent_memory_mark_superseded"),
     },
     async ({ agentId, entryIds, supersededBy, scope, cwd, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();

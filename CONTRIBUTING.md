@@ -117,6 +117,21 @@ outstanding warning — annotate it and this section should say zero.
   stays portable to Bun/Deno without a rewrite. This is applied
   opportunistically — when you touch a file anyway — not as a churn campaign.
 
+### MCP Tool Development
+
+Full procedure in MANUAL §4 and §12. Two rules a PR is rejected for missing:
+
+- **Register with `server.registerTool(name, config, handler)`.** Every
+  `server.tool(...)` overload is `@deprecated` in the SDK we ship and cannot
+  express `title`, `outputSchema`, or annotations. A test in
+  `observability_tools.test.ts` fails on any remaining `server.tool(` call site.
+- **Declare all four annotations** (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`) on the tool's `TOOL_CATALOG` entry, and
+  pass them as `annotations: toolAnnotations("<name>")`. One place per tool —
+  a second map is the mistake MCP-13 records. Undeclared tools fall back to
+  destructive + open-world and fail the drift test, so the gate fails closed
+  rather than quietly marking a writer safe to auto-approve.
+
 ### Agent Development
 
 Canonical agent contracts live in `xx-stack/runtime/agents/` (and, for the

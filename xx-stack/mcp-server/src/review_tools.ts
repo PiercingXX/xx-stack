@@ -16,6 +16,7 @@ import {
   redactDotenvAssignments,
   redactSecrets,
 } from "./supervisor_completion_tools.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -176,28 +177,32 @@ export function registerReviewTools(
   const readMemorySyncStatus =
     overrides.getCompletionMemorySyncStatus ?? getCompletionMemorySyncStatus;
 
-  server.tool(
+  server.registerTool(
     "review_to_continuation",
-    "Review uncommitted changes and emit a bounded continuation prompt with mustAddress items for every review note. " +
-      "The diff is read from the session's repo (cwd argument, else the session's memory-sync cwd), redacted, and " +
-      "compacted before it is embedded; a failed read is reported as unavailable, never as an empty diff",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      cwd: z
-        .string()
-        .optional()
-        .describe(
-          "Repo root the diff is read from; defaults to the session's memory-sync cwd, then the server cwd"
-        ),
-      diff: z
-        .string()
-        .optional()
-        .describe("Optional diff content; auto-detected from git in the resolved cwd if omitted"),
-      notes: z
-        .array(z.string().min(1).max(4000))
-        .min(1)
-        .max(50)
-        .describe("Review notes, each describing a finding that must be addressed"),
+      description:
+        "Review uncommitted changes and emit a bounded continuation prompt with mustAddress items for every review note. " +
+        "The diff is read from the session's repo (cwd argument, else the session's memory-sync cwd), redacted, and " +
+        "compacted before it is embedded; a failed read is reported as unavailable, never as an empty diff",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Repo root the diff is read from; defaults to the session's memory-sync cwd, then the server cwd"
+          ),
+        diff: z
+          .string()
+          .optional()
+          .describe("Optional diff content; auto-detected from git in the resolved cwd if omitted"),
+        notes: z
+          .array(z.string().min(1).max(4000))
+          .min(1)
+          .max(50)
+          .describe("Review notes, each describing a finding that must be addressed"),
+      },
+      annotations: toolAnnotations("review_to_continuation"),
     },
     async ({ sessionId, cwd, diff, notes }) =>
       guardStoreAccess(() =>

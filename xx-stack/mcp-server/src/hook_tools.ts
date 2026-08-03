@@ -26,9 +26,10 @@ import {
   type PersistentTask,
   type TaskStore,
 } from "./task_runtime.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 /**
- * MCP lifecycle hook tools (UPSTREAM-BORROW task 26).
+ * MCP lifecycle hook tools.
  *
  * The buzz hook convention: a hook-aware harness calls underscore-prefixed MCP
  * tools at fixed points in its own loop. `_Stop` runs when the model signals
@@ -52,6 +53,11 @@ import {
  * - `_Stop` objections are bounded: the caller enforces a rejection budget, so
  *   each objection names one concrete unmet condition (task id + stop
  *   condition) the agent can act on in a single round.
+ * - `_Stop` carries the mandatory clause pair beneath its objections, indented
+ *   so it adds context without spending a single unit of the objection budget.
+ *   This hook is what creates the pressure NULL_RESULT_VALID_CLAUSE relieves:
+ *   a prospecting task whose honest answer is "nothing worth changing" has an
+ *   unmet stop condition by construction, so the clause has to arrive here.
  * - `_Stop` objects only on READY work. A task whose blockers are still open
  *   cannot be started at all, so naming it as the objection would violate the
  *   contract above — the agent has no move that closes it in one round, and
@@ -301,6 +307,36 @@ export async function buildStopObjections(deps: HookToolDeps, scope: HookScope):
 }
 
 /**
+ * The clause pair, rendered beneath a `_Stop` objection.
+ *
+ * `_Stop` is the surface that APPLIES the pressure NULL_RESULT_VALID_CLAUSE
+ * exists to relieve, and it was the one contract surface that never carried it.
+ * A prospecting task ("find dead code", "find performance wins") whose honest
+ * answer is "nothing worth changing" has an unmet stopCondition by
+ * construction: `_Stop` objects at every end-turn until the caller's rejection
+ * budget is spent, and the cheapest way for the agent to silence the objection
+ * is to invent a diff. The clause is what makes the honest answer available,
+ * and it belongs where the squeeze happens.
+ *
+ * Two properties are load-bearing:
+ *
+ * - Every line here is INDENTED. `_Stop`'s objection budget is measured in
+ *   top-level `- ` bullets — the caller enforces a rejection budget, so the
+ *   count of concrete things to act on must not move. These lines are context
+ *   qualifying the objections above them, not additional objections.
+ * - Both clauses ship, via the single renderer. `renderGoalContractClauseLines`
+ *   is the one function that emits the pair precisely so no surface can carry
+ *   one direction alone; emitting only the null-result half here would fork
+ *   that rule at the surface it was written for.
+ */
+function renderStopClauseLines(): string[] {
+  return [
+    "  - clauses recorded on this work (quoted, not new rules):",
+    ...renderGoalContractClauseLines("    "),
+  ];
+}
+
+/**
  * Render the bounded `_Stop` payload. Empty string means no objection.
  *
  * `blockedContext` is appended only when there is a real objection to append
@@ -323,6 +359,9 @@ export function renderStopObjection(
   if (objections.length > shown.length) {
     lines.push(`- (+${objections.length - shown.length} more open items not shown)`);
   }
+  // Sited directly under the objections it qualifies, and only when there is an
+  // objection at all — an empty `_Stop` answer stays the empty string.
+  lines.push(...renderStopClauseLines());
   if (blockedContext.length > 0) {
     const shownContext = blockedContext.slice(0, MAX_BLOCKED_CONTEXT);
     lines.push("- context only (blocked work; nothing to act on here):");
@@ -442,18 +481,22 @@ const HOOK_SCOPE_SHAPE = {
 };
 
 export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
-  server.tool(
+  server.registerTool(
     "_Stop",
-    `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness when the model signals ` +
-      "end_turn. Returns an empty string when there is no objection to stopping, or a bounded " +
-      "objection naming the concrete open supervised work (task id + unmet stop condition) " +
-      "otherwise. Only work that is actually startable raises an objection: a task whose " +
-      "blockedBy entries are still open is listed as context beneath a real objection and " +
-      "never as the objection itself. If the supervisor or task store exists but cannot be read, this returns the " +
-      "empty no-objection string — the same answer the caller assumes on timeout — because a " +
-      "corrupt state file is not something the agent can resolve by continuing to work. " +
-      "Reports observed state; it does not issue instructions",
-    HOOK_SCOPE_SHAPE,
+    {
+      description:
+        `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness when the model signals ` +
+        "end_turn. Returns an empty string when there is no objection to stopping, or a bounded " +
+        "objection naming the concrete open supervised work (task id + unmet stop condition) " +
+        "otherwise. Only work that is actually startable raises an objection: a task whose " +
+        "blockedBy entries are still open is listed as context beneath a real objection and " +
+        "never as the objection itself. If the supervisor or task store exists but cannot be read, this returns the " +
+        "empty no-objection string — the same answer the caller assumes on timeout — because a " +
+        "corrupt state file is not something the agent can resolve by continuing to work. " +
+        "Reports observed state; it does not issue instructions",
+      inputSchema: HOOK_SCOPE_SHAPE,
+      annotations: toolAnnotations("_Stop"),
+    },
     async ({ agentId, sessionId }) => {
       const scope: HookScope = { agentId, sessionId };
       const text = await withUnreadableStoreFallback(
@@ -469,16 +512,20 @@ export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "_PostCompact",
-    `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness after context compaction. ` +
-      "Returns supervised state to re-inject into the fresh context — open tasks, their goal " +
-      "contracts and stop conditions, worktree resume notes, leases, live sessions, and the " +
-      "memory entrypoint pointer — all re-derived from the existing stores. If a store exists " +
-      "but cannot be read, this says so plainly instead of reporting an empty fleet: its output " +
-      "is informational, so an honest notice is safe where a silent empty state is not. " +
-      "Reports observed state; it does not issue instructions",
-    HOOK_SCOPE_SHAPE,
+    {
+      description:
+        `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness after context compaction. ` +
+        "Returns supervised state to re-inject into the fresh context — open tasks, their goal " +
+        "contracts and stop conditions, worktree resume notes, leases, live sessions, and the " +
+        "memory entrypoint pointer — all re-derived from the existing stores. If a store exists " +
+        "but cannot be read, this says so plainly instead of reporting an empty fleet: its output " +
+        "is informational, so an honest notice is safe where a silent empty state is not. " +
+        "Reports observed state; it does not issue instructions",
+      inputSchema: HOOK_SCOPE_SHAPE,
+      annotations: toolAnnotations("_PostCompact"),
+    },
     async ({ agentId, sessionId }) => {
       const text = await withUnreadableStoreFallback(
         () => buildPostCompactState(deps, { agentId, sessionId }),

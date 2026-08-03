@@ -1,18 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { AddressInfo } from "node:net";
-import { dirname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { diagnoseHosts, summarizePlatforms } from "./observability_runtime.js";
 import {
+  HIDDEN_TOOL_ANNOTATIONS,
+  lookupToolAnnotations,
   registerObservabilityTools,
   TOOL_CATALOG,
   TOOL_CATEGORIES,
+  type ToolHints,
 } from "./observability_tools.js";
 import type { Registry } from "./platform_types.js";
 
@@ -21,19 +26,31 @@ import type { Registry } from "./platform_types.js";
 type ToolResult = { content: Array<{ type: string; text: string }> };
 type Handler = (args: Record<string, unknown>) => Promise<ToolResult>;
 
+/**
+ * The registration config `registerTool` takes. `server.tool(...)` — every
+ * overload of which the SDK marks `@deprecated` — could not express `title`,
+ * `outputSchema`, or (in the shape this repo used) `annotations` at all, so the
+ * recorders below read the config object rather than positional arguments.
+ */
+interface ToolConfig {
+  description?: string;
+  inputSchema?: Record<string, any>;
+  annotations?: ToolHints;
+}
+
 function fakeServer(sink: (name: string, handler: Handler) => void): McpServer {
   return {
-    tool: (...args: unknown[]) => {
+    registerTool: (...args: unknown[]) => {
       sink(args[0] as string, args[args.length - 1] as Handler);
     },
   } as unknown as McpServer;
 }
 
-/** Same recorder, but keeping the zod shape so the declared schema is testable. */
-function fakeServerWithSchemas(sink: (name: string, schema: any) => void): McpServer {
+/** Same recorder, but keeping the whole config so schema and hints are testable. */
+function fakeServerWithConfig(sink: (name: string, config: ToolConfig) => void): McpServer {
   return {
-    tool: (...args: unknown[]) => {
-      sink(args[0] as string, args.length >= 4 ? args[2] : undefined);
+    registerTool: (...args: unknown[]) => {
+      sink(args[0] as string, args[1] as ToolConfig);
     },
   } as unknown as McpServer;
 }
@@ -62,13 +79,10 @@ const HIDDEN_FROM_CATALOG = new Set(["_Stop", "_PostCompact"]);
  * The registrar set itself is derived too: every `register*` export of every
  * `*_tools.js` module is invoked. A new tool group therefore enters this test
  * the moment its file lands, with no second list to remember to update.
- * Registration is pure `server.tool(...)` — no dependency is touched until a
- * handler runs — so empty deps are safe here.
+ * Registration is pure `server.registerTool(...)` — no dependency is touched
+ * until a handler runs — so empty deps are safe here.
  */
-async function registeredToolNames(): Promise<Set<string>> {
-  const names = new Set<string>();
-  const server = fakeServer((name) => names.add(name));
-
+async function driveEveryRegistrar(server: McpServer): Promise<void> {
   const here = dirname(fileURLToPath(import.meta.url));
   const toolModules = (await readdir(here)).filter((file) => file.endsWith("_tools.js")).sort();
   assert.ok(toolModules.length > 0, "expected to find compiled *_tools.js modules beside the test");
@@ -83,7 +97,23 @@ async function registeredToolNames(): Promise<Set<string>> {
       (value as (server: McpServer, deps: never) => void)(server, {} as never);
     }
   }
+}
+
+async function registeredToolNames(): Promise<Set<string>> {
+  const names = new Set<string>();
+  await driveEveryRegistrar(fakeServer((name) => names.add(name)));
   return names;
+}
+
+/** Every registration's config object, keyed by tool name. */
+async function registeredToolConfigs(): Promise<Map<string, ToolConfig>> {
+  const configs = new Map<string, ToolConfig>();
+  await driveEveryRegistrar(
+    fakeServerWithConfig((name, config) => {
+      configs.set(name, config);
+    })
+  );
+  return configs;
 }
 
 test("MCP-13: every registered tool has a search_tools catalog entry", async () => {
@@ -127,6 +157,187 @@ test("MCP-13: catalog entries are unique and carry searchable keywords", () => {
     seen.add(entry.name);
     assert.ok(entry.description.length > 0, `${entry.name} needs a description`);
     assert.ok(entry.keywords.length > 0, `${entry.name} needs at least one keyword`);
+  }
+});
+
+// --- annotations: the same drift guard, extended to the safety hints -------
+//
+// MCP-13 happened because a second hand-maintained list sat beside the
+// registrations with nothing comparing them. Annotations are declared on the
+// TOOL_CATALOG entry for exactly that reason — one place per tool — and these
+// tests are what stop that one place from rotting.
+
+const HINT_KEYS = [
+  "readOnlyHint",
+  "destructiveHint",
+  "idempotentHint",
+  "openWorldHint",
+] as const satisfies ReadonlyArray<keyof ToolHints>;
+
+test("annotations: every registered tool declares all four hints", async () => {
+  const registered = await registeredToolNames();
+
+  const undeclared = [...registered].filter((name) => lookupToolAnnotations(name) === null).sort();
+  assert.deepEqual(
+    undeclared,
+    [],
+    "registered with no declared annotations — a client cannot tell these apart from " +
+      `verify_edit, so they fall back to destructive+openWorld: ${undeclared.join(", ")}`
+  );
+
+  for (const name of registered) {
+    const hints = lookupToolAnnotations(name)!;
+    for (const key of HINT_KEYS) {
+      assert.equal(
+        typeof hints[key],
+        "boolean",
+        `${name} must state ${key} explicitly — an omitted hint is not a neutral statement`
+      );
+    }
+  }
+});
+
+test("annotations: no declaration names a tool nobody registers", async () => {
+  const registered = await registeredToolNames();
+  const declared = [
+    ...TOOL_CATALOG.map((entry) => entry.name),
+    ...Object.keys(HIDDEN_TOOL_ANNOTATIONS),
+  ];
+  const stale = declared.filter((name) => !registered.has(name)).sort();
+  assert.deepEqual(stale, [], `annotations declared for unregistered tools: ${stale.join(", ")}`);
+});
+
+test("annotations: the hidden-hook exemption stays exactly the two lifecycle hooks", () => {
+  assert.deepEqual(
+    Object.keys(HIDDEN_TOOL_ANNOTATIONS).sort(),
+    [...HIDDEN_FROM_CATALOG].sort(),
+    "the annotation exemption and the catalog exemption must name the same tools — " +
+      "a third entry here would be a tool hiding from search_tools with no reason recorded"
+  );
+});
+
+test("annotations: what registration passes is what the catalog declares", async () => {
+  const configs = await registeredToolConfigs();
+  assert.ok(configs.size > 0, "expected registrations to be recorded");
+
+  for (const [name, config] of configs) {
+    assert.deepEqual(
+      config.annotations,
+      lookupToolAnnotations(name),
+      `${name} registers annotations that differ from its declaration — the registration ` +
+        "site must call toolAnnotations(name), never spell hints inline"
+    );
+  }
+});
+
+test("annotations: the read/write split is real, not uniform", async () => {
+  const configs = await registeredToolConfigs();
+  const readOnly = (name: string): boolean => configs.get(name)!.annotations!.readOnlyHint;
+
+  // A pure registry read and a subprocess spawn must not look alike — that
+  // indistinguishability is the whole reason these hints exist.
+  assert.equal(readOnly("list_platforms"), true);
+  assert.equal(readOnly("verify_edit"), false);
+  assert.equal(configs.get("verify_edit")!.annotations!.idempotentHint, false);
+
+  // openWorldHint tracks reaching beyond this machine: health probes dial
+  // hosts, a store read does not.
+  assert.equal(configs.get("check_health")!.annotations!.openWorldHint, true);
+  assert.equal(configs.get("task_get")!.annotations!.openWorldHint, false);
+
+  // The surface is genuinely mixed, so a future uniform sweep fails here.
+  const values = [...configs.values()].map((config) => config.annotations!);
+  for (const key of HINT_KEYS) {
+    assert.ok(
+      values.some((hints) => hints[key]) && values.some((hints) => !hints[key]),
+      `every tool declares the same ${key} — the hints were filled in uniformly, not decided`
+    );
+  }
+});
+
+// --- the deprecated registration API is gone and must stay gone -----------
+
+test("no registration site uses the @deprecated server.tool(...) API", async () => {
+  // Every tool() overload in @modelcontextprotocol/sdk ^1.28 is marked
+  // `@deprecated Use registerTool instead`, and it cannot express title,
+  // outputSchema, or the annotations above. A grep over source is crude but it
+  // is what catches the next copy-paste, which is how all 47 sites arrived.
+  const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src");
+  const files = (await readdir(srcDir)).filter((file) => file.endsWith(".ts")).sort();
+  assert.ok(files.length > 0, `expected TypeScript sources in ${srcDir}`);
+
+  const offenders: string[] = [];
+  for (const file of files) {
+    const text = await readFile(join(srcDir, file), "utf8");
+    // `server.tool(` in prose is fine; a call is what matters, and every call
+    // in this codebase is written against a parameter or local named `server`.
+    for (const [index, line] of text.split("\n").entries()) {
+      if (/^\s*server\.tool\(/.test(line)) offenders.push(`${file}:${index + 1}`);
+    }
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    `deprecated server.tool(...) call sites — use server.registerTool(name, config, cb): ${offenders.join(", ")}`
+  );
+});
+
+// --- tools/list really carries the annotations over the wire --------------
+
+test("tools/list returns the declared annotations for every tool", async () => {
+  const server = new McpServer({ name: "annotation-probe", version: "0.0.0" });
+  // driveEveryRegistrar calls the aggregators (registerAgentTools,
+  // registerSupervisorTools) as well as the leaf registrars they delegate to,
+  // which a real McpServer rejects as a duplicate name. index.ts only ever
+  // calls the aggregators, so dropping the repeat here changes nothing about
+  // what ships — it just lets one pass cover every group.
+  const seen = new Set<string>();
+  const dedupe = new Proxy(server, {
+    get(target, prop, receiver) {
+      if (prop !== "registerTool") return Reflect.get(target, prop, receiver);
+      return (...args: unknown[]) => {
+        const name = args[0] as string;
+        if (seen.has(name)) return;
+        seen.add(name);
+        return (target.registerTool as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+  await driveEveryRegistrar(dedupe);
+
+  const client = new Client({ name: "annotation-probe-client", version: "0.0.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+
+  try {
+    const { tools } = await client.listTools();
+    assert.ok(tools.length > 0, "expected tools/list to return the registered surface");
+
+    for (const tool of tools) {
+      const expected = lookupToolAnnotations(tool.name);
+      assert.ok(expected, `tools/list advertises ${tool.name} with no declaration`);
+      assert.ok(
+        tool.annotations,
+        `${tool.name} reached the wire with no annotations — the config was dropped`
+      );
+      for (const key of HINT_KEYS) {
+        assert.equal(
+          tool.annotations[key],
+          expected[key],
+          `${tool.name}.${key} did not survive to tools/list`
+        );
+      }
+    }
+
+    // The declarations are complete, so the wire and the declaration agree in
+    // both directions.
+    const listed = new Set(tools.map((tool) => tool.name));
+    const missing = [...(await registeredToolNames())].filter((name) => !listed.has(name));
+    assert.deepEqual(missing, [], `registered but absent from tools/list: ${missing.join(", ")}`);
+  } finally {
+    await client.close();
+    await server.close();
   }
 });
 
@@ -430,8 +641,8 @@ test("§11.1: build_repo_map and verify_edit are no longer filed under observabi
 test("§11.1: search_tools accepts every category the catalog actually uses", () => {
   const schemas: Record<string, any> = {};
   registerObservabilityTools(
-    fakeServerWithSchemas((name, schema) => {
-      schemas[name] = schema;
+    fakeServerWithConfig((name, config) => {
+      schemas[name] = config.inputSchema;
     }),
     {} as never
   );

@@ -62,7 +62,7 @@ export const NULL_RESULT_VALID_CLAUSE =
   "finding nothing worth changing is a real answer when the evidence shows you looked";
 
 /**
- * Five-part goal contract for supervised autonomous tasks (UPSTREAM-BORROW task 21).
+ * Five-part goal contract for supervised autonomous tasks.
  * Optional metadata on task registration; when present, the supervisor
  * completion path cites the stop condition and — if validationCmd is set —
  * expects a verify_edit result for that exact command as completion evidence.
@@ -205,7 +205,7 @@ export function evaluateGoalContractCompletion(
 }
 
 // ---------------------------------------------------------------------------
-// Self-enforced task leases (UPSTREAM-BORROW task 27)
+// Self-enforced task leases
 // ---------------------------------------------------------------------------
 
 /**
@@ -307,7 +307,7 @@ export async function revokeSessionTaskLeases(sessionId: string, at: string): Pr
 }
 
 /**
- * Mark a task as force_synthesized (UPSTREAM-BORROW task 14): the supervisor
+ * Mark a task as force_synthesized: the supervisor
  * exhausted budget/steps/stall allowance and demanded a best-effort synthesis
  * from existing evidence. Distinct from done (completed) and canceled (failed).
  */

@@ -30,7 +30,7 @@ prose. It is easy to read that as the pack being underspecified. Upstream's
 argument says the opposite: the prose is the asset, and an extracted token map
 is a convenience for gates rather than the specification finally arriving.
 
-**This is a dissent, not a veto.** `UPSTREAM-BORROW-TODO.md` task 33 proposes
+**This is a dissent, not a veto.** the repository history task 33 proposes
 vendoring per-brand `tokens.css` so a brand becomes a checkable `:root`
 contract. That stays mechanically useful — a gate cannot check prose. The two
 positions are compatible as long as the `:root` contract is a *verification

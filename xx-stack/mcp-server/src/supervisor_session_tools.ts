@@ -11,6 +11,7 @@ import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import { revokeSessionTaskLeases } from "./task_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 /**
  * Identifiers accepted at the tool boundary.
@@ -45,40 +46,49 @@ function safeId(description: string): z.ZodType<string, string> {
 }
 
 export function registerSupervisorSessionTools(server: McpServer, deps: SupervisorToolDeps): void {
-  server.tool(
+  server.registerTool(
     "supervisor_start_session",
-    "Start or restart a supervised orchestrator session with persisted fallback state",
     {
-      sessionId: safeId(
-        "Optional supervisor session ID; letters/digits/._- only, generated when omitted"
-      ).optional(),
-      description: z.string().describe("Task description this session should supervise"),
-      preferredHost: z.string().optional().describe("Preferred host ID for primary attempt"),
-      preferredModel: z.string().optional().describe("Preferred model for primary attempt"),
-      maxFallbacks: z
-        .number()
-        .int()
-        .min(1)
-        .max(8)
-        .optional()
-        .describe("Maximum fallback routes to precompute"),
-      forceRestart: z.boolean().optional().describe("Replace an existing session with the same ID"),
-      memorySync: z
-        .object({
-          agentId: safeId(
-            "Agent identifier to enforce memory snapshot sync on completion; letters/digits/._- only"
-          ),
-          scope: z
-            .enum(["user", "project", "local"])
-            .optional()
-            .describe("Memory scope to enforce; defaults to project"),
-          cwd: z
-            .string()
-            .optional()
-            .describe("Project root used for project/local scope; defaults to current process cwd"),
-        })
-        .optional()
-        .describe("Optional memory sync guard for completion gating"),
+      description:
+        "Start or restart a supervised orchestrator session with persisted fallback state",
+      inputSchema: {
+        sessionId: safeId(
+          "Optional supervisor session ID; letters/digits/._- only, generated when omitted"
+        ).optional(),
+        description: z.string().describe("Task description this session should supervise"),
+        preferredHost: z.string().optional().describe("Preferred host ID for primary attempt"),
+        preferredModel: z.string().optional().describe("Preferred model for primary attempt"),
+        maxFallbacks: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .optional()
+          .describe("Maximum fallback routes to precompute"),
+        forceRestart: z
+          .boolean()
+          .optional()
+          .describe("Replace an existing session with the same ID"),
+        memorySync: z
+          .object({
+            agentId: safeId(
+              "Agent identifier to enforce memory snapshot sync on completion; letters/digits/._- only"
+            ),
+            scope: z
+              .enum(["user", "project", "local"])
+              .optional()
+              .describe("Memory scope to enforce; defaults to project"),
+            cwd: z
+              .string()
+              .optional()
+              .describe(
+                "Project root used for project/local scope; defaults to current process cwd"
+              ),
+          })
+          .optional()
+          .describe("Optional memory sync guard for completion gating"),
+      },
+      annotations: toolAnnotations("supervisor_start_session"),
     },
     async ({
       sessionId,
@@ -197,26 +207,30 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_record_event",
-    "Record canonical session lifecycle events (status, error, stop, and output updates) and apply transition logic",
     {
-      sessionId: safeId("Supervisor session ID"),
-      eventType: z
-        .enum([
-          "session.status.busy",
-          "session.status.retry",
-          "session.status.idle",
-          "session.error",
-          "session.stop",
-          "message.updated.assistant",
-          "message.part.updated.assistant",
-          "tool.execute.before",
-          "tool.execute.after",
-          "session.custom",
-        ])
-        .describe("Event type to apply"),
-      detail: z.string().optional().describe("Optional event detail"),
+      description:
+        "Record canonical session lifecycle events (status, error, stop, and output updates) and apply transition logic",
+      inputSchema: {
+        sessionId: safeId("Supervisor session ID"),
+        eventType: z
+          .enum([
+            "session.status.busy",
+            "session.status.retry",
+            "session.status.idle",
+            "session.error",
+            "session.stop",
+            "message.updated.assistant",
+            "message.part.updated.assistant",
+            "tool.execute.before",
+            "tool.execute.after",
+            "session.custom",
+          ])
+          .describe("Event type to apply"),
+        detail: z.string().optional().describe("Optional event detail"),
+      },
+      annotations: toolAnnotations("supervisor_record_event"),
     },
     async ({ sessionId, eventType, detail }) =>
       guardStoreAccess(async () => {
@@ -283,17 +297,21 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
       })
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_tick",
-    "Tick a supervised session. Detect stalls, apply cooldown/backoff, and switch to fallback route when needed",
     {
-      sessionId: safeId("Supervisor session ID to tick"),
-      progressObserved: z
-        .boolean()
-        .optional()
-        .describe("Whether deterministic progress was observed since last tick"),
-      note: z.string().optional().describe("Optional operator note for this tick"),
-      forceRecover: z.boolean().optional().describe("Force recovery regardless of timers"),
+      description:
+        "Tick a supervised session. Detect stalls, apply cooldown/backoff, and switch to fallback route when needed",
+      inputSchema: {
+        sessionId: safeId("Supervisor session ID to tick"),
+        progressObserved: z
+          .boolean()
+          .optional()
+          .describe("Whether deterministic progress was observed since last tick"),
+        note: z.string().optional().describe("Optional operator note for this tick"),
+        forceRecover: z.boolean().optional().describe("Force recovery regardless of timers"),
+      },
+      annotations: toolAnnotations("supervisor_tick"),
     },
     async ({ sessionId, progressObserved, note, forceRecover }) =>
       guardStoreAccess(() =>
@@ -649,7 +667,7 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
 
           await deps.writeSupervisorStore(store);
 
-          // At-most-one-live-instance (UPSTREAM-BORROW task 27): the supervisor
+          // At-most-one-live-instance: the supervisor
           // has no kill channel to the stalled lane, so failover revokes its
           // claim instead. A returning lane's write-back is then rejected rather
           // than landing on top of the fallback lane's work. Tasks with no lease
@@ -677,16 +695,20 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_abort_session",
-    "Abort a live supervised session and mark it as interrupted. Terminal is terminal: a " +
-      "session that already ended (completed, interrupted, exhausted, force_synthesized) is a " +
-      "no-op — nothing is written, no event is pushed, and the result reports " +
-      "already_terminal with the status the session actually holds. A session ID that does not " +
-      "exist still returns missing; the two outcomes are distinct",
     {
-      sessionId: safeId("Supervisor session ID"),
-      reason: z.string().optional().describe("Optional abort reason"),
+      description:
+        "Abort a live supervised session and mark it as interrupted. Terminal is terminal: a " +
+        "session that already ended (completed, interrupted, exhausted, force_synthesized) is a " +
+        "no-op — nothing is written, no event is pushed, and the result reports " +
+        "already_terminal with the status the session actually holds. A session ID that does not " +
+        "exist still returns missing; the two outcomes are distinct",
+      inputSchema: {
+        sessionId: safeId("Supervisor session ID"),
+        reason: z.string().optional().describe("Optional abort reason"),
+      },
+      annotations: toolAnnotations("supervisor_abort_session"),
     },
     async ({ sessionId, reason }) =>
       guardStoreAccess(() =>

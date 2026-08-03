@@ -32,7 +32,7 @@ A twelfth shipped section, [`craft/design-intent.md`](craft/design-intent.md),
 is authored here and is **doctrine rather than a rulebook** — no gate reads it
 and no skill binds it. It states the theory behind
 `craft/anti-ai-slop-rules.json`'s 18 checkable rules, and records a dissent that
-bears on `UPSTREAM-BORROW-TODO.md` task 33.
+bears on the repository history task 33.
 
 [`manifest.json`](manifest.json) is the machine-readable version of everything
 below, with a per-subtree `provenance` field.
@@ -142,7 +142,7 @@ a project's general reputation, or from memory.
   read at `9bf8eae`) are restated in our own words; nothing is reproduced, so
   there is nothing to byte-compare and nothing to keep in sync. Its licence text
   ships anyway — attribution is owed even where redistribution is not. One of
-  its arguments dissents from `UPSTREAM-BORROW-TODO.md` task 33; that dissent is
+  its arguments dissents from the repository history task 33; that dissent is
   recorded in `manifest.json` under source `design-md`, not only in the file.
 
 ### What is *not* known

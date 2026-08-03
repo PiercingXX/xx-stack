@@ -16,7 +16,7 @@
  * while ENOSPC threw the line away, and nothing anywhere recorded it.
  */
 
-import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { appendFile, mkdir, open, rename, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
 
@@ -28,14 +28,18 @@ const MAX_SERVER_LOG_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_SESSION_FILENAME_LENGTH = 128;
 
 /**
- * Test seam for the four filesystem calls telemetry makes.
+ * Test seam for the five filesystem calls telemetry makes.
  *
  * The failure paths below are the whole point of this module's contract, and
  * they are unreachable from a test that is not allowed to break the user's real
  * log directory. Swapped only by `log_worker.test.ts`; production never
  * reassigns it.
+ *
+ * `open` is a member for the same reason `stat` is: `needsLeadingNewline` reads
+ * the file's last byte, and a check that bypasses the seam is a check no test
+ * with the existing doubles can reach.
  */
-export const __logIo = { mkdir, appendFile, rename, stat };
+export const __logIo = { mkdir, appendFile, open, rename, stat };
 
 let dirEnsured = false;
 
@@ -121,6 +125,44 @@ async function rotateLargeLog(logPath: string): Promise<void> {
 }
 
 /**
+ * Does this file need a healing `\n` in front of the next record?
+ *
+ * JSONL is only parseable while every record ends in a newline. A torn write —
+ * ENOSPC mid-line, a killed process, a truncation by an external tool — leaves
+ * the file ending mid-record, and the next append concatenates onto it and
+ * produces one line that fails to parse. Reading the last byte answers the
+ * question the append is about to depend on.
+ *
+ * An absent or empty file needs nothing, and a `stat` that fails for any reason
+ * yields `false`: telemetry never fails a caller's operation, so an unreadable
+ * file falls back to the plain append (which will surface its own error through
+ * the normal channel) rather than throwing from the check.
+ *
+ * There is deliberately NO in-process "last byte I wrote" cache. It would be
+ * wrong across processes — several MCP servers share one log — and wrong across
+ * an external truncation, which is one of the tears this exists to heal. The
+ * cost is one `stat` plus a one-byte read per event, which is what correctness
+ * costs here.
+ */
+async function needsLeadingNewline(path: string): Promise<boolean> {
+  let size: number;
+  try {
+    size = (await __logIo.stat(path)).size;
+  } catch {
+    return false;
+  }
+  if (size === 0) return false;
+  const handle = await __logIo.open(path, "r");
+  try {
+    const buf = Buffer.alloc(1);
+    const { bytesRead } = await handle.read(buf, 0, 1, size - 1);
+    return bytesRead === 1 && buf[0] !== 0x0a;
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
  * Reduce a caller-supplied session id to a single safe path segment.
  *
  * The id reaches here verbatim from `supervisor_start_session`, where the
@@ -172,12 +214,19 @@ export async function logEvent(
     const line = JSON.stringify({ at: new Date().toISOString(), type, ...payload }) + "\n";
 
     if (stream === "server") {
+      // The check sits AFTER rotation on purpose: `rotateLargeLog` renames the
+      // oversized file away, so the file this append lands in is size 0 and a
+      // hoisted check would have measured the wrong file.
       await rotateLargeLog(SERVER_LOG);
-      await __logIo.appendFile(SERVER_LOG, line, "utf-8");
+      const heal = (await needsLeadingNewline(SERVER_LOG)) ? "\n" : "";
+      // The healing newline rides in the SAME append call. A separate append
+      // re-opens the exact tear window it is closing.
+      await __logIo.appendFile(SERVER_LOG, heal + line, "utf-8");
     } else {
       const sessionLog = resolveSessionLogPath(stream.session);
       if (sessionLog === null) return { ok: false, outcome: "skipped" };
-      await __logIo.appendFile(sessionLog, line, "utf-8");
+      const heal = (await needsLeadingNewline(sessionLog)) ? "\n" : "";
+      await __logIo.appendFile(sessionLog, heal + line, "utf-8");
     }
   } catch (error) {
     // Telemetry must never fail a caller's operation. It must also never be
