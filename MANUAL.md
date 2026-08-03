@@ -431,7 +431,7 @@ BUILD-1). A green `agents:check` does not mean all agents are mirrored.
 
 ### `packs/design`
 
-137 brand design systems, 57 aesthetic skill/design pairs, 31 workflow skills,
+151 brand design systems, 57 aesthetic skill/design pairs, 31 workflow skills,
 plus evals and its own gates. `DESIGN-CATALOG.md` is generated
 (`npm run design:catalog`) and in sync.
 
@@ -441,14 +441,14 @@ CI). Both green.
 **This pack is vendored, not authored here** — a correction to an earlier
 belief recorded in this manual. It was described as clean-room reinterpretation
 because the files say "Design System Inspired by Apple"; a byte-level audit
-found 117 of 137 `design-systems/` files **identical** to
-`nexu-io/open-design`. That framing is upstream's, not ours. The pack
+found 138 of 151 `design-systems/` files **identical** to
+`nexu-io/open-design` at the pinned commit `e1c277c5`. That framing is upstream's, not ours. The pack
 redistributes, which is why Apache-2.0's requirement to ship the license text
 applies to it:
 
 | Upstream | License | Supplies |
 |---|---|---|
-| `nexu-io/open-design` | Apache-2.0 | 136 of 137 design systems, all 31 workflow skills |
+| `nexu-io/open-design` | Apache-2.0 | 150 of 151 design systems, all 31 workflow skills |
 | `bergside/awesome-design-skills` | MIT | all 57 design skills |
 | `VoltAgent/awesome-design-md` | MIT | one file (`bmw-m`) |
 | op7418 (歸藏) | MIT | `workflow-skills/guizang-ppt/` |
@@ -484,8 +484,8 @@ vendored README.
 MIT engine — no upstream code is ported, which is what keeps the licence
 boundary at the pack boundary. Two upstreams feed it, tagged per rule
 (open-design and `google-labs-code/stitch-skills`), and 15 refusals are recorded
-with reasons. Two worth knowing: the pure-black ban was refused because 57 of
-our 137 design systems name `#000000` as deliberate brand vocabulary, and the
+with reasons. Two worth knowing: the pure-black ban was refused because 59 of
+our 151 design systems name `#000000` as deliberate brand vocabulary, and the
 two upstreams flatly disagree about `picsum.photos` — open-design bans it,
 stitch recommends it; open-design's ruling was kept and the disagreement
 recorded so it does not read as an oversight.
@@ -591,7 +591,7 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 | `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two upstreams disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
 | `design:craft-refs` | every `od.craft.requires` slug resolves to a rulebook | — |
 | `design:anti-slop-test` | each rule fires at its declared severity on slop fixtures and not on clean ones | — |
-| `design:systems-lint` | all 137 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
+| `design:systems-lint` | all 151 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
 | `test` | MCP suite | see §11 for the classes it historically missed |
 | `hermes:test` | Python suite, against the *shipped* allowlist | — |
 

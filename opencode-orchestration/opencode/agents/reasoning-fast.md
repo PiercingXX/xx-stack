@@ -34,6 +34,8 @@ Route to `deep-thinker` if: the problem is genuinely ambiguous, requires 3+ leve
 4. **Conclude** — one clear recommendation with rationale in 2–3 sentences
 5. **Flag gaps** — if critical information is missing, name it explicitly
 
+Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md` before step 4. ~570 tokens, nano precisely so this lane can afford it — enough to keep a bounded recommendation from turning into a design nobody asked for.
+
 ## Output Format
 
 ```
@@ -51,5 +53,3 @@ Gaps (if any): <list>
 ```
 
 Never pad with alternatives after a conclusion. Do not overthink — if you find yourself writing more than 5 reasoning steps, route to `deep-thinker` instead.
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md (see packs/rules/coverage.json)

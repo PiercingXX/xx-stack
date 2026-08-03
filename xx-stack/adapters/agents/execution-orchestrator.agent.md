@@ -162,6 +162,8 @@ Before generator edits, define a lightweight contract for the current loop:
 - Done criteria
 - Evaluator criteria
 
+Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before filling in `Done criteria` and `Evaluator criteria`. ~1,800 tokens on tracer bullets, orthogonality, and good-enough software — it is what makes those two fields falsifiable rather than aspirational, which is the exact failure this harness exists to catch.
+
 Persist this contract in a concrete artifact before implementation:
 - `runtime/COMPLETION_CONTRACT_TEMPLATE.md` (or equivalent project-local contract file)
 
@@ -293,5 +295,3 @@ For other lanes:
 - lane chosen
 - current loop state
 - blocker or next action
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

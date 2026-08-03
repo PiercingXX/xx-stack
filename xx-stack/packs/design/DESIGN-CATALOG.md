@@ -10,7 +10,7 @@ Legacy stack-core paths remain compatibility shims where required.
 
 ## Inventory Summary
 
-- Design systems: 137
+- Design systems: 151
 - Aesthetic design skills: 57
 - Workflow skills: 31
 
@@ -26,9 +26,10 @@ Source directory: packs/design/design-systems
 - application
 - arc
 - artistic
+- atelier-zero
 - bento
-- binance
 
+- binance
 - bmw
 - bmw-m
 - bold
@@ -37,9 +38,10 @@ Source directory: packs/design/design-systems
 - cafe
 - cal
 - canva
+- cisco
+
 - clay
 - claymorphism
-
 - clean
 - clickhouse
 - cohere
@@ -47,20 +49,20 @@ Source directory: packs/design/design-systems
 - colorful
 - composio
 - contemporary
+
 - corporate
 - cosmic
 - creative
-
 - dashboard
 - default
 - discord
 - dithered
 - doodle
 - dramatic
+
 - duolingo
 - editorial
 - elegant
-
 - elevenlabs
 - energetic
 - enterprise
@@ -68,57 +70,62 @@ Source directory: packs/design/design-systems
 - expressive
 - fantasy
 - ferrari
+
 - figma
 - flat
 - framer
-
 - friendly
 - futuristic
 - github
 - glassmorphism
 - gradient
 - hashicorp
+- hud
+
 - huggingface
 - ibm
 - intercom
 - kami
-
 - kraken
 - lamborghini
 - levels
 - linear-app
 - lingo
+- loom
+
 - lovable
 - luxury
 - mastercard
 - material
 - meta
-
 - minimal
 - minimax
 - mintlify
 - miro
+- mission-control
+
 - mistral-ai
 - modern
 - mongodb
 - mono
 - neobrutalism
 - neon
-
 - neumorphism
 - nike
 - notion
 - nvidia
+
 - ollama
 - openai
 - opencode-ai
 - pacman
 - paper
+- perplexity
 - perspective
-
 - pinterest
 - playstation
 - posthog
+
 - premium
 - professional
 - publication
@@ -126,10 +133,10 @@ Source directory: packs/design/design-systems
 - refined
 - renault
 - replicate
-
 - resend
 - retro
 - revolut
+
 - runwayml
 - sanity
 - sentry
@@ -137,9 +144,10 @@ Source directory: packs/design/design-systems
 - shopify
 - simple
 - skeumorphism
-
+- slack
 - sleek
 - spacex
+
 - spacious
 - spotify
 - starbucks
@@ -148,24 +156,31 @@ Source directory: packs/design/design-systems
 - supabase
 - superhuman
 - tesla
-
 - tetris
 - theverge
+
 - together-ai
+- tom-modern
+- totality-festival
+- trading-terminal
 - uber
+- urdu
 - vercel
 - vibrant
 - vintage
 - vodafone
+
 - voltagent
 - warm-editorial
-
 - warp
+- webex
 - webflow
+- wechat
 - wired
 - wise
 - x-ai
 - xiaohongshu
+
 - zapier
 
 ## Aesthetic Design Skills

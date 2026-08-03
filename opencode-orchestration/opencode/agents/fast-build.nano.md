@@ -9,6 +9,8 @@ Activation (all must hold): target files already obvious; work fits one thin sli
 
 Loop: perceive (exact targets + validation surface) -> act (smallest standalone change) -> verify (deterministic checks) -> stabilize.
 
+Read `packs/rules/clean-code/clean-code.nano.md` before act — ~300 tokens of naming and function-size rules, cheaper here than as review-code findings at stabilize.
+
 Gates:
 
 - Scope ceiling: more than 5 distinct tool-call sequences or more than 3 independent subsystems -> stop and hand back to execution-orchestrator with the discovered constraints.

@@ -39,6 +39,8 @@ Prefer in Rust app:
 
 ## Execution Procedure
 
+Load both rule books during step 1, while context is still cheap — this run never pauses later. `packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md` (~1,400 tokens) governs steps 1-5: state the source app's behavior that must survive, characterize it before replacing it, and pick the seams the compatibility map is built on. `packs/rules/refactoring-guru/refactoring-guru.nano.md` (~650 tokens, kept small on purpose for a context-heavy run) governs the step 7 repair loop: diagnose one smell, apply the smallest behavior-preserving move, verify, stop.
+
 1. Inventory source app: architecture, entrypoints, external integrations, and test surface.
 2. Produce a compatibility map: old component -> Rust module/crate.
 3. Scaffold Rust workspace and project structure.
@@ -94,5 +96,3 @@ Prefer in Rust app:
 
 ## Residual Risk
 - [none or explicit list]
-
-Rule books: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md and packs/rules/refactoring-guru/refactoring-guru.nano.md (see packs/rules/coverage.json)

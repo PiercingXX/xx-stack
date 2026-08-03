@@ -73,6 +73,8 @@ Fallback evidence is mandatory:
 4. Run same-wave slices concurrently unless there is a real dependency.
 5. Use `route_task_with_watchdog` for critical tasks that need failover.
 
+Before cutting the slice list you hand to `route_parallel_tasks`, read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md` — ~570 tokens, the nano tier because this lane already carries the plan payload plus per-slice state. Its orthogonality rule is what decides whether two slices are genuinely independent or will collide inside the same wave.
+
 ## Subagent Dispatch Rules
 
 When `route_parallel_tasks` returns assignments, each assignment includes:
@@ -116,5 +118,3 @@ Wave discipline:
 2. Execute first, explain second.
 3. Avoid menu-like or help-only responses.
 4. Never output local-only evidence as final completion.
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md (see packs/rules/coverage.json)

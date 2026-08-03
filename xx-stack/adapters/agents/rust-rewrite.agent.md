@@ -29,6 +29,8 @@ Do not use it for partial refactors, small Rust additions, or repos that are pri
 4. run compile/test/lint gates repeatedly until they pass or a hard blocker is reached
 5. only finish when the rewritten app is runnable and verified, or when a concrete blocker prevents parity
 
+Read `packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md` before step 1, and keep `packs/rules/refactoring-guru/refactoring-guru.nano.md` at hand through the repair loops in step 4. WELC (~1,400 tokens) decides what behavior you must characterize before you are allowed to change it — that is the parity contract this rewrite is judged against. Refactoring Guru (~650 tokens, nano to stay cheap across 40 steps) is the transform catalog for when a compile/test loop needs a mechanical fix rather than a redesign. Read WELC first every time: it is the one that can invalidate the migration map.
+
 ## Mandatory Flow
 
 1. Run `@rewrite-rust-oneshot` as the primary migration protocol.
@@ -64,5 +66,3 @@ You may declare completion only when:
 
 State:
 "Starting autonomous Rust rewrite now. I will analyze the existing project, implement a full Rust version, run compile/test/lint loops, and keep fixing until all quality gates pass, then return a readiness report."
-
-Rule books: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md and packs/rules/refactoring-guru/refactoring-guru.nano.md (see packs/rules/coverage.json)

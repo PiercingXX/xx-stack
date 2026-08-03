@@ -45,7 +45,7 @@ const SURFACES = [
     canonical: "runtime/agents/execution-orchestrator.md",
     nano: "runtime/agents/execution-orchestrator.nano.md",
     mirrorNano: "agents/execution-orchestrator.nano.md",
-    canonicalSha256: "45ffbfa5453fb0521374cc009992135ab08701539649f402db34c4c15f092078",
+    canonicalSha256: "a710eece79bfa19592776cee61e6230f23c92465fe8a1b37e5fef7fb7790fd39",
   },
   {
     id: "fast-build",
@@ -53,7 +53,7 @@ const SURFACES = [
     canonical: "runtime/agents/fast-build.md",
     nano: "runtime/agents/fast-build.nano.md",
     mirrorNano: "agents/fast-build.nano.md",
-    canonicalSha256: "3cdd14e2536e949b07884158a4daec9e82e57363c11a627440734285bbbc2ae2",
+    canonicalSha256: "b4bf60ae9ea334641116db99a9231d75bca86f41ad479bd06e1e191dcde6463b",
   },
   {
     id: "review-code",
@@ -61,7 +61,7 @@ const SURFACES = [
     canonical: "runtime/skills/review-code/SKILL.md",
     nano: "runtime/skills/review-code/SKILL.nano.md",
     mirrorNano: "skills/review-code/SKILL.nano.md",
-    canonicalSha256: "86e1fae85fdbc6e3ee0cadbc54314bb756f48b4b3618bcccc6df9268abd5cd86",
+    canonicalSha256: "22ca6a45398732d835c65410d4ea8122e3aec5ae486d24c522adcb596b278777",
   },
   {
     id: "debug-investigate",
@@ -69,7 +69,7 @@ const SURFACES = [
     canonical: "runtime/skills/debug-investigate/SKILL.md",
     nano: "runtime/skills/debug-investigate/SKILL.nano.md",
     mirrorNano: "skills/debug-investigate/SKILL.nano.md",
-    canonicalSha256: "c6dc46d9e10fc0552d7196eaf433490aa85d36efd7d4805b74ddd5d5a3f520de",
+    canonicalSha256: "eae36b4b01a5412ad99427cfb3dc3236b9770cf795159960948777c8b90a253d",
   },
   {
     id: "deploy-ship",
@@ -77,7 +77,7 @@ const SURFACES = [
     canonical: "runtime/skills/deploy-ship/SKILL.md",
     nano: "runtime/skills/deploy-ship/SKILL.nano.md",
     mirrorNano: "skills/deploy-ship/SKILL.nano.md",
-    canonicalSha256: "5f0012e212e7ca0e389ba70702028ce6aac22a239ec2f441fcefa4af711742f8",
+    canonicalSha256: "32d14406bc1c2925a07278200c7a3b307f2442ba15eefca922fa26427a8c8ac3",
   },
 ];
 

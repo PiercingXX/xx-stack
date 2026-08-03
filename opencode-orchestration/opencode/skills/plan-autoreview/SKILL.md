@@ -28,6 +28,7 @@ You run a full pre-build planning pass so engineering starts with fewer unknowns
 - Identify states: loading, empty, error, success.
 
 3. Engineering lens
+- Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` and run this lens from its decision rules — ~1,800 tokens on one authoritative home per piece of knowledge, orthogonality, keeping volatile decisions reversible, and tracer bullets over piles of parts. It is what makes this a review rather than a restatement of the plan, and it is where the Suggested Build Slices below come from.
 - Validate data model, API shape, state transitions, and failure paths.
 - Identify dependencies and migration risks.
 
@@ -71,5 +72,3 @@ Provide this exact structure:
 ## Principle
 
 One integrated plan beats three disconnected good ideas.
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

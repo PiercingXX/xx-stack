@@ -21,4 +21,4 @@ Read `runtime/agents/research.md` for the full operating spec and workflow proto
 
 If invoked directly by a user, follow the full research agent protocol from `runtime/agents/research.md`. Do not abbreviate — produce the full structured findings output.
 
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)
+The alias inherits `research`'s rule book too: read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before synthesizing findings. ~1,800 tokens whose coupling and orthogonality rules turn a file list into a blast radius.
