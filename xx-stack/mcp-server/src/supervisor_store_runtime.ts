@@ -98,6 +98,23 @@ export interface SupervisorSessionState {
   events: SupervisorEvent[];
 }
 
+/**
+ * Session statuses that are over. Terminal is terminal: a session in one of
+ * these has a finished record, and a control-plane request to end it again is
+ * a no-op rather than a rewrite. `blocked` and `cooldown` are deliberately
+ * absent — both are live sessions that can still move.
+ *
+ * This lives beside the status union so the set cannot drift from it. It is
+ * the single definition; `hook_tools.ts` and `supervisor_session_tools.ts`
+ * import it rather than keeping parallel copies (MCP-DUP-3).
+ */
+export const SUPERVISOR_TERMINAL_STATUSES = new Set<SupervisorSessionState["status"]>([
+  "completed",
+  "interrupted",
+  "exhausted",
+  "force_synthesized",
+]);
+
 export interface HostModelFailure {
   count: number;
   lastFailureAt: number;

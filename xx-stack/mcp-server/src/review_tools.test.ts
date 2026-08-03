@@ -9,12 +9,13 @@ import { promisify } from "node:util";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  redactDiffSecrets,
   registerReviewTools,
   REVIEW_DIFF_CAP,
   type DiffDetection,
   type ReviewToolOverrides,
 } from "./review_tools.js";
-import { buildContinuationPrompt } from "./supervisor_completion_tools.js";
+import { buildContinuationPrompt, redactSecrets } from "./supervisor_completion_tools.js";
 import {
   DEFAULT_RELIABILITY,
   emptySupervisorStore,
@@ -452,4 +453,123 @@ test("an unreadable supervisor store is reported as a structured error, not an e
   assert.equal(payload.store, "supervisor");
   assert.equal(payload.path, "/tmp/state.json");
   assert.equal(h.writes, 0, "nothing is written when the store could not be read");
+});
+
+// --- SECURITY: dotenv values leaked across lanes through the diff -----------
+//
+// `review_to_continuation` embeds the diff in a continuation prompt that may be
+// sent to ANOTHER LANE, possibly a cloud one. Value-pattern redaction only ever
+// catches formats somebody enumerated, and these three survived it verbatim —
+// confirmed against the shipped `redactSecrets` before the fix:
+//
+//   +DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod
+//   +STRIPE_KEY=sk_live_51ABCdefGHI      (`sk_`, the pattern wants `sk-`)
+//   +SMTP_PASS=hunter2                   (the key list has `password`, not `pass`)
+
+const LEAKY_ENV_DIFF = [
+  "diff --git a/.env.production b/.env.production",
+  "index e69de29..1a2b3c4 100644",
+  "--- a/.env.production",
+  "+++ b/.env.production",
+  "@@ -0,0 +1,3 @@",
+  "+DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod",
+  "+STRIPE_KEY=sk_live_51ABCdefGHI",
+  "+SMTP_PASS=hunter2",
+].join("\n");
+
+test("dotenv values in the diff never reach the continuation prompt", async () => {
+  const h = harness({ diff: { status: "detected", diff: LEAKY_ENV_DIFF } });
+  const payload = await callReview(h, {
+    sessionId: "sx-review-001",
+    notes: ["rotate these before merging"],
+  });
+
+  for (const value of ["hunter2", "sk_live_51ABCdefGHI", "postgres://admin", "db.internal:5432"]) {
+    assert.ok(!payload.prompt.includes(value), `value leaked into the prompt: ${value}`);
+  }
+
+  // Key names and the file path survive: the handoff must still be able to say
+  // "DATABASE_URL is set in .env.production" without carrying the value.
+  for (const kept of ["DATABASE_URL", "STRIPE_KEY", "SMTP_PASS", ".env.production"]) {
+    assert.ok(payload.prompt.includes(kept), `${kept} must survive redaction`);
+  }
+  assert.ok(payload.prompt.includes("+DATABASE_URL=[redacted-secret]"), "diff markers survive");
+});
+
+test("redactDiffSecrets redacts dotenv hunks by shape and leaves other files alone", () => {
+  const diff = [
+    LEAKY_ENV_DIFF,
+    "diff --git a/src/app.ts b/src/app.ts",
+    "--- a/src/app.ts",
+    "+++ b/src/app.ts",
+    "@@ -1,1 +1,2 @@",
+    " const port = 8080;",
+    "+const greeting = hunter2;",
+  ].join("\n");
+
+  const out = redactDiffSecrets(diff);
+  const lines = out.split("\n");
+
+  assert.equal(lines.length, diff.split("\n").length, "line count must be preserved");
+  assert.equal(lines[5], "+DATABASE_URL=[redacted-secret]");
+  assert.equal(lines[6], "+STRIPE_KEY=[redacted-secret]");
+  assert.equal(lines[7], "+SMTP_PASS=[redacted-secret]");
+  // A non-dotenv file is untouched: `hunter2` there is a source identifier, and
+  // structural redaction is scoped to files whose shape says "every value is a
+  // credential".
+  assert.equal(lines[lines.length - 1], "+const greeting = hunter2;");
+  assert.equal(lines[lines.length - 2], " const port = 8080;");
+});
+
+test("a deleted dotenv file is attributed from the --- side and still redacted", () => {
+  const diff = [
+    "diff --git a/.env b/.env",
+    "deleted file mode 100644",
+    "--- a/.env",
+    "+++ /dev/null",
+    "@@ -1,2 +0,0 @@",
+    "-SMTP_PASS=hunter2",
+    "-DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod",
+  ].join("\n");
+
+  const out = redactDiffSecrets(diff);
+  assert.ok(!out.includes("hunter2"), "deleting a .env leaks exactly as hard as adding one");
+  assert.ok(out.includes("-SMTP_PASS=[redacted-secret]"));
+  assert.ok(out.includes("-DATABASE_URL=[redacted-secret]"));
+});
+
+test("a multi-line quoted dotenv value in a diff leaks no continuation line", () => {
+  const diff = [
+    "diff --git a/.env b/.env",
+    "--- a/.env",
+    "+++ b/.env",
+    "@@ -0,0 +1,3 @@",
+    '+PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----',
+    "+MIIEowIBAAKCAQEAsecretkeymaterialhere",
+    '+-----END RSA PRIVATE KEY-----"',
+  ].join("\n");
+
+  const out = redactDiffSecrets(diff);
+  assert.ok(!out.includes("secretkeymaterialhere"), "the continuation line must not leak");
+  assert.ok(!out.includes("BEGIN RSA PRIVATE KEY"));
+  assert.equal(out.split("\n").length, diff.split("\n").length, "line count preserved");
+  assert.ok(out.includes("+PRIVATE_KEY=[redacted-secret]"));
+});
+
+test("a diff with no dotenv file is byte-identical to the pathless redaction", () => {
+  const diff = [
+    "diff --git a/src/app.ts b/src/app.ts",
+    "--- a/src/app.ts",
+    "+++ b/src/app.ts",
+    "@@ -1,2 +1,3 @@",
+    " const port = 8080;",
+    "+const apiKey = process.env.API_KEY;",
+    '+const token = "ghp_abcdefghijklmnopqrstuv123456";',
+  ].join("\n");
+
+  assert.equal(
+    redactDiffSecrets(diff),
+    redactSecrets(diff),
+    "with no dotenv file the walker must change nothing the generic pass would not"
+  );
 });

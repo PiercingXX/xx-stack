@@ -61,13 +61,35 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
 
   server.tool(
     "route_parallel_tasks",
-    "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts. Decompose work into tracer-bullet tasks before calling: each task should be a vertical slice through every layer it touches, sized to fit one fresh context window, with blocking edges between slices declared explicitly rather than discovered mid-run.",
+    "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts. Decompose work into tracer-bullet tasks before calling: each task should be a vertical slice through every layer it touches, sized to fit one fresh context window, with blocking edges between slices declared explicitly rather than discovered mid-run. Declared edges are now honored: pass objects with blockedBy and the result carries a dependencySchedule of waves. This returns a plan — xx-stack never dispatches, polls, or sequences the waves; the calling agent runs a wave, confirms it finished, and calls back for the next.",
     {
       tasks: z
-        .array(z.string())
-        .min(1)
-        .max(128)
-        .describe("Task descriptions to schedule in parallel"),
+        .union([
+          z.array(z.string()).min(1).max(128),
+          z
+            .array(
+              z.object({
+                id: z
+                  .string()
+                  .min(1)
+                  .max(64)
+                  .optional()
+                  .describe("Optional slice ID; defaults to the array index as a string"),
+                description: z.string().describe("Task description for this slice"),
+                blockedBy: z
+                  .array(z.string().min(1).max(64))
+                  .max(32)
+                  .optional()
+                  .describe("IDs of slices in this same array that must finish before this one"),
+              })
+            )
+            .min(1)
+            .max(128),
+        ])
+        .describe(
+          "Task descriptions to schedule in parallel. Flat strings return today's schedule " +
+            "unchanged; objects with blockedBy additionally return dependency waves"
+        ),
     },
     async ({ tasks }) => {
       const registry = await deps.loadRegistry();

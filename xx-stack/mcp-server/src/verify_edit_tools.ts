@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,12 +28,52 @@ const VIEW_CAP = 4096;
 /** Number of full-capture artifacts kept per session; oldest evicted. */
 const ARTIFACT_RING_SIZE = 8;
 
+/** Wall-clock budget for a single verify command. */
+const RUN_TIMEOUT_MS = 120_000;
+
 interface VerifyEditDeps {
   allowedCommands: string[];
 }
 
-interface CmdResult {
+// --- Could-not-run is not a failure ----------------------------------------
+//
+// xx-stack dispatches to heterogeneous machines, so the lane that got the task
+// is exactly the one most likely to be missing the toolchain. Collapsing every
+// non-zero path into `ok: false` made four different facts indistinguishable:
+// the suite reported real failures; the policy refused to run the command at
+// all; the binary is not on this machine's PATH; `node_modules` was never
+// installed here. Only the first is evidence about the code. The other three
+// are evidence about the LANE, and telling an agent to fix code that is fine
+// burns the failure budget on a misdiagnosis.
+//
+// `ok` is kept exactly as it was for wire compatibility — `ok === (outcome ===
+// "pass")` — and `outcome` is additive.
+
+/**
+ * What actually happened to the command.
+ * - `pass` — exit 0.
+ * - `fail` — it ran, it exited non-zero: evidence about the code.
+ * - `could_not_run` — it never really executed here: evidence about the lane.
+ * - `denied` — the execution policy refused it before any process was spawned.
+ */
+export type CmdOutcome = "pass" | "fail" | "could_not_run" | "denied";
+
+export interface CmdResult {
   ok: boolean;
+  /**
+   * Additive classification. `ok` stays true iff this is `"pass"`, so existing
+   * callers are unaffected; new callers can distinguish "your code is broken"
+   * from "this machine cannot run the check".
+   */
+  outcome: CmdOutcome;
+  /**
+   * Machine-readable cause, so a caller never has to substring-match `output`:
+   * the policy's denial reason for `denied`; `command_not_found`, `timeout`,
+   * `bad_cwd`, `deps_not_installed` for `could_not_run`.
+   */
+  reasonCode?: string;
+  /** One sentence naming the fix. Present only for `could_not_run`. */
+  remediation?: string;
   /** Bounded head+tail view of the output. */
   output: string;
   /** True when `output` is a truncated view of a larger capture. */
@@ -107,8 +147,33 @@ interface RawRun {
   ok: boolean;
   /** Full capture (or the denial reason when denied). */
   full: string;
-  /** True when the execution policy refused to run the command at all. */
-  denied: boolean;
+  outcome: CmdOutcome;
+  reasonCode?: string;
+  remediation?: string;
+}
+
+/** Package managers whose failure is worth one cheap precondition check. */
+const NPM_ECOSYSTEM_COMMANDS = new Set(["npm", "npx", "pnpm", "yarn"]);
+
+/** The shape a spawn error arrives in — read structurally, never re-parsed. */
+interface SpawnFailure {
+  code?: unknown;
+  syscall?: unknown;
+  killed?: boolean;
+  signal?: NodeJS.Signals | null;
+  stdout?: string;
+  stderr?: string;
+}
+
+/**
+ * One cheap npm-ecosystem precondition, deliberately not a general framework
+ * detector: `npm test` in a project whose `node_modules` was never installed on
+ * this lane cannot report anything about the code, and its output is otherwise
+ * byte-indistinguishable from a red suite.
+ */
+function missingNodeModules(command: string, cwd: string): boolean {
+  if (!NPM_ECOSYSTEM_COMMANDS.has(command)) return false;
+  return existsSync(join(cwd, "package.json")) && !existsSync(join(cwd, "node_modules"));
 }
 
 async function runCommand(
@@ -117,33 +182,100 @@ async function runCommand(
   cwd: string,
   allowedCommands: string[]
 ): Promise<RawRun> {
+  const startedAt = Date.now();
   try {
     const { stdout, stderr } = await guardedExecFile(
       command,
       args,
-      { cwd, timeout: 120_000 },
+      { cwd, timeout: RUN_TIMEOUT_MS },
       { context: "hook", allowedHookCommands: allowedCommands }
     );
     const combined = [stdout, stderr].filter(Boolean).join("\n").trim();
-    return { ok: true, full: combined || "(no output)", denied: false };
+    return { ok: true, full: combined || "(no output)", outcome: "pass" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // guardedExecFile throws "execution_policy_denied:..." when the policy
-    // blocks it — before any process is spawned. Surface it verbatim.
+
+    // Classification happens HERE, where the information still exists as
+    // structured error properties. Once this collapses into a display string
+    // the distinctions are gone and only substring-matching can recover them —
+    // which is exactly the bug.
+
+    // guardedExecFile throws "execution_policy_denied:<reason>[:<pattern>]"
+    // when the policy blocks it, before any process is spawned.
     if (message.startsWith("execution_policy_denied:")) {
-      return { ok: false, full: message, denied: true };
+      const reason = message.slice("execution_policy_denied:".length).split(":")[0]!.trim();
+      return {
+        ok: false,
+        full: message,
+        outcome: "denied",
+        reasonCode: reason.length > 0 ? reason : "execution_policy_denied",
+      };
     }
+
+    const execErr = err as SpawnFailure;
+    const spawnCode = typeof execErr.code === "string" ? execErr.code : undefined;
+    const isSpawnError = typeof execErr.syscall === "string" && execErr.syscall.startsWith("spawn");
+
+    // A spawn-level ENOENT/EACCES means no process ever ran. A missing cwd
+    // presents identically, so it is disambiguated before blaming the binary.
+    if (isSpawnError && (spawnCode === "ENOENT" || spawnCode === "EACCES")) {
+      if (!existsSync(cwd)) {
+        return {
+          ok: false,
+          full: message,
+          outcome: "could_not_run",
+          reasonCode: "bad_cwd",
+          remediation: `The working directory ${cwd} does not exist on this lane — check the repo out there, or route this task to the machine that holds it.`,
+        };
+      }
+      return {
+        ok: false,
+        full: message,
+        outcome: "could_not_run",
+        reasonCode: "command_not_found",
+        remediation:
+          spawnCode === "EACCES"
+            ? `${command} exists on this lane but is not executable — fix its permissions, or route this task to a machine that can run it.`
+            : `${command} is not installed on this lane — install it, or route this task to a machine that has it.`,
+      };
+    }
+
+    // The timeout path kills the process group, so the error arrives killed
+    // with a signal and no exit code. Pairing that with the elapsed budget
+    // keeps a genuinely crash-signalled test suite classified as a failure.
+    const killedBySignal = execErr.killed === true && execErr.signal != null;
+    if (killedBySignal && Date.now() - startedAt >= RUN_TIMEOUT_MS) {
+      return {
+        ok: false,
+        full: message,
+        outcome: "could_not_run",
+        reasonCode: "timeout",
+        remediation: `${command} exceeded the ${RUN_TIMEOUT_MS / 1000}s verify budget on this lane — narrow the command's scope, or run it on a faster lane.`,
+      };
+    }
+
     // Guarded exec failures carry the captured stdout/stderr on the error.
-    const execErr = err as { stdout?: string; stderr?: string };
     const combined = [execErr.stdout, execErr.stderr].filter(Boolean).join("\n").trim();
-    return { ok: false, full: combined || message, denied: false };
+
+    if (missingNodeModules(command, cwd)) {
+      return {
+        ok: false,
+        full: combined || message,
+        outcome: "could_not_run",
+        reasonCode: "deps_not_installed",
+        remediation: `${cwd} has a package.json but no node_modules — run the project's install step on this lane before validating.`,
+      };
+    }
+
+    // It ran and exited non-zero: this is evidence about the code.
+    return { ok: false, full: combined || message, outcome: "fail" };
   }
 }
 
 export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps): void {
   server.tool(
     "verify_edit",
-    "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Output is captured in full, returned as a bounded head+tail view, and the complete capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
+    "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Each result carries an `outcome` of pass | fail | could_not_run | denied with a machine-readable `reasonCode`: 'could_not_run' means this lane could not execute the command (missing binary, missing node_modules, bad cwd, timeout) and is NOT evidence about the code, and carries a one-sentence `remediation`. Output is captured in full, returned as a bounded head+tail view, and the complete capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
     {
       cwd: z.string().describe("Working directory for the commands"),
       lintCmd: z.string().optional().describe("Lint command to run (e.g. 'npx eslint .')"),
@@ -167,8 +299,17 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
 
       /** Full capture -> caller compaction -> view cap -> artifact on overflow. */
       const toResult = (label: string, raw: RawRun): CmdResult => {
-        if (raw.denied) {
-          return { ok: false, output: raw.full, truncated: false };
+        // The classification travels with every result; `ok` is derived from it
+        // so the two can never disagree.
+        const classification = {
+          ok: raw.outcome === "pass",
+          outcome: raw.outcome,
+          ...(raw.reasonCode !== undefined ? { reasonCode: raw.reasonCode } : {}),
+          ...(raw.remediation !== undefined ? { remediation: raw.remediation } : {}),
+        };
+
+        if (raw.outcome === "denied") {
+          return { ...classification, output: raw.full, truncated: false };
         }
 
         let text = raw.full;
@@ -190,15 +331,15 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
         }
 
         if (!truncated) {
-          return { ok: raw.ok, output: text, truncated: false };
+          return { ...classification, output: text, truncated: false };
         }
 
         // Keep the pre-compaction capture — the point of the artifact is that
         // the agent can grep what the view dropped.
         const fullOutputPath = writeFullOutputArtifact(label, raw.full);
         return fullOutputPath
-          ? { ok: raw.ok, output: text, truncated: true, fullOutputPath }
-          : { ok: raw.ok, output: text, truncated: true };
+          ? { ...classification, output: text, truncated: true, fullOutputPath }
+          : { ...classification, output: text, truncated: true };
       };
 
       if (lintCmd) {

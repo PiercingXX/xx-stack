@@ -24,7 +24,7 @@
     "design:golden": "node xx-stack/scripts/evaluate-golden-tasks.mjs",
     "design:html-gate": "node xx-stack/scripts/quality-gate-html.mjs",
     "hermes:test": "cd hermes-orchestration && python3 -m unittest discover -s tests",
-    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm run rules:check && npm run nano:check && npm run inventory:check && npm run guardrails:check && npm run lint && npm run format:check && npm run design:golden && npm run design:html-gate && npm test && npm run hermes:test",
+    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm run rules:check && npm run nano:check && npm run inventory:check && npm run guardrails:check && npm run lint && npm run format:check && npm run design:golden && npm run design:html-gate && npm run design:craft-refs && npm run design:anti-slop-test && npm test && npm run hermes:test",
     "drift:check": "node xx-stack/scripts/check-stack-source-drift.mjs",
     "rules:check": "node xx-stack/scripts/check-rules-coverage.mjs",
     "nano:check": "node xx-stack/scripts/check-nano-tiers.mjs",
@@ -34,7 +34,9 @@
     "inventory:scan": "node xx-stack/scripts/scan-tailscale.mjs",
     "inventory:list": "node xx-stack/scripts/toggle-lane.mjs list",
     "inventory:enable": "node xx-stack/scripts/toggle-lane.mjs enable",
-    "inventory:disable": "node xx-stack/scripts/toggle-lane.mjs disable"
+    "inventory:disable": "node xx-stack/scripts/toggle-lane.mjs disable",
+    "design:craft-refs": "node xx-stack/packs/design/scripts/check-craft-references.mjs",
+    "design:anti-slop-test": "node xx-stack/packs/design/scripts/test-anti-slop-rules.mjs"
   },
   "keywords": [
     "mcp",

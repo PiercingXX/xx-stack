@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import { emitLifecycleHooks } from "./execution_policy.js";
 import { guardStoreAccess } from "./supervisor_store_runtime.js";
+import { narrowTaskStoreToReady, validateBlockedByEdges } from "./task_graph_runtime.js";
 import { filterTasks } from "./task_list_runtime.js";
 import {
   ANTI_REWARD_HACKING_CLAUSE,
+  NULL_RESULT_VALID_CLAUSE,
   buildResumeDirective,
   evaluateTaskLease,
   generateTaskId,
@@ -97,6 +99,23 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
           const leaseCheck = evaluateTaskLease(task.lease, Date.now());
           if (!leaseCheck.ok) {
             return leaseRejection("task_suspend", taskId, task, leaseCheck);
+          }
+
+          // Terminal is terminal. done / canceled / force_synthesized are
+          // "deliberately distinguished" outcomes (MANUAL §5); suspending one
+          // rewrote a finished record into `suspended` and, for a
+          // force-synthesized task, undid applyForceSynthesisOutcome. The
+          // classification happens BEFORE any mutation, so the rejection path
+          // writes nothing at all. task_resume carries the identical guard —
+          // the lease fence stays ahead of both, unchanged.
+          if (TASK_TERMINAL_STATUSES.has(task.status)) {
+            return jsonContent({
+              status: "rejected",
+              reasonCode: "task_terminal",
+              taskId,
+              taskStatus: task.status,
+              reason: `task is terminal (${task.status}); a terminal outcome is never reopened by suspend`,
+            });
           }
 
           task.status = "suspended";
@@ -203,7 +222,10 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       "Meta-prompting rule: before writing this contract, inspect the repo and surface hidden " +
       "constraints (build/test commands, conventions, things that must not change) so the " +
       "contract reflects reality rather than assumptions. The contract carries a mandatory " +
-      `anti-reward-hacking clause: ${ANTI_REWARD_HACKING_CLAUSE}.`
+      `anti-reward-hacking clause: ${ANTI_REWARD_HACKING_CLAUSE}. ` +
+      "For a prospecting goal (find dead code, find performance wins), write the stopCondition " +
+      "so a null result can satisfy it — otherwise the honest answer 'nothing worth changing' " +
+      `leaves the condition permanently unmet. ${NULL_RESULT_VALID_CLAUSE}.`
   );
 
   server.tool(
@@ -245,7 +267,12 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         .array(z.string().min(1).max(64))
         .max(32)
         .optional()
-        .describe("Optional blocker IDs"),
+        .describe(
+          "Optional blocker task IDs. Each ID must name an existing task and must not close a " +
+            "dependency cycle; a dangling or cycle-creating edge is rejected and nothing is " +
+            "written, rather than persisted as a silent deadlock. Blockers are read by " +
+            "task_list readyOnly, the _Stop hook, and route_parallel_tasks wave planning"
+        ),
       dueAt: z.string().optional().describe("Optional due date as ISO-8601"),
     },
     async ({
@@ -270,7 +297,10 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         // lifecycle hooks are external subprocesses that may call back into
         // these very tools. The hook is emitted only after the lock is
         // released; everything it needs is captured while holding it.
-        const task = await withTaskStoreLock(async () => {
+        type CreateOutcome =
+          { kind: "result"; result: JsonToolResult } | { kind: "created"; task: PersistentTask };
+
+        const outcome = await withTaskStoreLock(async (): Promise<CreateOutcome> => {
           const store = await readTaskStore();
           const now = new Date().toISOString();
           const taskId = generateTaskId();
@@ -298,10 +328,26 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
             updatedAt: now,
           };
 
+          // A blocker edge is validated against the store as it would look if
+          // this write landed, and rejected before anything is persisted. The
+          // dangling ids are deliberately NOT pruned: silent repair is the
+          // failure mode MCP-1 was about — a store that quietly edits the
+          // caller's data and never says so.
+          const violation = validateBlockedByEdges([...Object.values(store.tasks), task], taskId);
+          if (violation) {
+            return {
+              kind: "result",
+              result: jsonContent({ ...violation, operation: "task_create" }),
+            };
+          }
+
           store.tasks[taskId] = task;
           await writeTaskStore(store);
-          return task;
+          return { kind: "created", task };
         });
+
+        if (outcome.kind === "result") return outcome.result;
+        const task = outcome.task;
 
         const hookSummary = await emitLifecycleHooks("task.created", {
           taskId: task.taskId,
@@ -361,7 +407,12 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         .array(z.string().min(1).max(64))
         .max(32)
         .optional()
-        .describe("Updated blocker IDs"),
+        .describe(
+          "Updated blocker task IDs. Each ID must name an existing task and must not close a " +
+            "dependency cycle; a dangling or cycle-creating edge is rejected (reasonCode " +
+            "blocked_by_unknown_task / blocked_by_cycle, with the unknown ID quoted or the " +
+            "cycle path named) and nothing is written"
+        ),
       dueAt: z.string().optional().describe("Updated due date as ISO-8601"),
     },
     async ({
@@ -433,6 +484,22 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
           if (typeof owner === "string") task.owner = trimOptional(owner);
           if (Array.isArray(blockedBy)) task.blockedBy = sanitizeIdList(blockedBy);
           if (typeof dueAt === "string") task.dueAt = trimOptional(dueAt);
+
+          // Same write-time fence as task_create, and the only place a cycle
+          // can actually be closed: `task` is the live object read from this
+          // store snapshot, so the mutated edges are what gets validated — and
+          // returning here persists nothing, because the store snapshot is
+          // discarded with the lock.
+          if (Array.isArray(blockedBy)) {
+            const violation = validateBlockedByEdges(Object.values(store.tasks), taskId);
+            if (violation) {
+              return {
+                kind: "result",
+                result: jsonContent({ ...violation, operation: "task_update" }),
+              };
+            }
+          }
+
           task.updatedAt = new Date().toISOString();
 
           store.tasks[taskId] = task;
@@ -454,23 +521,36 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
 
   server.tool(
     "task_list",
-    "List persistent tasks with optional status, tag, and owner filters",
+    "List persistent tasks with optional status, tag, owner, and dependency-readiness filters",
     {
       status: TASK_STATUS_SCHEMA.optional().describe("Optional status filter"),
       tag: z.string().optional().describe("Optional tag filter"),
       owner: z.string().optional().describe("Optional owner filter"),
       includeCompleted: z.boolean().optional().describe("Include done and canceled tasks"),
+      readyOnly: z
+        .boolean()
+        .optional()
+        .describe(
+          "Return only tasks that can actually be started now: non-terminal, with every " +
+            "blockedBy entry already terminal (done, canceled, or force_synthesized). A task " +
+            "whose blocker names no existing task is never ready. This is a view, not a " +
+            "dispatcher — nothing is started on your behalf"
+        ),
       limit: z.number().int().min(1).max(500).optional().describe("Maximum tasks to return"),
     },
-    async ({ status, tag, owner, includeCompleted, limit }) =>
+    async ({ status, tag, owner, includeCompleted, readyOnly, limit }) =>
       guardStoreAccess(() =>
-        withTaskStoreLock(async () =>
+        withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          // Readiness narrows the store before filterTasks so `total` and
+          // `returned` describe the same population, and so terminal blockers
+          // are still visible to the readiness pass that needs them.
+          const scoped = readyOnly === true ? narrowTaskStoreToReady(store) : store;
           // MCP-DUP-3: the filter/sort/cap shaping is the shared runtime the
-          // `xx tasks list` CLI path calls, not a second copy of it.
-          jsonContent(
-            filterTasks(await readTaskStore(), { status, tag, owner, includeCompleted, limit })
-          )
-        )
+          // `xx tasks list` CLI path calls, not a second copy of it — and
+          // readyOnly narrows through the same shared function on both sides.
+          return jsonContent(filterTasks(scoped, { status, tag, owner, includeCompleted, limit }));
+        })
       )
   );
 }

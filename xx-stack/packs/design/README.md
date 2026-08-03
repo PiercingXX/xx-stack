@@ -12,33 +12,66 @@ that these files stay byte-comparable against their upstreams.
 | `design-systems/` | 137 brand design systems, one `DESIGN.md` each | vendored |
 | `design-skills/` | 57 aesthetic styles, `SKILL.md` + `DESIGN.md` each | vendored |
 | `workflow-skills/` | 31 artifact workflow skills | vendored |
+| `craft/` | 11 brand-agnostic craft rulebooks + the anti-slop rule table | vendored (2 files authored here) |
 | `evals/golden-tasks/` | agent grading fixtures | authored here |
-| `scripts/` | catalog generator and the two design gates | authored here |
+| `scripts/` | catalog generator, the two design gates, and two checks | authored here |
 | `DESIGN-CATALOG.md` | generated index (`npm run design:catalog`) | generated here |
+
+`craft/` is a **fourth axis** and the newest part of this pack.
+`design-systems/` says what a brand looks like, `design-skills/` supplies
+aesthetic direction, `workflow-skills/` says how to build one artifact type —
+`craft/` supplies the rules that hold regardless of brand (ALL CAPS needs
+≥0.06em tracking; every stateful surface needs empty/loading/error/partial
+states). A skill opts in with `od.craft.requires` in its frontmatter and pays
+context tokens only for the sections it names — the same "smallest mechanism
+that changes the agent's decisions" principle `packs/rules` applies with its
+nano/mini/full tiers. Twelve of the 31 workflow skills are bound; the other 19
+are deliberately unbound. See [`craft/XX-STACK-NOTES.md`](craft/XX-STACK-NOTES.md).
 
 [`manifest.json`](manifest.json) is the machine-readable version of everything
 below, with a per-subtree `provenance` field.
 
 ## Attribution and licensing
 
-Three upstream projects supply this pack. Their license texts are copied
+Five upstream projects supply this pack. Their license texts are copied
 verbatim into [`licenses/`](licenses/), plus one per-skill license that upstream
 itself carves out.
 
 | Upstream | License | Text | Supplies |
 |---|---|---|---|
-| [nexu-io/open-design](https://github.com/nexu-io/open-design) | Apache-2.0 | [`licenses/nexu-io-open-design-Apache-2.0.txt`](licenses/nexu-io-open-design-Apache-2.0.txt) | 136 of 137 `design-systems/`, all 31 `workflow-skills/` |
+| [nexu-io/open-design](https://github.com/nexu-io/open-design) | Apache-2.0 | [`licenses/nexu-io-open-design-Apache-2.0.txt`](licenses/nexu-io-open-design-Apache-2.0.txt) | 136 of 137 `design-systems/`, all 31 `workflow-skills/`, all 13 vendored `craft/` files |
 | [bergside/awesome-design-skills](https://github.com/bergside/awesome-design-skills) | MIT, © 2026 Bergside | [`licenses/bergside-awesome-design-skills-MIT.txt`](licenses/bergside-awesome-design-skills-MIT.txt) | all 57 `design-skills/` |
 | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | MIT, © 2026 VoltAgent | [`licenses/voltagent-awesome-design-md-MIT.txt`](licenses/voltagent-awesome-design-md-MIT.txt) | `design-systems/bmw-m/` only |
+| [referodesign/refero_skill](https://github.com/referodesign/refero_skill) | MIT, © 2026 Refero | [`licenses/referodesign-refero_skill-MIT.txt`](licenses/referodesign-refero_skill-MIT.txt) | nothing directly — second hop of the `craft/` chain (see below) |
+| [google-labs-code/stitch-skills](https://github.com/google-labs-code/stitch-skills) | Apache-2.0 | [`licenses/google-labs-code-stitch-skills-Apache-2.0.txt`](licenses/google-labs-code-stitch-skills-Apache-2.0.txt) | rule values only: 7 of the 18 rules in `craft/anti-ai-slop-rules.json`, plus part of an 8th |
 | op7418 (歸藏) | MIT | [`workflow-skills/guizang-ppt/LICENSE`](workflow-skills/guizang-ppt/LICENSE) | `workflow-skills/guizang-ppt/` |
 
 `workflow-skills/guizang-ppt/LICENSE` is the author's own license, shipped
 inside the skill directory exactly as upstream ships it. It overrides the
 repo-wide Apache-2.0 for that directory. **Do not move, edit, or delete it.**
 
-Content authored in this repository — `evals/`, `scripts/`,
-`workflow-skills/quality-gates.json`, and the generated `DESIGN-CATALOG.md`
-structure — is covered by the repo root [MIT LICENSE](../../LICENSE).
+Both Apache-2.0 texts are shipped separately even though the license is the
+same one: the two renderings differ in line-wrapping, in the §4 and §9 heading
+wording, and in the appendix copyright line, so neither was assumed to stand in
+for the other.
+
+Content authored in this repository — `evals/`, `scripts/`, `craft/XX-STACK-NOTES.md`,
+`craft/anti-ai-slop-rules.json` (its structure; the rule *values* are the two
+Apache-2.0 upstreams'), `workflow-skills/quality-gates.json`, and the generated
+`DESIGN-CATALOG.md` structure — is covered by the repo root
+[MIT LICENSE](../../LICENSE).
+
+#### The `craft/` chain has two hops
+
+`nexu-io/open-design` attributes `craft/` as adapted from `referodesign/refero_skill`.
+That was verified rather than taken on trust: refero's `LICENSE` was read from
+the repo (MIT, "Copyright (c) 2026 Refero" — note upstream's prose says
+"© Refero Design"; the license text itself says the shorter form), three craft
+files carry an inline "Adapted from refero_skill (MIT)" blockquote, and diffing
+refero's `references/{anti-ai-slop,color,typography}.md` against open-design's
+counterparts shows a heavy rewrite, not a copy. The other eight rulebooks carry
+no refero attribution and postdate the three that do. Both license texts ship;
+the bytes we hold are open-design's.
 
 ### What is known, and how
 
@@ -67,6 +100,21 @@ a project's general reputation, or from memory.
   `dceac12`, 25 differ by small deltas (local pruning of unused upstream
   frontmatter, plus upstream drift). All 31 retain upstream's `od:` frontmatter
   block, which is what identifies their origin from inside the files.
+- **`craft/`** — all 13 vendored files are byte-identical to
+  `nexu-io/open-design` at `dceac12`, verified by `git hash-object` against
+  `git rev-parse HEAD:craft/<file>`. Zero local edits, so the Apache-2.0 §4(b)
+  modified set for this subtree is empty. Honest caveat: three of the eleven
+  rulebooks (`typography`, `color`, `anti-ai-slop`) and upstream's README landed
+  on 2026-05-02, about twelve hours *before* this pack's vendoring window
+  opened — we simply did not take them at the time. The other eight landed
+  later and are ~90% of the bytes.
+- **`craft/anti-ai-slop-rules.json`** — authored here, and the one file in this
+  pack drawing on `google-labs-code/stitch-skills`. It holds 18 rules as data
+  (10 from open-design, 7 from stitch-skills, 1 combining both), each tagged
+  with its `source`, plus a `notAdopted` list recording 15 upstream rules that
+  were deliberately refused and why. No upstream *code* was copied — the
+  enforcement engine in `scripts/quality-gate-html.mjs` was written here, which
+  is what keeps it MIT while the rule values stay Apache-2.0.
 
 ### What is *not* known
 
@@ -100,3 +148,23 @@ Apache-2.0 and MIT; it did not originate it.
 - `npm run design:catalog` — regenerate `DESIGN-CATALOG.md` (deterministic)
 - `npm run design:golden` — grade the golden-task response fixtures
 - `npm run design:html-gate` — HTML quality gate over pack templates and examples
+
+The HTML gate now reports anti-slop findings on a **P0/P1/P2 ladder** — the
+same vocabulary every `workflow-skills/*/references/checklist.md` already uses.
+Severity is not exit code: **P0 fails**, alongside the pre-existing structural
+checks; P1 and P2 report and do not fail. Findings name the rule id, the
+offending value, and the token to use instead, so they are actionable in one
+round. Exemptions live in `workflow-skills/quality-gates.json` and may now name
+a **rule id** (`"rules": ["filler-copy"]`) rather than pattern-matching a
+message — an exemption says which rule it silences, and carries a reason.
+
+Two more checks ship here but are **not** wired into `npm run verify` (that
+needs a `package.json` edit); run them directly:
+
+- `node xx-stack/packs/design/scripts/check-craft-references.mjs` — every
+  `od.craft.requires` slug resolves to a `craft/<slug>.md` or a
+  `craft/FUTURE_SECTIONS.md` entry, so a typo cannot silently drop a section
+- `node xx-stack/packs/design/scripts/test-anti-slop-rules.mjs` — drives the
+  real gate against a slop fixture and a clean one; asserts every rule fires at
+  its declared severity, that none fire on clean input, and that only P0
+  changes the exit code

@@ -43,7 +43,127 @@ const SECRET_ASSIGNMENT_PATTERN =
   /\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|secret|token|password|passwd|credentials?|authorization))\b(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi;
 const AUTH_SCHEME_PATTERN = /\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
-export function redactSecrets(text: string): string {
+/** The single redaction marker. Every pass writes this one — never a second. */
+const REDACTION_MARKER = "[redacted-secret]";
+
+// --- Redaction by file shape -----------------------------------------------
+//
+// The value-pattern and key-name passes above are unbounded-by-construction:
+// they only catch formats somebody enumerated, and every vendor invents
+// another. Three real leaks that survived them verbatim:
+//
+//   DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod
+//   STRIPE_KEY=sk_live_51ABCdefGHI     (`sk_`, not the enumerated `sk-`)
+//   SMTP_PASS=hunter2                  (the key list has `password`, not `pass`)
+//
+// So when the text is known to come from a dotenv-shaped FILE, redaction stops
+// guessing at values and redacts every assignment's value regardless of how the
+// key or value looks. Key names deliberately survive: a handoff must still be
+// able to say "DATABASE_URL is set in .env.production" without carrying the
+// value — that is the whole point of "reference where credentials live".
+
+/** `.env`, `.env.production`, `.env.test.local`, `.envrc`. Basename only. */
+const DOTENV_BASENAME_PATTERN = /^(\.env(\.[^/\\]+)*|\.envrc)$/i;
+
+/**
+ * Is this path a dotenv-shaped file? Basename test only — deliberately no
+ * directory heuristics, because "somewhere under config/" is not a fact about
+ * the file's contents and guessing there produces both misses and false hits.
+ */
+export function isDotenvPath(path: string): boolean {
+  const basename = path.split(/[/\\]/).pop() ?? "";
+  return DOTENV_BASENAME_PATTERN.test(basename);
+}
+
+/** `KEY=`, `  export KEY =`, `KEY:` — the prefix is kept, the value is not. */
+const DOTENV_ASSIGNMENT_PATTERN = /^(\s*(?:export\s+)?[\w.-]+\s*[=:]\s*)(.*)$/;
+
+/**
+ * Index just past the closing quote of a quoted run starting at `start`,
+ * honoring backslash escapes; -1 when the run never closes on this line.
+ */
+function findClosingQuote(text: string, quote: string, start: number): number {
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "\\") {
+      i += 1;
+      continue;
+    }
+    if (ch === quote) return i;
+  }
+  return -1;
+}
+
+/** Where the value ends inside an assignment's right-hand side. */
+function splitDotenvValue(region: string): { valueEnd: number; openQuote: string | null } {
+  const first = region[0];
+  if (first === '"' || first === "'") {
+    const close = findClosingQuote(region, first, 1);
+    // An unterminated quote means the value continues onto the next line.
+    if (close < 0) return { valueEnd: region.length, openQuote: first };
+    return { valueEnd: close + 1, openQuote: null };
+  }
+  // Bare value: a `#` at the start or preceded by whitespace opens a comment.
+  let end = region.length;
+  for (let i = 0; i < region.length; i++) {
+    if (region[i] !== "#") continue;
+    if (i === 0 || /\s/.test(region[i - 1]!)) {
+      end = i;
+      break;
+    }
+  }
+  while (end > 0 && /\s/.test(region[end - 1]!)) end -= 1;
+  return { valueEnd: end, openQuote: null };
+}
+
+/**
+ * Redact every assignment's value in dotenv-shaped text.
+ *
+ * Preserved on purpose: the key name, any trailing `# comment`, blank lines,
+ * comment lines, and — critically — the LINE COUNT. Line-based reads keep their
+ * coordinates, and a multi-line quoted value collapses to one redaction per
+ * line instead of leaking its continuation lines. Already-empty values are left
+ * alone rather than gaining a marker that implies a secret was there.
+ */
+export function redactDotenvAssignments(text: string): string {
+  const lines = text.split("\n");
+  let openQuote: string | null = null;
+
+  const out = lines.map((line) => {
+    if (openQuote !== null) {
+      // Continuation of a multi-line quoted value: the whole line is value.
+      const close = findClosingQuote(line, openQuote, 0);
+      if (close < 0) return REDACTION_MARKER;
+      openQuote = null;
+      return `${REDACTION_MARKER}${line.slice(close + 1)}`;
+    }
+
+    const match = DOTENV_ASSIGNMENT_PATTERN.exec(line);
+    if (!match) return line;
+
+    const prefix = match[1]!;
+    const region = match[2]!;
+    if (region.trim().length === 0) return line;
+
+    const { valueEnd, openQuote: stillOpen } = splitDotenvValue(region);
+    if (valueEnd === 0) return line;
+    openQuote = stillOpen;
+    return `${prefix}${REDACTION_MARKER}${region.slice(valueEnd)}`;
+  });
+
+  return out.join("\n");
+}
+
+/**
+ * Redact secrets from text.
+ *
+ * With no `opts.path` the output is byte-identical to the historical
+ * value-and-key-pattern behavior — prompt-shape tests and drift checks pin it.
+ * When `opts.path` names a dotenv-shaped file, a structural pass runs after it
+ * and redacts every assignment's value by file shape rather than by guessing at
+ * the value's format.
+ */
+export function redactSecrets(text: string, opts?: { path?: string }): string {
   // Auth schemes are matched FIRST. `SECRET_ASSIGNMENT_PATTERN` treats
   // `authorization` as a secret-bearing key and its `\S+` value capture stops
   // at the first space — so on `Authorization: Bearer <token>` it consumed only
@@ -51,13 +171,18 @@ export function redactSecrets(text: string): string {
   // the value a handoff prompt must never carry. Redacting the scheme+token
   // pair before the assignment pass closes that hole; the assignment pass then
   // harmlessly re-redacts the placeholder.
-  let out = text.replace(AUTH_SCHEME_PATTERN, "$1 [redacted-secret]");
+  let out = text.replace(AUTH_SCHEME_PATTERN, `$1 ${REDACTION_MARKER}`);
   out = out.replace(
     SECRET_ASSIGNMENT_PATTERN,
-    (_match, key: string, sep: string) => `${key}${sep}[redacted-secret]`
+    (_match, key: string, sep: string) => `${key}${sep}${REDACTION_MARKER}`
   );
   for (const pattern of SECRET_VALUE_PATTERNS) {
-    out = out.replace(pattern, "[redacted-secret]");
+    out = out.replace(pattern, REDACTION_MARKER);
+  }
+  // The structural pass runs last so it is the final word on a dotenv file:
+  // whatever the value passes left behind, every value ends up redacted.
+  if (opts?.path !== undefined && isDotenvPath(opts.path)) {
+    out = redactDotenvAssignments(out);
   }
   return out;
 }
@@ -334,7 +459,7 @@ export function buildHandoffSections(
 
   lines.push(`- ${VERIFY_DONT_TRUST_PREAMBLE}`);
 
-  return lines.map(redactSecrets);
+  return lines.map((line) => redactSecrets(line));
 }
 
 export function buildHandoffPrompt(
@@ -392,7 +517,7 @@ export function buildForceSynthesisSections(
   lines.push("  3) explicit confidence: high | medium | low, with a one-line justification");
   lines.push("  4) explicit list of unresolved gaps and what evidence would close each");
 
-  return lines.map(redactSecrets);
+  return lines.map((line) => redactSecrets(line));
 }
 
 export function buildForceSynthesisPrompt(
@@ -421,6 +546,59 @@ export function buildForceSynthesisPrompt(
     buildForceSynthesisSections(trigger, evidence, unresolvedGaps),
     "force_synthesis"
   );
+}
+
+// --- "could not run" is not "failed" ---------------------------------------
+//
+// A goal contract's validationCmd that never executed on this lane is a third
+// answer, distinct from pass and from fail. Routing to heterogeneous machines
+// makes it common: the lane that got the task is exactly the one most likely to
+// be missing the toolchain. Reading it as a failing validation tells the agent
+// to fix code that is fine, spends the failure budget on a misdiagnosis, and
+// can walk the session all the way to `force_synthesized` over a missing binary.
+
+/** Blocker reason code, and the recovery reason the continuation prompt cites. */
+export const VALIDATION_COULD_NOT_RUN_REASON = "validation_could_not_run";
+
+/**
+ * Session events that carry a completion-recovery reason. `validation_blocked`
+ * is deliberately a SEPARATE type from `validation_failed`: the failed channel
+ * is the code-failure channel, and an environment problem must not accumulate
+ * there.
+ */
+const COMPLETION_RECOVERY_EVENT_TYPES = new Set([
+  "completion.validation_failed",
+  "completion.validation_blocked",
+]);
+
+/** One line naming what could not run and why, straight from verify_edit. */
+export function describeValidationBlockers(
+  checks: Array<{
+    expectedValidationCmd?: string;
+    validationBlocker?: { reasonCode: string; remediation?: string };
+  }>
+): string {
+  const parts = checks.map((check) => {
+    const command = check.expectedValidationCmd ?? "the validation command";
+    const reason = check.validationBlocker?.reasonCode ?? "could_not_run";
+    const remediation = check.validationBlocker?.remediation;
+    return remediation ? `${command} (${reason}) — ${remediation}` : `${command} (${reason})`;
+  });
+  return parts.join("; ");
+}
+
+/**
+ * Remediation for a blocked validation. Deliberately NOT the code-repair
+ * checklist: every item there tells the agent to change code, which is the
+ * wrong instruction when the code was never checked.
+ */
+export function buildValidationBlockedChecklist(blockerDetail: string): string[] {
+  return [
+    `Validation could not execute on this lane: ${blockerDetail}`,
+    "Treat this as an environment problem, not a code failure — do not modify code, tests, or the goal contract to make it pass.",
+    "Fix the lane's toolchain (install the missing command or dependencies), or hand the task off to a lane that can run it.",
+    "Re-run the goal contract's validationCmd through verify_edit and confirm outcome is pass or fail before retrying completion.",
+  ];
 }
 
 export function registerSupervisorCompletionTools(
@@ -525,8 +703,35 @@ export function registerSupervisorCompletionTools(
         })
         .optional()
         .describe("Optional completion-time override for memory sync guard"),
+      validationAttempts: z
+        .array(
+          z.object({
+            command: z.string().min(1).max(1000).describe("The validation command as it was run"),
+            outcome: z
+              .enum(["pass", "fail", "could_not_run", "denied"])
+              .describe("verify_edit's outcome for that command"),
+            reasonCode: z
+              .string()
+              .min(1)
+              .max(200)
+              .optional()
+              .describe("verify_edit's machine-readable cause, e.g. deps_not_installed"),
+            remediation: z
+              .string()
+              .min(1)
+              .max(1000)
+              .optional()
+              .describe("verify_edit's one-sentence remediation for a could_not_run"),
+          })
+        )
+        .max(32)
+        .optional()
+        .describe(
+          "verify_edit outcomes for goal-contract validation commands. A could_not_run attempt " +
+            "blocks completion as an ENVIRONMENT problem, never as a code failure"
+        ),
     },
-    async ({ sessionId, outcome, note, forceComplete, memorySync }) =>
+    async ({ sessionId, outcome, note, forceComplete, memorySync, validationAttempts }) =>
       guardStoreAccess(() =>
         deps.withSupervisorStoreLock(async () => {
           const reliability = await deps.loadReliabilityConfig();
@@ -617,9 +822,48 @@ export function registerSupervisorCompletionTools(
               taskId: task.taskId,
               ...evaluateGoalContractCompletion(
                 task.goalContract!,
-                state.completionEvidenceSummary
+                state.completionEvidenceSummary,
+                validationAttempts
               ),
             }));
+
+            // A validation that COULD NOT EXECUTE on this lane is neither a
+            // pass nor a code failure. It blocks completion — an unrun check
+            // never satisfies a stop condition — but it is recorded as a
+            // distinct blocker so the continuation prompt says "validation
+            // could not execute on this lane" instead of sending the agent to
+            // fix code that is fine and burning the failure budget on a
+            // misdiagnosis. It is also a legitimate reason to fail over.
+            const blockedContracts = goalContractChecks.filter(
+              (check) => check.reasonCode === "goal_contract_validation_could_not_run"
+            );
+            if (blockedContracts.length > 0) {
+              const blockerDetail = describeValidationBlockers(blockedContracts);
+              state.pendingCompletionValidationAt = now;
+              // A DISTINCT event type: `completion.validation_failed` is the
+              // code-failure channel that feeds the recovery reason, and an
+              // environment problem must never be counted there.
+              deps.pushSessionEvent(
+                state,
+                "completion.validation_blocked",
+                `${VALIDATION_COULD_NOT_RUN_REASON}; ${blockerDetail}`
+              );
+              await deps.writeSupervisorStore(store);
+              return jsonContent({
+                status: "running",
+                reasonCode: VALIDATION_COULD_NOT_RUN_REASON,
+                sessionId,
+                goalContractChecks,
+                validationBlockers: blockedContracts.map((check) => ({
+                  taskId: check.taskId,
+                  validationCmd: check.expectedValidationCmd,
+                  ...check.validationBlocker,
+                })),
+                remediationChecklist: buildValidationBlockedChecklist(blockerDetail),
+                continuationDirective: `Validation could not execute on this lane: ${blockerDetail}. This is an environment problem, not a code failure — do not change code to make it pass. Fix the lane's toolchain or hand this task off to a lane that can run the command, then retry completion.`,
+              });
+            }
+
             const failedContracts = goalContractChecks.filter((check) => !check.ok);
             if (failedContracts.length > 0) {
               const remediationChecklist = deps.buildCompletionRepairChecklist(
@@ -747,9 +991,11 @@ export function registerSupervisorCompletionTools(
           );
           await deps.writeSupervisorStore(store);
 
+          // Both recovery channels are consulted, so a blocked validation is
+          // not silently outranked by an older code failure.
           const lastCompletionFailure = [...state.events]
             .reverse()
-            .find((event) => event.type === "completion.validation_failed");
+            .find((event) => COMPLETION_RECOVERY_EVENT_TYPES.has(event.type));
           let completionRecoveryReason = deps.parseCompletionValidationReason(
             lastCompletionFailure?.detail
           );
@@ -761,8 +1007,21 @@ export function registerSupervisorCompletionTools(
               completionRecoveryReason = "completion_memory_drift_detected";
             }
           }
+
+          // A validation that could not execute gets the environment checklist,
+          // never the code-repair one — telling an agent to "implement the
+          // smallest repair set" when nothing was checked is the misdiagnosis
+          // this whole path exists to prevent.
+          const validationBlockerDetail =
+            completionRecoveryReason === VALIDATION_COULD_NOT_RUN_REASON
+              ? (lastCompletionFailure?.detail ?? "").split(";").slice(1).join(";").trim()
+              : "";
           const remediationChecklist =
-            deps.buildCompletionRepairChecklist(completionRecoveryReason);
+            completionRecoveryReason === VALIDATION_COULD_NOT_RUN_REASON
+              ? buildValidationBlockedChecklist(
+                  validationBlockerDetail || "the goal contract's validationCmd"
+                )
+              : deps.buildCompletionRepairChecklist(completionRecoveryReason);
 
           // Leased tasks carry the self-fencing clause (UPSTREAM-BORROW task 27).
           // With no leased tasks the extra sections stay undefined, so the prompt

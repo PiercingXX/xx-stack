@@ -281,3 +281,26 @@ test("buildResumeDirective adds the lease and self-fencing clause only when a le
   );
   assert.ok(LEASE_SELF_FENCING_CLAUSE.includes("do not write"));
 });
+
+test("goal contracts carry both directions of the reward-hacking guard", () => {
+  // ANTI_REWARD_HACKING_CLAUSE guards degrading the verifier. The inverse —
+  // manufacturing a change so a run looks productive — is the failure a
+  // prospecting task invites, because "nothing worth changing" leaves a
+  // carelessly written stopCondition permanently unmet, and _Stop then objects
+  // until the caller's rejection budget is spent. Both clauses must render, or
+  // the contract only warns about half the problem.
+  const task = makeTask();
+  task.goalContract = {
+    objective: "find dead code worth deleting",
+    constraints: ["do not change behavior"],
+    stopCondition: "every candidate is deleted or recorded as load-bearing with the reason",
+  };
+  const directive = buildResumeDirective(task, undefined);
+
+  assert.match(directive, /anti-reward-hacking: do not delete, skip, weaken/);
+  assert.match(directive, /null-result: a null result is a valid completion/);
+  assert.ok(
+    directive.indexOf("anti-reward-hacking:") < directive.indexOf("null-result:"),
+    "both directions should arrive together, guard first then its inverse"
+  );
+});

@@ -11,7 +11,11 @@ import type {
   SupervisorSessionState,
   SupervisorStore,
 } from "./supervisor_runtime.js";
-import { storeAccessErrorPayload } from "./supervisor_store_runtime.js";
+import {
+  storeAccessErrorPayload,
+  SUPERVISOR_TERMINAL_STATUSES,
+} from "./supervisor_store_runtime.js";
+import { computeReadySet } from "./task_graph_runtime.js";
 import {
   buildWorktreeResumeNotice,
   evaluateGoalContractCompletion,
@@ -45,6 +49,11 @@ import {
  * - `_Stop` objections are bounded: the caller enforces a rejection budget, so
  *   each objection names one concrete unmet condition (task id + stop
  *   condition) the agent can act on in a single round.
+ * - `_Stop` objects only on READY work. A task whose blockers are still open
+ *   cannot be started at all, so naming it as the objection would violate the
+ *   contract above — the agent has no move that closes it in one round, and
+ *   the objection would repeat until the rejection budget ran out. Blocked
+ *   work is reported as context beneath a real objection, never as one.
  *
  * Off by default: a harness that is not hook-aware would see these as ordinary
  * callable tools. Registration is gated behind XX_STACK_HOOK_TOOLS=1.
@@ -55,16 +64,10 @@ const HOOK_TOOLS_ENV_FLAG = "XX_STACK_HOOK_TOOLS";
 /** Marker every hook description carries so a non-hook harness is warned. */
 export const HOOK_TOOL_DESCRIPTION_PREFIX = "Lifecycle hook — not for direct model use.";
 
-/** Terminal supervisor session statuses: nothing here is open work. */
-const SESSION_TERMINAL_STATUSES = new Set<SupervisorSessionState["status"]>([
-  "completed",
-  "interrupted",
-  "exhausted",
-  "force_synthesized",
-]);
-
 /** Objections are actionable, not exhaustive: at most this many are listed. */
 const MAX_OBJECTIONS = 3;
+/** Blocked-work context lines are bounded the same way objections are. */
+const MAX_BLOCKED_CONTEXT = 3;
 /** Re-injection is bounded so a compacted context is not immediately refilled. */
 const MAX_POST_COMPACT_TASKS = 10;
 const MAX_POST_COMPACT_SESSIONS = 5;
@@ -133,7 +136,15 @@ export interface HookScope {
 }
 
 interface ScopedWork {
+  /** Open tasks in scope. */
   tasks: PersistentTask[];
+  /**
+   * Every task in the store, unfiltered. Readiness is a property of the whole
+   * graph: a blocker may be terminal (and therefore filtered out of `tasks`)
+   * or owned by another agent, and either way it still decides whether the
+   * task in scope can start.
+   */
+  allTasks: PersistentTask[];
   sessions: SupervisorSessionState[];
   reliability: ReliabilityConfig;
 }
@@ -156,7 +167,7 @@ async function collectScopedWork(deps: HookToolDeps, scope: HookScope): Promise<
   const taskStore = await deps.readTaskStore();
 
   const sessions = Object.values(supervisorStore.sessions)
-    .filter((session) => !SESSION_TERMINAL_STATUSES.has(session.status))
+    .filter((session) => !SUPERVISOR_TERMINAL_STATUSES.has(session.status))
     .filter((session) => !sessionId || session.sessionId === sessionId)
     .filter((session) => !agentId || session.completionMemorySync?.agentId === agentId)
     .sort((left, right) => left.sessionId.localeCompare(right.sessionId));
@@ -167,7 +178,7 @@ async function collectScopedWork(deps: HookToolDeps, scope: HookScope): Promise<
     .filter((task) => !agentId || task.owner === agentId)
     .sort((left, right) => left.taskId.localeCompare(right.taskId));
 
-  return { tasks, sessions, reliability };
+  return { tasks, allTasks: Object.values(taskStore.tasks), sessions, reliability };
 }
 
 /**
@@ -187,17 +198,50 @@ function scopeLabel(scope: HookScope): string {
 }
 
 /**
+ * `_Stop`'s two answers about task work: what the agent can act on now, and
+ * what it merely ought to know about.
+ */
+export interface StopReport {
+  /** Concrete unmet conditions the agent can close in one round. */
+  objections: string[];
+  /** Blocked work, named for orientation only. Never an objection. */
+  blockedContext: string[];
+}
+
+/**
  * One objection line per concrete unmet condition. Task objections name the
  * task id and its stop condition — the thing the agent can close in one round —
  * not the whole goal contract.
+ *
+ * Only READY tasks raise objections. `_Stop` used to object on every
+ * non-terminal task, including ones whose blockers were still open — an
+ * objection naming work the agent is not permitted to start is not "an
+ * objection the agent can act on in one round" (MANUAL §5); it is a loop that
+ * ends when the caller's rejection budget runs out. Blocked tasks come back in
+ * `blockedContext`, which is rendered only beneath a real objection.
  */
-export async function buildStopObjections(deps: HookToolDeps, scope: HookScope): Promise<string[]> {
-  const { tasks, sessions, reliability } = await collectScopedWork(deps, scope);
+export async function buildStopReport(deps: HookToolDeps, scope: HookScope): Promise<StopReport> {
+  const { tasks, allTasks, sessions, reliability } = await collectScopedWork(deps, scope);
   const now = deps.now ? deps.now() : Date.now();
   const sessionById = new Map(sessions.map((session) => [session.sessionId, session]));
   const objections: string[] = [];
+  const blockedContext: string[] = [];
+
+  const readyIds = new Set(computeReadySet(allTasks).map((task) => task.taskId));
+  const statusById = new Map(allTasks.map((task) => [task.taskId, task.status]));
 
   for (const task of tasks) {
+    if (!readyIds.has(task.taskId)) {
+      const openBlockers = task.blockedBy.filter((id) => {
+        const status = statusById.get(id);
+        return status === undefined || !TASK_TERMINAL_STATUSES.has(status);
+      });
+      const detail = openBlockers.length > 0 ? openBlockers.join(", ") : "(no open blocker found)";
+      blockedContext.push(
+        `task ${task.taskId} is blocked [${task.status}] on ${detail} — not startable this round`
+      );
+      continue;
+    }
     const contract = task.goalContract;
     if (!contract) {
       objections.push(`task ${task.taskId} is open [${task.status}]: ${task.title}`);
@@ -241,11 +285,30 @@ export async function buildStopObjections(deps: HookToolDeps, scope: HookScope):
     }
   }
 
-  return objections;
+  return { objections, blockedContext };
 }
 
-/** Render the bounded `_Stop` payload. Empty string means no objection. */
-export function renderStopObjection(objections: string[], scope: HookScope): string {
+/**
+ * The objection lines only. Kept as the narrow accessor for callers that never
+ * render context; `_Stop` itself uses `buildStopReport` so both halves come
+ * from a single pair of store reads.
+ */
+export async function buildStopObjections(deps: HookToolDeps, scope: HookScope): Promise<string[]> {
+  return (await buildStopReport(deps, scope)).objections;
+}
+
+/**
+ * Render the bounded `_Stop` payload. Empty string means no objection.
+ *
+ * `blockedContext` is appended only when there is a real objection to append
+ * it to: blocked work alone must never keep the agent working, because there
+ * is nothing it can do about it.
+ */
+export function renderStopObjection(
+  objections: string[],
+  scope: HookScope,
+  blockedContext: string[] = []
+): string {
   if (objections.length === 0) return "";
   const shown = objections.slice(0, MAX_OBJECTIONS);
   const lines: string[] = [
@@ -256,6 +319,18 @@ export function renderStopObjection(objections: string[], scope: HookScope): str
   }
   if (objections.length > shown.length) {
     lines.push(`- (+${objections.length - shown.length} more open items not shown)`);
+  }
+  if (blockedContext.length > 0) {
+    const shownContext = blockedContext.slice(0, MAX_BLOCKED_CONTEXT);
+    lines.push("- context only (blocked work; nothing to act on here):");
+    for (const entry of shownContext) {
+      lines.push(`  - ${entry}`);
+    }
+    if (blockedContext.length > shownContext.length) {
+      lines.push(
+        `  - (+${blockedContext.length - shownContext.length} more blocked items not shown)`
+      );
+    }
   }
   return lines.join("\n");
 }
@@ -349,7 +424,9 @@ export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
     `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness when the model signals ` +
       "end_turn. Returns an empty string when there is no objection to stopping, or a bounded " +
       "objection naming the concrete open supervised work (task id + unmet stop condition) " +
-      "otherwise. If the supervisor or task store exists but cannot be read, this returns the " +
+      "otherwise. Only work that is actually startable raises an objection: a task whose " +
+      "blockedBy entries are still open is listed as context beneath a real objection and " +
+      "never as the objection itself. If the supervisor or task store exists but cannot be read, this returns the " +
       "empty no-objection string — the same answer the caller assumes on timeout — because a " +
       "corrupt state file is not something the agent can resolve by continuing to work. " +
       "Reports observed state; it does not issue instructions",
@@ -357,7 +434,10 @@ export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
     async ({ agentId, sessionId }) => {
       const scope: HookScope = { agentId, sessionId };
       const text = await withUnreadableStoreFallback(
-        async () => renderStopObjection(await buildStopObjections(deps, scope), scope),
+        async () => {
+          const report = await buildStopReport(deps, scope);
+          return renderStopObjection(report.objections, scope, report.blockedContext);
+        },
         // Empty string = no objection. A non-empty string would be an
         // objection the agent has no way to satisfy.
         () => ""

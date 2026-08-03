@@ -70,6 +70,35 @@ Mandatory anti-reward-hacking clause, carried by every contract and binding on e
 
 > do not delete, skip, weaken, or narrow tests to make the goal pass
 
+That clause guards one direction only — degrading the verifier so a goal
+passes. The inverse failure is manufacturing work so a run looks productive,
+and it is carried alongside:
+
+> a null result is a valid completion — do not manufacture a change to look
+> productive; finding nothing worth changing is a real answer when the evidence
+> shows you looked
+
+This matters most for **prospecting** goals — find dead code, find performance
+wins, find vulnerabilities. Their honest answer is often "nothing worth
+changing", and a `stopCondition` written carelessly makes that answer
+unreachable: the condition stays unmet by construction, `_Stop` objects at
+every end-turn until the caller's rejection budget is spent, and the cheapest
+way for the agent to silence the objection is to invent a diff. Write the
+condition so a null result can satisfy it.
+
+Bad — unsatisfiable when the honest answer is "none":
+
+> stopCondition: at least one performance regression is fixed
+
+Good — satisfiable either way, and still demands evidence:
+
+> stopCondition: the profiler ran over the hot paths and every candidate is
+> either fixed or recorded with the measurement showing it below the 5% bar
+
+A null result is not a licence for thin evidence. Completion still has to show
+the scan ran, what it was judged against, and what it found — see
+SUPERVISOR_COMPLETION_LOOP_RUNBOOK.md.
+
 Meta-prompting rule: before writing the contract, inspect the repo and surface hidden constraints (build/test commands, conventions, invariants, files other work depends on) so the contract reflects reality rather than assumptions. A contract written without that inspection is a guess, not a contract.
 
 When a linked task carries a contract, `supervisor_complete_session` refuses `completed` until the completion evidence references the contract's `validationCmd` (reason code `goal_contract_validation_evidence_missing`), and the finalized result cites each contract's stop condition.

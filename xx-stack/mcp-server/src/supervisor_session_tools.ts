@@ -6,7 +6,7 @@ import { emitLifecycleHooks } from "./execution_policy.js";
 import { logEvent } from "./log_worker.js";
 import type { SupervisorRoute, SupervisorSessionState } from "./supervisor_runtime.js";
 import { shouldResetFailureStreak } from "./supervisor_runtime.js";
-import { guardStoreAccess } from "./supervisor_store_runtime.js";
+import { guardStoreAccess, SUPERVISOR_TERMINAL_STATUSES } from "./supervisor_store_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import { revokeSessionTaskLeases } from "./task_runtime.js";
 
@@ -679,7 +679,11 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
 
   server.tool(
     "supervisor_abort_session",
-    "Abort a supervised session and mark it as interrupted",
+    "Abort a live supervised session and mark it as interrupted. Terminal is terminal: a " +
+      "session that already ended (completed, interrupted, exhausted, force_synthesized) is a " +
+      "no-op — nothing is written, no event is pushed, and the result reports " +
+      "already_terminal with the status the session actually holds. A session ID that does not " +
+      "exist still returns missing; the two outcomes are distinct",
     {
       sessionId: safeId("Supervisor session ID"),
       reason: z.string().optional().describe("Optional abort reason"),
@@ -692,6 +696,32 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
           const state = store.sessions[sessionId];
           if (!state) {
             return jsonContent({ status: "missing", sessionId });
+          }
+
+          // Classify BEFORE mutating. This used to set status = "interrupted"
+          // unconditionally, so aborting a session that finished ten minutes
+          // ago rewrote its terminal record, pushed a session.interrupted
+          // event, and reported "interrupted" as though it had stopped live
+          // work. The three terminal states are "deliberately distinguished"
+          // (MANUAL §5); a request to end something already ended erases that
+          // distinction, so it answers with what actually happened instead of
+          // echoing the transition that was asked for.
+          //
+          // Deliberately NOT ported: a running-vs-pending distinction. The
+          // control plane holds no kill channel, so which of the two a live
+          // session is in is unknowable from here, and guessing would be worse
+          // than today's behavior. Lease revocation stays on the live path
+          // below, where it is already idempotent.
+          if (SUPERVISOR_TERMINAL_STATUSES.has(state.status)) {
+            return jsonContent({
+              status: "already_terminal",
+              reasonCode: "session_terminal",
+              sessionId,
+              priorStatus: state.status,
+              detail:
+                `Session already ended as "${state.status}". Nothing was written, no event was ` +
+                "pushed, and no lease was touched — its terminal record is unchanged.",
+            });
           }
 
           const now = Date.now();

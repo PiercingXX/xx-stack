@@ -1,0 +1,361 @@
+{
+  "$comment": "Anti-AI-slop rule table as DATA. scripts/quality-gate-html.mjs is a generic engine that reads this file; it contains no rule values of its own. This split is deliberate and licensing-driven: the script is ours under the repo-root MIT LICENSE, while the rule values are derived from two Apache-2.0 upstreams. No upstream code was ported. Rules-as-data also means the set is reviewable and editable without touching the gate. Every rule carries a `source` field naming which upstream it came from.",
+  "version": 2,
+  "attribution": {
+    "sources": {
+      "open-design": "nexu-io/open-design — craft/anti-ai-slop.md + apps/daemon/src/lint-artifact.ts (Apache-2.0)",
+      "stitch-skills": "google-labs-code/stitch-skills — plugins/stitch-utilities/skills/taste-design/SKILL.md (Apache-2.0)"
+    },
+    "derivedFrom": [
+      {
+        "repo": "https://github.com/nexu-io/open-design",
+        "paths": ["craft/anti-ai-slop.md", "apps/daemon/src/lint-artifact.ts"],
+        "license": "Apache-2.0",
+        "licenseFile": "../licenses/nexu-io-open-design-Apache-2.0.txt",
+        "headAtDerivation": "dceac12f70df2b9eb0fae9c90aff1fe75da309c0",
+        "what": "The rule VALUES — hex lists, emoji list, invented-metric and filler phrase patterns, placeholder-CDN hosts, the raw-hex and accent-use thresholds, and the P0/P1/P2 assignments."
+      },
+      {
+        "repo": "https://github.com/google-labs-code/stitch-skills",
+        "paths": ["plugins/stitch-utilities/skills/taste-design/SKILL.md"],
+        "license": "Apache-2.0",
+        "licenseFile": "../licenses/google-labs-code-stitch-skills-Apache-2.0.txt",
+        "headAtDerivation": "535b0889a46868c9b08f8a7f7084db3c1958a2b6",
+        "headAtDerivationDate": "2026-07-30T10:07:48-07:00",
+        "what": "The rule VALUES for every rule below whose `source` is `stitch-skills`: the animate-layout-property list, the fabricated-metric-section headings, LABEL // YEAR, hero filler UI text, custom cursors, generic placeholder names, and the copywriting clichés. Also the extra invented-metric phrasings folded into open-design's rule.",
+        "selfContained": "Verified. The SKILL.md's design guidance is prose and needs no hosted service. It names Google Stitch and an optional Stitch MCP server under 'Prerequisites' for its own generate-a-DESIGN.md workflow; none of the rules taken here depend on either, and nothing from that workflow was taken.",
+        "licenseTextNote": "Shipped as its own file rather than reusing licenses/nexu-io-open-design-Apache-2.0.txt. Both are Apache-2.0, but the two renderings differ in line-wrapping, in the §4 and §9 heading wording, and in the appendix copyright line — so each upstream's own text is shipped verbatim rather than assumed interchangeable."
+      },
+      {
+        "repo": "https://github.com/referodesign/refero_skill",
+        "license": "MIT",
+        "licenseCopyright": "Copyright (c) 2026 Refero",
+        "licenseFile": "../licenses/referodesign-refero_skill-MIT.txt",
+        "what": "The upstream prose these rules encode is itself attributed as adapted from refero_skill. Second hop of the chain; see ../manifest.json subtree `craft/`."
+      }
+    ],
+    "engine": "packs/design/scripts/quality-gate-html.mjs — authored here, MIT (repo root LICENSE)."
+  },
+  "severityContract": {
+    "P0": "Fails the gate (non-zero exit), alongside the pre-existing structural checks.",
+    "P1": "Reported, does not fail. Upstream's own position: artifact persistence is not hard-blocked either — this is a quality signal for the agent, not a merge gate on generated content.",
+    "P2": "Reported, does not fail. Polish."
+  },
+  "notAdopted": [
+    {
+      "id": "hero-features-pricing-faq-cta-skeleton",
+      "reason": "Upstream marks it '(guidance, not auto-checked)'. A gate that guesses at page rhythm produces noise."
+    },
+    {
+      "id": "decorative-blob-backgrounds",
+      "reason": "Upstream marks it '(guidance, not auto-checked)'."
+    },
+    {
+      "id": "symmetric-layout-no-tension",
+      "reason": "Upstream marks it '(guidance, not auto-checked)'."
+    },
+    {
+      "id": "missing-section-anchor",
+      "reason": "Upstream's P2 checks every <section> for data-od-id. That attribute anchors the open-design desktop app's comment mode, which this repo does not have. Enforcing it would import a foreign product requirement."
+    },
+    {
+      "id": "left-accent-card",
+      "reason": "Upstream P0. Not adopted in this pass — the CSS-shape regex (border-left + border-radius on one rule) is the most structural of upstream's rules and needs its own corpus triage before it can fail a gate. Left in craft/anti-ai-slop.md prose."
+    },
+    {
+      "id": "scroll-into-view",
+      "reason": "Upstream P0, but for an iframe-preview reason specific to their app shell, not a craft rule."
+    },
+    {
+      "id": "all-caps-no-tracking",
+      "source": "open-design",
+      "reason": "Upstream P1, from craft/typography.md rather than anti-ai-slop.md. Out of scope for this rule table; a candidate for a future typography rule set."
+    },
+    {
+      "id": "pure-black-ban",
+      "source": "stitch-skills",
+      "reason": "REFUSED, not deferred. stitch-skills bans #000000 outright ('use Off-Black, Zinc-950, or Charcoal'). That rule targets a generated artifact choosing black by default; this pack's design-systems/ DESCRIBE brands for which absolute black is deliberate vocabulary. Verified before excluding: 57 of our 137 DESIGN.md files reference #000000, and design-systems/apple/DESIGN.md names '**Absolute Black** (#000000): Immersive hero canvases' as a palette entry with a functional role. A gate rule here would red-line vendored brand content for honouring the brand. Do not re-add without first separating 'the artifact picked black' from 'the design system specifies black' — which needs the token contract from Task 33."
+    },
+    {
+      "id": "font-bans",
+      "source": "stitch-skills",
+      "reason": "stitch-skills bans Inter ('for premium/creative contexts') and generic serifs (Times New Roman, Georgia, Garamond, Palatino), and bans serif entirely in dashboards. Not encoded as stated: the qualifier is the whole rule and the gate cannot evaluate 'premium/creative context'. Inter is also the legitimate brand face in several design systems we ship. The checkable core — a heading hardcoding a font family instead of deferring to the design system — is already the `sans-display` rule, which fires on Inter/Roboto/Arial/system-ui in an h1/h2/h3 rule. Its prescriptive half (use Geist, Outfit, Cabinet Grotesk, Satoshi) is advice for an author, not a check."
+    },
+    {
+      "id": "accent-count-and-saturation",
+      "source": "stitch-skills",
+      "reason": "'Maximum 1 accent color. Saturation below 80%.' A different axis from our accent-overuse rule, which counts USES rather than distinct accents. Not encoded: the saturation half would fire across vendored design systems whose brand accents are legitimately above 80% saturation, and the count half needs the per-brand token contract (Task 33) to know which declared color is the accent. Revisit when tokens.css lands."
+    },
+    {
+      "id": "three-equal-cards",
+      "source": "stitch-skills",
+      "reason": "'The generic 3 equal cards horizontally feature row is BANNED.' Triaged before excluding: `grid-template-columns: repeat(3, 1fr)` fires on 31 of our 67 files, including the golden-task sample. A three-column grid is an ordinary layout, not a tell — the tell is a THREE-FEATURE MARKETING ROW, which this regex cannot distinguish from a docs table or a KPI band. 46% noise is exactly the failure mode a rule table exists to avoid."
+    },
+    {
+      "id": "no-emoji-anywhere",
+      "source": "stitch-skills",
+      "reason": "stitch-skills bans emoji outright ('No emojis anywhere'). This is precisely the over-broad rule this change REMOVED from the gate: it fired on a 🍅 logo, a 📣 in a Japanese wireframe label, and 📘/💬/💸/📅 in a resource list, none of which are the anti-pattern. open-design's scoped version (emoji standing in for an icon system) is the one that survived. Re-adding the blanket form would undo the fix."
+    },
+    {
+      "id": "picsum-as-placeholder",
+      "source": "stitch-skills",
+      "reason": "DIRECT CONFLICT between the two upstreams, resolved for open-design. stitch-skills says 'No broken Unsplash links — use picsum.photos or SVG avatars'; open-design's external-image rule bans picsum.photos along with the other stock CDNs. This pack's artifacts are self-contained single files — a runtime fetch to any host is the thing the gate exists to catch — so open-design's position holds and picsum.photos stays on the banned list. Recorded because the disagreement is real and a future reader will otherwise think one of them was overlooked."
+    },
+    {
+      "id": "viewport-and-responsive-rules",
+      "source": "stitch-skills",
+      "reason": "'min-h-[100dvh] never h-screen', 'no horizontal scroll on mobile', '44px touch targets', 'single-column collapse below 768px'. The first is Tailwind-class-specific and our artifacts emit plain CSS; the rest need a rendered layout, not a static file. The gate's existing @media advisory is as far as a text scan honestly reaches."
+    },
+    {
+      "id": "neon-glow-and-oversaturation",
+      "source": "stitch-skills",
+      "reason": "'No neon/outer glow shadows', 'no oversaturated accents', 'no excessive gradient text on large headers'. No reliable static signature — a box-shadow's 'neon-ness' is a judgement about color and spread together. Left as prose."
+    }
+  ],
+  "rules": [
+    {
+      "id": "purple-gradient",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "gradientContainsAny",
+      "hexes": [
+        "#a855f7", "#9333ea", "#7c3aed", "#6d28d9", "#581c87",
+        "#8b5cf6", "#a78bfa", "#c4b5fd", "#ddd6fe", "#ede9fe",
+        "#6366f1", "#4f46e5", "#4338ca", "#3730a3", "#312e81",
+        "#818cf8", "#a5b4fc", "#c7d2fe", "#e0e7ff", "#eef2ff"
+      ],
+      "keywords": ["purple", "violet"],
+      "message": "Violet/purple gradient using {match} — the canonical AI hero treatment.",
+      "fix": "Use a flat surface (var(--bg) / var(--surface)) or the active accent at a single intensity, not a gradient.",
+      "note": "Replaces the old hand-guessed check for #6a0dad / #8a2be2 / the word 'purple', which named two hexes no LLM actually emits. These are the Tailwind violet + indigo ramps, which is what generated output actually contains."
+    },
+    {
+      "id": "trust-gradient",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "gradientContainsPair",
+      "hexesA": [
+        "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a",
+        "#60a5fa", "#93c5fd", "#bfdbfe",
+        "#0ea5e9", "#0284c7", "#0369a1", "#38bdf8", "#7dd3fc"
+      ],
+      "keywordsA": ["blue", "dodgerblue", "royalblue", "steelblue"],
+      "hexesB": [
+        "#06b6d4", "#0891b2", "#0e7490", "#155e75", "#164e63",
+        "#22d3ee", "#67e8f9", "#a5f3fc"
+      ],
+      "keywordsB": ["cyan", "aqua", "turquoise"],
+      "suppressedBy": ["purple-gradient"],
+      "message": "Two-stop blue→cyan \"trust\" gradient ({match}) — SaaS hero cliché.",
+      "fix": "Replace with a flat surface or a single design-token color."
+    },
+    {
+      "id": "ai-default-indigo",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "literalAny",
+      "scope": "outsideGlobalTokenBlocks",
+      "values": ["#6366f1", "#4f46e5", "#4338ca", "#3730a3", "#8b5cf6", "#7c3aed", "#a855f7"],
+      "suppressedBy": ["purple-gradient"],
+      "message": "Default LLM accent color {match} — the most-reported AI design tell.",
+      "fix": "Use var(--accent) from the active DESIGN.md. {match} → var(--accent).",
+      "note": "Scope excludes :root / html / [data-theme] token blocks: a brand that genuinely binds indigo declares it once as --accent and uses var(--accent) downstream. That is the design system speaking, not the model defaulting. A component-local `--x: #6366f1` is still in scope, so indigo laundered through a local var is still caught."
+    },
+    {
+      "id": "emoji-icon",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "emojiInElement",
+      "elements": ["h1", "h2", "h3", "h4", "h5", "h6", "button", "li"],
+      "emoji": [
+        "✨", "🚀", "🎯", "⚡", "🔥", "💡", "📈", "🎨", "🛡️",
+        "🌟", "💪", "🎉", "👋", "🙌", "✅", "⭐", "🏆"
+      ],
+      "message": "Emoji {match} used as a UI icon.",
+      "fix": "Replace with an inline monoline SVG (1.6–1.8px stroke, currentColor), or drop the icon.",
+      "note": "SCOPED, deliberately. The rule this replaces flagged any emoji anywhere in the document, which fired on a 🍅 logo, a 📣 in a Japanese wireframe label, and 📘/💬/💸/📅 in a resource list — none of which are the anti-pattern. Prose emoji are a voice choice; emoji standing in for an icon system are the tell."
+    },
+    {
+      "id": "emoji-icon-class",
+      "source": "open-design",
+      "severity": "P1",
+      "kind": "emojiInClass",
+      "classSubstring": "icon",
+      "emoji": [
+        "✨", "🚀", "🎯", "⚡", "🔥", "💡", "📈", "🎨", "🛡️",
+        "🌟", "💪", "🎉", "👋", "🙌", "✅", "⭐", "🏆"
+      ],
+      "message": "Emoji {match} inside an element whose class names it an icon.",
+      "fix": "Replace with an inline monoline SVG (1.6–1.8px stroke, currentColor).",
+      "note": "P1, not P0, and BROADER than upstream on purpose. Upstream's regex only matches `span class=\"…icon…\"`; ours matches any element, which is what actually appears in this pack (`<div class=\"icon\">`). Broadening it found two real hits — workflow-skills/hr-onboarding/{example.html,assets/template.html} — one of which is a vendored upstream file this pack does not rewrite. Reporting them beats either silently narrowing the selector to miss them or turning the gate red over vendored content."
+    },
+    {
+      "id": "sans-display",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "regexAny",
+      "patterns": [
+        "(?:h1|h2|h3|\\.h-?(?:hero|xl|lg|md))[^{}]*\\{[^}]*font-family\\s*:\\s*[\"']?(?:Inter|Roboto|Arial|-apple-system|system-ui|SF\\s+Pro)"
+      ],
+      "message": "A heading rule hardcodes a display font ({match}) instead of the design system's face.",
+      "fix": "Use `font-family: var(--font-display)` on h1/h2/h3 and let the active DESIGN.md choose."
+    },
+    {
+      "id": "invented-metric",
+      "source": "open-design + stitch-skills",
+      "severity": "P0",
+      "kind": "regexAny",
+      "patterns": [
+        "\\b10×\\s+(?:faster|better|easier)\\b",
+        "\\b10x\\s+(?:faster|better|easier)\\b",
+        "\\b100×\\s+(?:faster|better)\\b",
+        "\\b99\\.\\d+%\\s+uptime\\b",
+        "\\bzero[- ]downtime\\b",
+        "\\b3×\\s+more\\s+(?:productive|efficient)\\b",
+        "\\b\\d{1,3}(?:\\.\\d+)?%\\s+uptime\\s+sla\\b",
+        "\\b\\d+\\s*ms\\s+(?:avg\\.?|average)\\b",
+        "\\b\\d+(?:\\.\\d+)?k\\s+deploy(?:ment)?\\s+cycles\\b"
+      ],
+      "message": "Suspected invented metric: \"{match}\".",
+      "fix": "Remove the claim, or use a labelled placeholder ([metric]) until a real number exists.",
+      "patternSources": "The first six patterns are open-design's INVENTED_METRIC_PATTERNS. The last three are stitch-skills' worked examples ('99.98% UPTIME SLA', '124ms AVG. RESPONSE', '18.5k DEPLOY CYCLES'), folded into the existing rule rather than added as a second rule that would say the same thing.",
+      "notTaken": "stitch-skills also bans bare 'fake round numbers (99.99%, 50%)'. Not encoded: a bare percentage is indistinguishable from `width: 100%` and a hundred legitimate uses. Only percentages carrying a metric noun are matched."
+    },
+    {
+      "id": "filler-copy",
+      "source": "open-design",
+      "severity": "P0",
+      "kind": "regexAny",
+      "patterns": [
+        "\\bfeature\\s+(?:one|two|three|1|2|3)\\b",
+        "\\blorem\\s+ipsum\\b",
+        "\\bdolor\\s+sit\\s+amet\\b",
+        "\\bplaceholder\\s+text\\b",
+        "\\bsample\\s+content\\b"
+      ],
+      "message": "Filler copy detected: \"{match}\".",
+      "fix": "Write copy specific to the brief, or delete the section. An empty section is a composition problem, not a word-inventing problem."
+    },
+    {
+      "id": "external-image",
+      "source": "open-design",
+      "severity": "P1",
+      "kind": "regexAny",
+      "patterns": [
+        "<img[^>]+src=[\"']https?://(?:images\\.unsplash\\.com|unsplash\\.com|placehold\\.co|placekitten\\.com|via\\.placeholder\\.com|picsum\\.photos|loremflickr\\.com)"
+      ],
+      "message": "External placeholder image CDN: {match}.",
+      "fix": "Use an inline SVG or a CSS placeholder block; a 404 from a stock CDN is worse than an empty frame."
+    },
+    {
+      "id": "raw-hex",
+      "source": "open-design",
+      "severity": "P1",
+      "kind": "countHexOutsideRoot",
+      "threshold": 12,
+      "message": "{count} raw hex values outside :root — design tokens probably not honoured.",
+      "fix": "Move colors into the :root token block and reference via var(); derive tones with color-mix().",
+      "note": "Threshold is upstream's. Device chrome (a phone bezel, status icons) legitimately lands in the 8–10 range, which is why it is 12 and not 6."
+    },
+    {
+      "id": "accent-overuse",
+      "source": "open-design",
+      "severity": "P1",
+      "kind": "countLiteralOutsideStyle",
+      "value": "var(--accent)",
+      "threshold": 6,
+      "message": "var(--accent) used {count} times in the body — accent is probably carrying too much.",
+      "fix": "Cap visible accent uses at ~2 per screen (one eyebrow + one CTA). Demote the rest to var(--fg) or var(--muted).",
+      "note": "Counted outside <style> on purpose: the class system may define an accent on many selectors that never all render on one screen."
+    },
+    {
+      "id": "animate-layout-property",
+      "source": "stitch-skills",
+      "severity": "P1",
+      "kind": "regexAny",
+      "patterns": [
+        "transition\\s*:[^;{}]*(?<![-\\w])(?:top|left|right|bottom|width|height)(?![-\\w])",
+        "transition-property\\s*:[^;{}]*(?<![-\\w])(?:top|left|right|bottom|width|height)(?![-\\w])",
+        "@keyframes[^{]*\\{(?:[^{}]|\\{[^{}]*\\})*?(?<![-\\w])(?:top|left|right|bottom|width|height)\\s*:"
+      ],
+      "message": "Animating a layout property ({match}) — top/left/width/height force layout on every frame.",
+      "fix": "Animate transform and opacity only; they composite. A progress bar becomes `transform: scaleX(p)` on a full-width element with `transform-origin: left`.",
+      "note": "The one rule in this table that is performance correctness rather than taste, which is why it was taken. P1 rather than P0 because it has six real hits in this pack, all the same construct: a 3px fixed `.deck-progress` bar with `transition: width 0.18s ease` in replit-deck (4 vendored examples + the seed template) and simple-deck's seed template. Four of the six are upstream files this pack does not rewrite, so the choice was between six same-reason exemptions that read as 'this is fine' and one advisory that stays visible on every run with the fix attached. The advisory is the honest record: the finding is real, we did not rewrite vendored content for it, and nothing is silenced."
+    },
+    {
+      "id": "fabricated-metric-section",
+      "source": "stitch-skills",
+      "severity": "P1",
+      "kind": "regexAny",
+      "patterns": [
+        "\\bsystem performance metrics\\b",
+        "\\bkey statistics\\b",
+        "\\bby the numbers\\b"
+      ],
+      "message": "Stat-block section heading \"{match}\" — the canonical shell for invented numbers.",
+      "fix": "Keep the section only if the numbers come from the brief. Otherwise cut it; a stat band with no data is decoration."
+    },
+    {
+      "id": "label-slash-year",
+      "source": "stitch-skills",
+      "severity": "P2",
+      "kind": "regexAny",
+      "patterns": ["[A-Z][A-Z ]{2,}\\s//\\s(?:19|20)\\d\\d"],
+      "message": "\"{match}\" — LABEL // YEAR is an AI typography convention, not a real one.",
+      "fix": "Use a real eyebrow, a date, or nothing."
+    },
+    {
+      "id": "filler-ui-text",
+      "source": "stitch-skills",
+      "severity": "P1",
+      "kind": "regexAny",
+      "patterns": [
+        "\\bscroll to explore\\b",
+        "\\bswipe down\\b",
+        "\\bscroll down to (?:explore|learn|discover)\\b"
+      ],
+      "message": "Filler UI affordance: \"{match}\".",
+      "fix": "Cut it. If the page needs to tell people to scroll, the fold is doing the wrong work."
+    },
+    {
+      "id": "custom-cursor",
+      "source": "stitch-skills",
+      "severity": "P2",
+      "kind": "regexAny",
+      "patterns": ["cursor\\s*:\\s*url\\("],
+      "message": "Custom mouse cursor ({match}).",
+      "fix": "Use the platform cursor. A bespoke cursor costs accessibility and gains novelty."
+    },
+    {
+      "id": "generic-placeholder-name",
+      "source": "stitch-skills",
+      "severity": "P1",
+      "kind": "regexAny",
+      "patterns": [
+        "\\bJohn Doe\\b",
+        "\\bJane Doe\\b",
+        "\\bAcme\\b",
+        "\\bNexus (?:Corp|Inc|Labs|Systems)\\b"
+      ],
+      "message": "Generic placeholder name \"{match}\".",
+      "fix": "Name it from the brief. A plausible specific name costs nothing and reads as real.",
+      "note": "Two hits in this pack, both the same `Acme Co` row in a dashboard customer table (workflow-skills/dashboard/{example.html,assets/template.html}); the example is vendored. P1 so the signal shows without red-lining upstream content. Bare `Nexus` is NOT matched — it is a real product name in several briefs; only the corporate-suffix forms are."
+    },
+    {
+      "id": "copy-cliche",
+      "source": "stitch-skills",
+      "severity": "P2",
+      "kind": "regexAny",
+      "patterns": [
+        "\\bElevate your\\b",
+        "\\bUnleash the\\b",
+        "\\bNext-Gen(?:eration)?\\b",
+        "\\bseamlessly integrat",
+        "\\bgame[- ]chang(?:er|ing)\\b"
+      ],
+      "message": "AI copywriting cliché: \"{match}\".",
+      "fix": "Say what the product does. Specific verbs beat elevated ones.",
+      "note": "P2, and deliberately narrower than upstream's word list. Upstream bans the bare words Elevate / Seamless / Unleash / Next-Gen; 'seamless' and 'elevate' are ordinary English and a bare-word ban would fire on legitimate copy. Only the collocations that are actually the cliché are matched."
+    }
+  ]
+}

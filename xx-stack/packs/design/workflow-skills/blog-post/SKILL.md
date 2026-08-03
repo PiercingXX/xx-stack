@@ -25,6 +25,8 @@ od:
   design_system:
     requires: true
     sections: [color, typography, layout, components]
+  craft:
+    requires: [typography, typography-hierarchy, typography-hierarchy-editorial, rtl-and-bidi]
 ---
 
 # Blog Post Skill
