@@ -137,6 +137,50 @@ export function evaluateCompletionReadiness(
   return { ok: true, reasonCode: "completion_ready" };
 }
 
+export interface ForceSynthesisTrigger {
+  triggered: boolean;
+  reasonCode:
+    | "session_exhausted"
+    | "session_blocked"
+    | "failure_budget_exhausted"
+    | "attempt_budget_exhausted"
+    | "hard_session_timeout"
+    | "stall_threshold_tripped"
+    | "force_synthesis_not_triggered";
+}
+
+/**
+ * Decide whether a session qualifies for budget-exhausted forced synthesis
+ * (UPSTREAM-BORROW task 14). Triggered when the budget (attempts/failures),
+ * the hard session timeout, or the stall threshold has tripped — the cases
+ * where failing over again would discard accumulated partial work.
+ */
+export function evaluateForceSynthesisTrigger(
+  state: SupervisorSessionState,
+  now: number,
+  reliability: ReliabilityConfig
+): ForceSynthesisTrigger {
+  if (state.status === "exhausted") {
+    return { triggered: true, reasonCode: "session_exhausted" };
+  }
+  if (state.status === "blocked") {
+    return { triggered: true, reasonCode: "session_blocked" };
+  }
+  if (state.failureCount >= reliability.maxConsecutiveFailures) {
+    return { triggered: true, reasonCode: "failure_budget_exhausted" };
+  }
+  if (state.attemptCount >= reliability.maxAttemptsPerSlice) {
+    return { triggered: true, reasonCode: "attempt_budget_exhausted" };
+  }
+  if (now - state.startedAt >= reliability.hardSessionTimeoutMs) {
+    return { triggered: true, reasonCode: "hard_session_timeout" };
+  }
+  if (now - state.lastProgressAt >= reliability.progressTimeoutMs) {
+    return { triggered: true, reasonCode: "stall_threshold_tripped" };
+  }
+  return { triggered: false, reasonCode: "force_synthesis_not_triggered" };
+}
+
 export function parseCompletionValidationReason(detail: string | undefined): string {
   if (!detail) return "completion_validation_failed";
   const [prefix] = detail.split(";");
@@ -169,6 +213,10 @@ export function buildCompletionRepairChecklist(reasonCode: string): string[] {
     ],
     completion_judge_before_evidence: [
       "Re-record evidence first, then re-run judge so verdict is newer than evidence.",
+    ],
+    goal_contract_validation_evidence_missing: [
+      "Run the goal contract's validationCmd through verify_edit and record its result as completion evidence.",
+      "Cite the contract's stopCondition in the evidence summary; do not delete, skip, weaken, or narrow tests to make the goal pass.",
     ],
     completion_memory_drift_detected: [
       "Run agent_memory_snapshot_status for the guarded agent/scope and inspect helperPrompt.",
