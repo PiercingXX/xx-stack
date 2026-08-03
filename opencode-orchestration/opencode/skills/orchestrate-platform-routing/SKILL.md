@@ -123,3 +123,5 @@ Provide this exact structure:
 ## Final Recommendation
 - Primary execution path
 - When to override it
+
+Rule book: packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md (see packs/rules/coverage.json)

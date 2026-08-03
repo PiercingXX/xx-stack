@@ -149,3 +149,5 @@ Production bugs are expensive. Reviews are cheap insurance.
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
+
+Rule book: packs/rules/refactoring/refactoring.mini.md (see packs/rules/coverage.json)

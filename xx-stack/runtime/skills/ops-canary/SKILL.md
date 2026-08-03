@@ -86,3 +86,5 @@ Deploy is a hypothesis. Canary is the proof.
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
+
+Rule book: packs/rules/release-it/release-it.nano.md (see packs/rules/coverage.json)

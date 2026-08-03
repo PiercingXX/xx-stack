@@ -20,3 +20,5 @@ Read `runtime/agents/research.md` for the full operating spec and workflow proto
 ## Routing
 
 If invoked directly by a user, follow the full research agent protocol from `runtime/agents/research.md`. Do not abbreviate — produce the full structured findings output.
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

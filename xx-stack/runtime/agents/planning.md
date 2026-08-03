@@ -25,3 +25,5 @@ If invoked directly by a user, delegate to the `plan` agent workflow:
 3. Produce an executable plan package in the same format
 
 Do not produce a simplified or abbreviated plan. Use the full plan agent workflow.
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

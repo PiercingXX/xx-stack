@@ -442,3 +442,5 @@ ps aux | grep node  # Check memory growth over time
 ## Principle
 
 Good observability means you sleep at night.
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

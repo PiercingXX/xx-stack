@@ -70,3 +70,5 @@ You may declare completion only when:
 
 State:
 "Starting autonomous Rust rewrite now. I will analyze the existing project, implement a full Rust version, run compile/test/lint loops, and keep fixing until all quality gates pass, then return a readiness report."
+
+Rule books: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md and packs/rules/refactoring-guru/refactoring-guru.nano.md (see packs/rules/coverage.json)

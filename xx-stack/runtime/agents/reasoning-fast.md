@@ -50,3 +50,5 @@ Gaps (if any): <list>
 ```
 
 Never pad with alternatives after a conclusion. Do not overthink — if you find yourself writing more than 5 reasoning steps, route to `deep-thinker` instead.
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md (see packs/rules/coverage.json)

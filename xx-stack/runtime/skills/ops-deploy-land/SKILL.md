@@ -272,3 +272,5 @@ If something is clearly broken:
 ## Principle
 
 A good deployment is invisible to users. They never notice it happened.
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

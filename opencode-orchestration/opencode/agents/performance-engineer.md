@@ -45,3 +45,5 @@ Do not speculate about regressions without measurements.
 - prioritized optimization backlog
 - expected gain and validation method per optimization
 - verification status: `PASS`, `FAIL`, or `AMBIGUOUS`
+
+Rule book: packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md (see packs/rules/coverage.json)
