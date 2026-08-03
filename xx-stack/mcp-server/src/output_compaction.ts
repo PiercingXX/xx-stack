@@ -26,7 +26,8 @@ export interface CompactOptions {
   stripAnsi?: boolean;
   /**
    * If true, collapse runs of three or more identical consecutive lines
-   * into a summary line like `  [42 identical lines collapsed]`.
+   * into a summary line like `  [42 identical lines collapsed]` — but only
+   * when the summary is shorter than the run it replaces (see D2 below).
    */
   collapseRepeats?: boolean;
 }
@@ -52,6 +53,11 @@ export interface CompactResult {
  * `cap` is a hard bound: `output.length <= cap` for every cap, including caps
  * too small to hold the truncation marker (those hard-truncate to the cap and
  * still report the drop).
+ *
+ * Compaction is also a hard bound in the other direction: `output.length <=
+ * text.length` for every option combination. Compaction that grows its input
+ * is not compaction, and reporting the growth as a saving is worse than the
+ * growth.
  */
 export function compactOutput(text: string, opts: CompactOptions = {}): CompactResult {
   const dropped: string[] = [];
@@ -80,9 +86,22 @@ export function compactOutput(text: string, opts: CompactOptions = {}): CompactR
         i++;
       }
       const runLen = i - runStart + 1;
-      if (runLen >= 3) {
+      // D2: the decision is per-run and measured in BYTES, not lines. The
+      // marker is 31 characters wide, so a run of 3-4 short lines — blank
+      // lines being by far the most common repeated-line pattern in real lint
+      // and test output — was replaced by something several times its own
+      // size, and the inflation was then reported in `dropped` as a saving.
+      //
+      // The guard idea (a compaction step must decline itself when it would
+      // not shrink its input) is borrowed from rtk-ai/rtk, `src/core/guard.rs`
+      // (Apache-2.0). No code was copied; only the invariant.
+      //
+      // A run that would inflate passes through VERBATIM and contributes no
+      // `dropped` entry: claiming a saving that did not happen is the half of
+      // the defect that survives any purely line-counting test.
+      if (runLen >= 3 && collapseSavesBytes(current, runLen)) {
         collapsed.push(current);
-        collapsed.push(`  [${runLen} identical lines collapsed]`);
+        collapsed.push(collapseMarker(runLen));
         dropped.push(`collapsed ${runLen} consecutive identical lines`);
       } else {
         for (let j = runStart; j <= i; j++) {
@@ -95,6 +114,13 @@ export function compactOutput(text: string, opts: CompactOptions = {}): CompactR
   }
 
   // 3. Cap length — keep head and tail
+  //
+  // Ordering note: step 2 feeds this one. Before the D2 fix, a 4-byte input of
+  // blank lines grew to 32 bytes here and then ENTERED this branch under
+  // `cap: 10`, reporting "truncated 22 bytes" against a 4-byte input and
+  // severing the collapse marker mid-word. With step 2 conditional, the
+  // working string is never longer than the input, so a cap above the input
+  // length can no longer be reached from below.
   const cap = opts.cap ?? 0;
   if (cap > 0 && working.length > cap) {
     const original = working.length;
@@ -123,7 +149,54 @@ export function compactOutput(text: string, opts: CompactOptions = {}): CompactR
     }
   }
 
+  // 4. Whole-function postcondition.
+  //
+  // Every step above can only remove bytes: ANSI stripping deletes, the
+  // collapse declines itself unless it shrinks the run, and the cap branch
+  // bounds the result at `cap`, which it only enters when `cap < working`. So
+  // this is unreachable, and `inflationGuardTrips()` lets a test prove it
+  // stays that way across the whole option sweep rather than assuming it.
+  //
+  // It stays as a backstop because the failure it catches is silent by nature:
+  // a caller that is handed more bytes than it passed in, together with a
+  // `dropped` list telling it bytes were saved, has no way to notice.
+  if (working.length > text.length) {
+    inflationGuardTripCount += 1;
+    return { output: text, dropped: [] };
+  }
+
   return { output: working, dropped };
+}
+
+/** The summary line a collapsed run of `runLen` identical lines becomes. */
+function collapseMarker(runLen: number): string {
+  return `  [${runLen} identical lines collapsed]`;
+}
+
+/**
+ * Would collapsing `runLen` copies of `line` actually remove bytes?
+ *
+ * The run occupies `runLen` copies plus the `runLen - 1` newlines between
+ * them; the replacement is one copy, one newline, and the marker. Strictly
+ * fewer bytes or it is not worth doing — an equal-length swap trades honest
+ * output for a marker and saves nothing.
+ */
+function collapseSavesBytes(line: string, runLen: number): boolean {
+  const runBytes = runLen * line.length + (runLen - 1);
+  const replacementBytes = line.length + 1 + collapseMarker(runLen).length;
+  return replacementBytes < runBytes;
+}
+
+/** How many times the step-4 postcondition has fired this process. */
+let inflationGuardTripCount = 0;
+
+/**
+ * Test-only diagnostic: the number of times {@link compactOutput}'s
+ * inflation postcondition has had to fire. The property sweep asserts this
+ * never moves — a backstop that is actually load-bearing means step 2 regressed.
+ */
+export function inflationGuardTrips(): number {
+  return inflationGuardTripCount;
 }
 
 /**

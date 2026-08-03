@@ -41,7 +41,43 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
 ];
 const SECRET_ASSIGNMENT_PATTERN =
   /\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|secret|token|password|passwd|credentials?|authorization))\b(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi;
-const AUTH_SCHEME_PATTERN = /\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const AUTH_SCHEME_PATTERN = /\b(bearer|basic|token|digest)\s+([A-Za-z0-9._~+/=-]{8,})/gi;
+
+/**
+ * Length at which an all-lowercase-letters run stops being plausible English.
+ * Below it the run must carry some non-word evidence to count as a credential.
+ */
+const UNAMBIGUOUS_CREDENTIAL_LENGTH = 16;
+
+/**
+ * Does the run after an auth scheme actually look like a credential?
+ *
+ * `AUTH_SCHEME_PATTERN` alone accepted any eight-plus characters from the
+ * credential alphabet — which includes every lowercase letter, so an ordinary
+ * English word qualified. That mangled diagnostic output rather than protecting
+ * anything:
+ *
+ *   error TS2304: Cannot find name 'token expected here'
+ *     -> error TS2304: Cannot find name 'token [redacted-secret] here'
+ *
+ * That is the redactor's own failure mode inverted — it damaged exactly the
+ * text an agent needs to read to repair a build, and `verify_edit` now routes
+ * compiler and test-runner output through this pass, so the blast radius is
+ * every failing build. The discriminator is deliberately weak: one digit, one
+ * uppercase letter, or one of `._~+/=-` is enough, because real credentials
+ * essentially always carry at least one, while lowercase prose carries none.
+ * `_` is NOT evidence — `some_identifier` is far likelier to be source text
+ * than a credential, and any real token with an underscore has digits too.
+ * A long enough run is accepted on length alone.
+ *
+ * Nothing this rejects was protecting a credential: every previously-covered
+ * leak case (JWTs, base64 basic auth, `sk-`/`tok_live_` vendor tokens, long
+ * hex) satisfies it.
+ */
+function looksLikeCredential(candidate: string): boolean {
+  if (candidate.length >= UNAMBIGUOUS_CREDENTIAL_LENGTH) return true;
+  return /[0-9A-Z._~+/=-]/.test(candidate);
+}
 
 /**
  * Credentials embedded in a URL's userinfo — `scheme://user:pass@host`.
@@ -194,7 +230,9 @@ export function redactSecrets(text: string, opts?: { path?: string }): string {
   // the value a handoff prompt must never carry. Redacting the scheme+token
   // pair before the assignment pass closes that hole; the assignment pass then
   // harmlessly re-redacts the placeholder.
-  let out = text.replace(AUTH_SCHEME_PATTERN, `$1 ${REDACTION_MARKER}`);
+  let out = text.replace(AUTH_SCHEME_PATTERN, (match: string, scheme: string, candidate: string) =>
+    looksLikeCredential(candidate) ? `${scheme} ${REDACTION_MARKER}` : match
+  );
   out = out.replace(URL_USERINFO_PATTERN, (_m, scheme: string, userinfo: string) => {
     const colon = userinfo.indexOf(":");
     // Keep the user, drop the secret. No colon means the whole userinfo is
@@ -205,7 +243,18 @@ export function redactSecrets(text: string, opts?: { path?: string }): string {
   });
   out = out.replace(
     SECRET_ASSIGNMENT_PATTERN,
-    (_match, key: string, sep: string) => `${key}${sep}${REDACTION_MARKER}`
+    (_match, key: string, sep: string, value: string) => {
+      // The bare-value alternative is `\S+`, which swallows a quote that was
+      // opened BEFORE the key and only closes after the value — so a diff line
+      // `+ 'password: hunter2'` came back missing its closing quote. The value
+      // is still fully redacted; the delimiter is punctuation belonging to the
+      // surrounding text, and a reviewer reading a diff needs its structure to
+      // survive. Quoted values keep their own quotes inside the redaction, so
+      // only the unquoted alternative is trimmed.
+      const startsQuoted = value.startsWith('"') || value.startsWith("'");
+      const trailingQuotes = startsQuoted ? "" : (/['"]+$/.exec(value)?.[0] ?? "");
+      return `${key}${sep}${REDACTION_MARKER}${trailingQuotes}`;
+    }
   );
   for (const pattern of SECRET_VALUE_PATTERNS) {
     out = out.replace(pattern, REDACTION_MARKER);

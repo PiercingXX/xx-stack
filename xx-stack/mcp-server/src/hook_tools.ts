@@ -19,6 +19,9 @@ import { computeReadySet } from "./task_graph_runtime.js";
 import {
   buildWorktreeResumeNotice,
   evaluateGoalContractCompletion,
+  LEASE_SELF_FENCING_CLAUSE,
+  renderGoalContractClauseLines,
+  renderGoalContractLines,
   TASK_TERMINAL_STATUSES,
   type PersistentTask,
   type TaskStore,
@@ -357,18 +360,23 @@ export async function buildPostCompactState(deps: HookToolDeps, scope: HookScope
   const shownTasks = tasks.slice(0, MAX_POST_COMPACT_TASKS);
   lines.push(`- open tasks (${shownTasks.length} of ${tasks.length}):`);
   if (shownTasks.length === 0) lines.push("  - (none)");
+  let anyContractShown = false;
+  let anyLeaseShown = false;
   for (const task of shownTasks) {
     lines.push(`  - ${task.taskId} [${task.status}] ${task.title}`);
     if (task.sessionId) lines.push(`    - supervisor-session: ${task.sessionId}`);
     if (task.lastCheckpoint) lines.push(`    - checkpoint: ${task.lastCheckpoint}`);
     if (task.goalContract) {
-      lines.push(`    - objective: ${task.goalContract.objective}`);
-      lines.push(`    - stop-condition: ${task.goalContract.stopCondition}`);
-      if (task.goalContract.validationCmd) {
-        lines.push(`    - validation-cmd: ${task.goalContract.validationCmd}`);
-      }
+      anyContractShown = true;
+      // One renderer, shared with buildResumeDirective. The clause pair is
+      // deferred to the footer below, not dropped — see the block after the
+      // loop and `renderGoalContractLines`' doc comment.
+      lines.push(
+        ...renderGoalContractLines(task.goalContract, { indent: "    ", includeClauses: false })
+      );
     }
     if (task.lease) {
+      anyLeaseShown = true;
       lines.push(
         `    - lease: expires-at ${task.lease.expiresAt}${task.lease.revoked === true ? " (revoked)" : ""}`
       );
@@ -377,6 +385,21 @@ export async function buildPostCompactState(deps: HookToolDeps, scope: HookScope
   }
   if (tasks.length > shownTasks.length) {
     lines.push(`  - (+${tasks.length - shownTasks.length} more open tasks not shown)`);
+  }
+  // The clauses every contract and lease above carries, quoted once for the
+  // whole payload rather than repeated per task.
+  //
+  // Placement, not presence, is the concession to this hook's token budget:
+  // re-injection is capped at 10 tasks, and repeating ~260 characters of clause
+  // text ten times would refill a context that was just compacted to make room.
+  // They are stated once, immediately beneath the tasks they qualify, and they
+  // are never omitted. Dropping them was D1 — `_PostCompact` fires at the exact
+  // moment the agent has lost its working memory and is under the most pressure
+  // to close out, which is when both directions matter most.
+  if (anyContractShown || anyLeaseShown) {
+    lines.push("  - clauses recorded on the contracts and leases above (quoted, not new rules):");
+    if (anyContractShown) lines.push(...renderGoalContractClauseLines("    "));
+    if (anyLeaseShown) lines.push(`    - self-fencing: ${LEASE_SELF_FENCING_CLAUSE}`);
   }
 
   const shownSessions = sessions.slice(0, MAX_POST_COMPACT_SESSIONS);

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,7 @@ import { z } from "zod";
 import { guardedExecFile } from "./execution_policy.js";
 import { jsonContent } from "./agent_tool_helpers.js";
 import { compactOutput } from "./output_compaction.js";
+import { redactSecrets } from "./supervisor_completion_tools.js";
 
 // --- Capture-then-truncate -------------------------------------------------
 //
@@ -72,7 +73,12 @@ export interface CmdResult {
    * `bad_cwd`, `deps_not_installed` for `could_not_run`.
    */
   reasonCode?: string;
-  /** One sentence naming the fix. Present only for `could_not_run`. */
+  /**
+   * One sentence naming the fix. Present for every `could_not_run`, and for a
+   * `denied` whose cause is a caller-side limitation rather than a policy
+   * judgement — today that is `hook_arg_pattern_blocked`, where the usual
+   * cause is a quoted argument this tool cannot express (D5).
+   */
   remediation?: string;
   /** Bounded head+tail view of the output. */
   output: string;
@@ -87,6 +93,19 @@ export interface CmdResult {
 // Artifacts live in a per-session scratch dir under the OS temp dir — NEVER in
 // the repo. XX_STACK_SCRATCH_DIR overrides the base for tests and for hosts
 // that put scratch space elsewhere.
+//
+// D3: the capture on disk stays RAW (see the redaction note on `toResult`),
+// which makes the path itself the exposure. `os.tmpdir()` is world-readable
+// and this path is predictable — `<tmp>/xx-stack-scratch/verify-edit-<pid>` —
+// so on a shared machine every other user could read the last 8 full captures.
+// The directory is created 0700 and each artifact written 0600: same trust
+// level as the working tree, and nothing wider.
+
+/** Directory mode for the session scratch dir — owner only. */
+const SCRATCH_DIR_MODE = 0o700;
+
+/** File mode for a full-capture artifact — owner read/write only. */
+const ARTIFACT_FILE_MODE = 0o600;
 
 const SESSION_ID = `${process.pid}`;
 const ringPaths: string[] = [];
@@ -109,8 +128,11 @@ export function writeFullOutputArtifact(label: string, content: string): string 
   artifactSeq += 1;
   const path = join(dir, `${label}-${String(artifactSeq).padStart(4, "0")}.log`);
   try {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path, content, "utf8");
+    mkdirSync(dir, { recursive: true, mode: SCRATCH_DIR_MODE });
+    // mkdir's mode is masked by umask and ignored entirely for a directory
+    // that already exists, so the mode is asserted rather than requested.
+    chmodSync(dir, SCRATCH_DIR_MODE);
+    writeFileSync(path, content, { encoding: "utf8", mode: ARTIFACT_FILE_MODE });
   } catch {
     return undefined;
   }
@@ -154,6 +176,40 @@ interface RawRun {
 
 /** Package managers whose failure is worth one cheap precondition check. */
 const NPM_ECOSYSTEM_COMMANDS = new Set(["npm", "npx", "pnpm", "yarn"]);
+
+/** The execution policy's reason code for an argument that fails its charset. */
+const ARG_PATTERN_DENIAL = "hook_arg_pattern_blocked";
+
+// --- D5: a quoted argument cannot be expressed, and now says so -------------
+//
+// `lintCmd`/`testCmd` are split on whitespace and handed to execFile as argv.
+// That is a deliberate design property, NOT an oversight: there is no shell in
+// the path, so there is no shell grammar to defeat, which is why several
+// upstream shell-quoting mitigations were correctly declined. Adding a shell
+// parser here would create the attack surface those mitigations exist to
+// manage.
+//
+// The cost is real though: `npx jest -t "my test"` splits into `-t`, `"my`,
+// `test"`, and the leading quote fails SAFE_HOOK_ARG_PATTERN (quotes are not
+// in its charset). The denial was correct and loud but anonymous — the caller
+// got `hook_arg_pattern_blocked` and no hint that quoting was the cause. Since
+// `goalContract.validationCmd` flows through this tool, that costs a whole
+// verify cycle to diagnose.
+
+/** Arguments carrying a quote character — the usual cause of the denial. */
+function quotedArgs(args: string[]): string[] {
+  return args.filter((arg) => arg.includes('"') || arg.includes("'"));
+}
+
+/** One sentence naming the limitation behind an argv-charset denial. */
+function argPatternRemediation(args: string[]): string {
+  const quoted = quotedArgs(args);
+  const base =
+    "verify_edit splits the command on whitespace and runs it as argv with no shell, so a quoted argument cannot be expressed — the quote characters become part of the argument and fail the allowed-argument pattern. Use a form that needs no quoting (a config file, an npm script, or a pattern without spaces).";
+  return quoted.length > 0
+    ? `${base} The rejected argument(s) contained quotes: ${quoted.join(" ")}.`
+    : `${base} Allowed argument characters are letters, digits, and _./:@%+=,- — no spaces, quotes, or shell metacharacters.`;
+}
 
 /** The shape a spawn error arrives in — read structurally, never re-parsed. */
 interface SpawnFailure {
@@ -204,11 +260,13 @@ async function runCommand(
     // when the policy blocks it, before any process is spawned.
     if (message.startsWith("execution_policy_denied:")) {
       const reason = message.slice("execution_policy_denied:".length).split(":")[0]!.trim();
+      const reasonCode = reason.length > 0 ? reason : "execution_policy_denied";
       return {
         ok: false,
         full: message,
         outcome: "denied",
-        reasonCode: reason.length > 0 ? reason : "execution_policy_denied",
+        reasonCode,
+        ...(reasonCode === ARG_PATTERN_DENIAL ? { remediation: argPatternRemediation(args) } : {}),
       };
     }
 
@@ -275,11 +333,21 @@ async function runCommand(
 export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps): void {
   server.tool(
     "verify_edit",
-    "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Each result carries an `outcome` of pass | fail | could_not_run | denied with a machine-readable `reasonCode`: 'could_not_run' means this lane could not execute the command (missing binary, missing node_modules, bad cwd, timeout) and is NOT evidence about the code, and carries a one-sentence `remediation`. Output is captured in full, returned as a bounded head+tail view, and the complete capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
+    "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Each result carries an `outcome` of pass | fail | could_not_run | denied with a machine-readable `reasonCode`: 'could_not_run' means this lane could not execute the command (missing binary, missing node_modules, bad cwd, timeout) and is NOT evidence about the code, and carries a one-sentence `remediation`. Commands are split on whitespace and run as argv with no shell, so quoted arguments cannot be expressed (a denial with reasonCode 'hook_arg_pattern_blocked' says so in `remediation`). Output is captured in full, returned as a bounded head+tail view with secrets redacted, and the complete unredacted capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
     {
       cwd: z.string().describe("Working directory for the commands"),
-      lintCmd: z.string().optional().describe("Lint command to run (e.g. 'npx eslint .')"),
-      testCmd: z.string().optional().describe("Test command to run (e.g. 'npm test')"),
+      lintCmd: z
+        .string()
+        .optional()
+        .describe(
+          "Lint command to run (e.g. 'npx eslint .'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
+        ),
+      testCmd: z
+        .string()
+        .optional()
+        .describe(
+          "Test command to run (e.g. 'npm test'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
+        ),
       compactOptions: z
         .object({
           cap: z.number().optional().describe("Maximum output length in characters"),
@@ -309,10 +377,32 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
         };
 
         if (raw.outcome === "denied") {
-          return { ...classification, output: raw.full, truncated: false };
+          return { ...classification, output: redactSecrets(raw.full), truncated: false };
         }
 
-        let text = raw.full;
+        // --- D3: the travelling copy is redacted, the local capture is not ---
+        //
+        // MANUAL §5: secrets are redacted from rendered lines, credential
+        // LOCATIONS survive, values never do. That was enforced on supervisor
+        // prompts and on the review diff but not here — even though lint and
+        // test-runner stdout is the highest-variance untrusted text in the
+        // system, and a failing DB test printing its DSN is the ordinary case,
+        // not the exotic one. This `output` is embedded in continuation
+        // prompts that travel to other lanes, so it is redacted.
+        //
+        // The tension is real and was adjudicated rather than split: redacting
+        // a test failure can destroy the very diff the agent needs to repair
+        // it. So the RAW capture stays on disk at `fullOutputPath` — local,
+        // same trust level as the working tree, greppable for the assertion
+        // diff — and only the copy that leaves this machine's process is
+        // redacted. The path is 0700/0600 so "local" means local.
+        //
+        // Redaction runs BEFORE compaction on purpose: a secret that the view
+        // cap cuts in half would otherwise pass a value-pattern matcher and
+        // leak its first half. `redactSecrets` is called with no path — this
+        // is command output, not a dotenv file, so the structural
+        // redact-every-value pass must not fire.
+        let text = redactSecrets(raw.full);
         let truncated = false;
 
         if (compactOptions) {
