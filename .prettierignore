@@ -10,10 +10,12 @@ opencode-orchestration/mcp-server/
 opencode-orchestration/scripts/
 opencode-orchestration/packs/
 
-# Content pack: design systems and skills are largely vendored or derived from
-# upstream projects (each carries its own attribution and, where applicable,
-# LICENSE). Reformatting them would create churn in third-party content and
-# obscure real diffs against upstream.
+# Content packs: design systems, skills, and rule books are largely vendored
+# from upstream projects. Attribution and license texts live at the pack root
+# (packs/rules/{LICENSE,manifest.json}, packs/design/{licenses/,manifest.json}),
+# not per file — the vendored files themselves carry no license headers.
+# Reformatting them would create churn in third-party content and destroy the
+# byte-comparison against upstream that the manifests depend on.
 xx-stack/packs/
 
 # Generated artifacts

@@ -43,6 +43,11 @@ The design pack includes:
 - generated catalogs derived from those libraries
 - design-specific workflow assets and templates
 - design-specific eval fixtures and gates
+- `manifest.json` recording per-subtree provenance and license, with an
+  explicit `verified` / `asserted` / `unknown` marker on each entry
+- `licenses/` holding the verbatim upstream license texts the vendored
+  material is redistributed under, plus the per-skill
+  `workflow-skills/guizang-ppt/LICENSE` that upstream itself carves out
 
 The rules pack (`packs/rules/`) includes:
 

@@ -123,9 +123,12 @@ its mirror are:
 3. `runtime/` → `opencode/` and `adapters/` → `vscode/` path rewrites
 4. `skill: allow` → `skill: {"*": allow}`
 
-**Anything else that differs is drift**, and `check-stack-source-drift.mjs`
-cannot see it — that script compares directory *names* only and says so in its
-own docstring. §11 records the drift this blindness allowed.
+**Anything else that differs is drift**, and `npm run drift:check` now reads
+file *contents* to catch it, not just directory names. It did not always: §11
+records the drift that blindness allowed, including an agent mirror missing 120
+lines of behavioral guardrails. There is a real fifth delta — a pinned mirror
+describes its lane in its own words — which the check waives narrowly and
+prints on every run; see §9.
 
 ---
 
@@ -424,11 +427,31 @@ BUILD-1). A green `agents:check` does not mean all agents are mirrored.
 plus evals and its own gates. `DESIGN-CATALOG.md` is generated
 (`npm run design:catalog`) and in sync.
 
-Gates: `npm run design:golden` (5/5 passing) and `npm run design:html-gate`
-(**currently failing 20/67 and wired into nothing** — §11, BUILD-2).
+Gates: `npm run design:golden` (5/5) and `npm run design:html-gate` (67/67, in
+CI). Both green.
 
-Not Prettier-formatted, by policy — reformatting vendored content obscures real
-diffs against upstream (`.prettierignore`).
+**This pack is vendored, not authored here** — a correction to an earlier
+belief recorded in this manual. It was described as clean-room reinterpretation
+because the files say "Design System Inspired by Apple"; a byte-level audit
+found 121 of 137 `design-systems/` files **identical** to
+`nexu-io/open-design`. That framing is upstream's, not ours. The pack
+redistributes, which is why Apache-2.0's requirement to ship the license text
+applies to it:
+
+| Upstream | License | Supplies |
+|---|---|---|
+| `nexu-io/open-design` | Apache-2.0 | 136 of 137 design systems, all 31 workflow skills |
+| `bergside/awesome-design-skills` | MIT | all 57 design skills |
+| `VoltAgent/awesome-design-md` | MIT | one file (`bmw-m`) |
+| op7418 (歸藏) | MIT | `workflow-skills/guizang-ppt/` |
+
+License texts are vendored under `packs/design/licenses/`; per-subtree
+provenance, including what could **not** be established, is in
+`packs/design/manifest.json`. Open licensing questions are in §11.1.
+
+Not Prettier-formatted, by policy — reformatting vendored content would destroy
+byte-comparability against upstream, which is the only way to tell our edits
+from upstream's (`.prettierignore`).
 
 ### `packs/rules`
 
@@ -519,7 +542,7 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 |---|---|---|
 | `layout:verify` | component layout, symlinks, executable bits | only the layouts it knows; an unmapped directory is invisible (this is how `xx-stack/vscode/` rotted unnoticed) |
 | `agents:check` | every canonical agent is mirrored or explicitly opted out | — (was 8 of 21 before the audit) |
-| `drift:check` | canonical and opencode have the same *names* | **all content drift** — it says so in its own docstring. See below. |
+| `drift:check` | names **and content** of 63 mirrored pairs, after normalizing the deliberate deltas | waived deltas — see below |
 | `rules:check` | coverage map matches the skill/agent surface | — |
 | `nano:check` | nano variants exist, under cap, canonical hashes pinned, mirrors identical | — |
 | `inventory:check` | generated registries are current | — |
@@ -530,16 +553,29 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 | `test` | MCP suite | see §11 for the classes it historically missed |
 | `hermes:test` | Python suite, against the *shipped* allowlist | — |
 
-**The one gate you must not trust for content.** `drift:check` compares
-directory *names* between canonical and the OpenCode mirror. It does not read
-the files. Every content-drift defect in §11 passed it. Until it grows a
-`--content` mode, diff mirrored pairs by hand after normalizing the four
-deliberate deltas from §2:
+**How `drift:check` reads content, and what it waives.** It used to compare
+directory *names* only, which is how every content-drift defect in §11 got in —
+including an agent mirror missing 120 lines of concurrency and spawn-depth caps.
+It now diffs 63 mirrored pairs after normalizing the deltas from §2, and runs
+that way by default (`--names-only` / `--content-only` exist for debugging).
 
-```bash
-diff <(grep -v '^compatibility:' xx-stack/runtime/skills/NAME/SKILL.md) \
-     <(grep -v '^compatibility:' opencode-orchestration/opencode/skills/NAME/SKILL.md)
-```
+Anything it cannot normalize is either a failure or an **exact-match** waiver
+carrying a written reason. That distinction is the whole design: a regex loose
+enough to absorb the legitimate differences would absorb real drift too, which
+is the bug this gate exists to prevent. Two waiver classes to know about:
+
+- **The pinned-lane `description:` line** is a real fifth delta — a mirror that
+  pins a model describes that lane in its own words. It is waived *only* when
+  the mirror has a pin the canonical side lacks, it is printed as a `NOTE` on
+  every run rather than hidden, and the first three words must still match, so
+  the waiver covers the lane wording and not a rewrite of what the agent is.
+- **`OPEN` entries** are unresolved differences a human has to adjudicate. They
+  are waived so the gate stays usable and printed in full every run. There is
+  currently one; see §11.1.
+
+A new mirrored top-level document must be classified as gated or explicitly
+excluded, or the check fails — that is how a runbook drifted 90 lines
+undetected.
 
 ### What `verify` still does NOT cover
 
@@ -547,12 +583,23 @@ diff <(grep -v '^compatibility:' xx-stack/runtime/skills/NAME/SKILL.md) \
 do fail), `design:catalog` staleness (it mutates the tree, so CI checks it
 separately), and the Node 20/22 matrix. Treat CI as the final authority.
 
-### Surfaces with no gate at all
+### Every mirror surface is now gated
 
-- `opencode-orchestration/vscode/agents/` — hand-maintained mirrors with no
-  sync script and no check. They drift silently. (`xx-stack/adapters/agents/`
-  *is* generated and gated.)
-- Pack content beyond the design pack's own two gates.
+`agents:check` covers **36 mirrors across both components** — it drives
+`runtime→adapters` and `opencode→vscode` from the same component map
+`verify-repo-layout.mjs` uses, deriving each set by reading the agent directory.
+`vscode/agents/` used to be hand-maintained with no sync and no check; when
+generation was switched on it turned out 8 of 18 agents were covered and the
+bodies were 20–45% shorter than their source — the same defect class as §11
+CONTENT-2, live on a surface `setup-vscode.sh` copies into users' prompt
+directories.
+
+`adapters/skills` ↔ `vscode/skills` are hand-maintained on both sides (nothing
+generates either) and are gated by the content check instead.
+
+Pack content beyond the design pack's own two gates remains ungated, which is
+acceptable for vendored material — see `packs/design/manifest.json` for what it
+is and where it came from.
 
 ### The pre-commit hook
 
@@ -703,18 +750,26 @@ Two things are worth carrying forward from how these were found:
 
 ### 11.1 Still open
 
-Found while fixing the above, or deliberately deferred. Nothing here is a data
-loss or security risk.
+Nothing here is a data-loss, security, or correctness risk. Each needs a human
+judgment call rather than a fix.
 
 | Item | Severity | Why it is still open |
 |---|---|---|
-| `log_worker.logEvent` swallows every write error in a bare `catch`. | RISK | `record_telemetry` now awaits the write and reports `accepted` / `best-effort` rather than falsely claiming `recorded`, so the lie is gone — but a full disk still resolves successfully. Making it fully honest means deciding whether a telemetry write failure should ever be able to fail a caller's operation, which is a policy question, not a bug fix. |
-| `hardwareCache` caches partial probe results permanently. | NIT | Each of the three hardware probes is independently try/caught, so if `free` or `lspci` is transiently missing at first call, the incomplete result is cached for the life of the process. Correct fix is to cache only when all probes succeed, or memoize per probe — it changes probe semantics, so it was left alone. |
-| `search_tools` categories are a stretch for some tools. | NIT | `build_repo_map` and `verify_edit` are filed under `observability` because widening the category enum is a public schema change. The catalog is complete and now gated; only the taxonomy is imperfect. |
-| `packs/design` has no LICENSE or source manifest. | RISK | The README and `.prettierignore` both promise per-pack licenses, and only 1 of 225 design subtrees has one (`packs/rules` does it correctly, recording repo, commit, and license). The content is framed as clean-room reinterpretation ("inspired by"), so the exposure is documentary rather than certainly infringing — but it is a real gap and the upstream (`nexu-io/open-design`) is identifiable. **Needs a human decision**, which is why it was not auto-fixed. |
-| `design-skills/index.json` has 114 broken paths. | STALE | Every entry points at `skills/<slug>/…`; the real layout is `design-skills/<slug>/…`. Nothing reads the file — the catalog generator explicitly filters it out — so it is inert. It is upstream's index carried over without the rename applied; deleting it or regenerating it is a call about how closely to track upstream. |
-| The `full` tier of all 11 rule books is unused. | NIT | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only if a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody "cleans up" content that is deliberately on standby. |
-| `drift:check` cannot see content. | RISK | The single highest-leverage remaining improvement: a `--content` mode that diffs bodies after normalizing the four deliberate deltas would have caught every content-drift defect in this register. See §9. |
+| `design-system-pick` prompt: the OpenCode copy lists `ollama` and `opencode` design systems the xx-stack copy omits. | OPEN | Both exist under `packs/design/design-systems`, and both prompts claim the same 137 brands. The stale side is **canonical**, so the repo's "canonical wins" rule does not resolve it: this is either deliberate de-branding of the xx-stack surface or a rotted curated list. `drift:check` prints it as `OPEN` with full reasoning on every run rather than hiding it. |
+| The design pack records no upstream commit sha. | OPEN | `packs/rules` pins `9c87636`; the design pack has no equivalent, so drift can only be measured against upstream HEAD — which cannot distinguish our edits from upstream's without reading every diff. 40 Apache-licensed files differ from HEAD and it is not currently knowable which changed on which side. Resolving it means bisecting upstream history against our hashes, or re-vendoring at a pinned sha. |
+| Apache-2.0 §4(b) notice placement for modified files. | OPEN | The 40 modified files are recorded centrally in `packs/design/manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call. |
+| Trademark posture for ~100 brand names in `design-systems/`. | OPEN | Nominative descriptive use is normally fine and the risk is inherited from upstream, but no explicit decision is recorded in this repo. |
+| The `full` tier of all 11 rule books is unused. | NIT — **do not "fix"** | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only when a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody deletes content that is deliberately on standby. |
+
+### 11.2 Closed since the audit
+
+Three items moved out of §11.1. Each has a test that fails without the fix.
+
+| Item | How it was resolved |
+|---|---|
+| `log_worker.logEvent` swallowed every write error. | The policy question is answered: **telemetry never fails a caller's operation** — it is an observability sink, and a metrics failure taking down routing would be absurd. Silence is the part that was wrong. `logEvent` still never throws, but it now returns a `LogEventResult`, counts failures in `telemetryHealth()`, and announces each distinct failure once on stderr (stdout is the MCP channel). `record_telemetry` reports `durability: "failed"` with the reason instead of always claiming `best-effort`, and surfaces the process-lifetime counter — the only trace the 24 fire-and-forget `void logEvent(...)` call sites ever leave. The `dirEnsured` latch is cleared on failure, so a deleted log directory is re-created instead of killing telemetry for the life of the process. |
+| `hardwareCache` cached partial probe results permanently. | Per-probe memoization. A probe that succeeds never runs again; a probe that fails is retried on the next call until it has failed 3 times, then treated as genuinely absent. A fully-successful call is still cached wholesale, so the common path is unchanged at three `execFile`s once. An unavailable probe still leaves its field unset rather than throwing. |
+| `search_tools` categories were a stretch for some tools. | The enum was widened with `context` and `verification`, and `build_repo_map` / `verify_edit` were re-filed out of `observability`. It is a schema change, but an additive one on a *discovery* surface: the five original values still validate and the filter is optional. `TOOL_CATALOG` stays curated — see the comment above it for the measured reasons derivation from `server.tool(...)` was rejected. |
 
 ---
 
@@ -726,8 +781,9 @@ loss or security risk.
 2. Register the tool in `<area>_tools.ts` inside the existing
    `registerXxxTools`, using `server.tool(name, description, zodSchema, handler)`.
 3. Wire the group in `index.ts` only if it is a new group.
-4. Add the tool to `TOOL_CATALOG` in `observability_tools.ts` — this is
-   currently manual and drifts (MCP-13).
+4. Add the tool to `TOOL_CATALOG` in `observability_tools.ts` — deliberately
+   manual (see §13 for why), and gated by a drift test since MCP-13. Pick a
+   category from `TOOL_CATEGORIES`, or add one; do not mis-file it.
 5. `npm run verify`.
 
 ### Adding a skill
@@ -788,10 +844,18 @@ check derives its set from the directory, so a new agent must either be mirrored
 here; noise is the fix.
 
 **A tool is registered but `search_tools` can't find it.** Add it to
-`TOOL_CATALOG` in `observability_tools.ts` — the catalog is still hand-written.
-A test now fails when a registered tool has no entry, so you will hear about it
+`TOOL_CATALOG` in `observability_tools.ts`. The catalog is hand-written on
+purpose: deriving it from the `server.tool(name, description, ...)`
+registrations was measured and rejected — 30% of the search keywords appear
+nowhere in the registration prose, nothing there names a category, and the
+registration text is 2.6x the bytes because it is written for a model about to
+*call* the tool, not to be listed in a result set. The reasoning and the numbers
+are in the comment above `TOOL_CATALOG`; don't re-litigate it without new ones.
+A test fails when a registered tool has no entry, so you will hear about it
 before CI does. Deliberately hidden tools (`_Stop`, `_PostCompact`) belong in
-the test's exemption set, not the catalog.
+the test's exemption set, not the catalog. If the tool is not observability,
+routing, supervision, a task, or an agent, add a category to `TOOL_CATEGORIES`
+rather than mis-filing it — the zod filter is derived from that list.
 
 **A store tool returns `store_unavailable`.** The state file exists but could
 not be read or parsed. The payload carries the exact path and errno. This is

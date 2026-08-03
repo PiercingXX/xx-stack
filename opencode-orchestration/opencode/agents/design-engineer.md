@@ -1,6 +1,6 @@
 ---
 name: design-engineer
-description: "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills."
+description: "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Vendored from nexu-io/open-design (Apache-2.0) and bergside/awesome-design-skills (MIT), plus one file from VoltAgent/awesome-design-md (MIT); see packs/design/manifest.json."
 mode: subagent
 model: sglang-remote/qwen3-coder-next
 temperature: 0.25

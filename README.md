@@ -245,6 +245,18 @@ it exists, and the stack falls back to running everything locally.
 
 ## License
 
-[MIT](LICENSE). The design and rules packs include material from upstream
-projects that carry their own licenses — see the `LICENSE` files in those
-pack directories.
+[MIT](LICENSE), for everything except the two content packs, which are largely
+vendored from upstream projects under their own licenses:
+
+- **`xx-stack/packs/rules`** — MIT, from
+  [ciembor/agent-rules-books](https://github.com/ciembor/agent-rules-books).
+  Upstream text at
+  [`packs/rules/LICENSE`](xx-stack/packs/rules/LICENSE); provenance at
+  [`packs/rules/manifest.json`](xx-stack/packs/rules/manifest.json).
+- **`xx-stack/packs/design`** — Apache-2.0 and MIT, from three upstreams.
+  Upstream texts at
+  [`packs/design/licenses/`](xx-stack/packs/design/licenses) plus
+  [`packs/design/workflow-skills/guizang-ppt/LICENSE`](xx-stack/packs/design/workflow-skills/guizang-ppt/LICENSE);
+  per-subtree provenance, including what could not be established, at
+  [`packs/design/manifest.json`](xx-stack/packs/design/manifest.json) and
+  [`packs/design/README.md`](xx-stack/packs/design/README.md).
