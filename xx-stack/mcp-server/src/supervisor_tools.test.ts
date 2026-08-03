@@ -87,7 +87,7 @@ interface Captured {
 function captureTools(reliability: Partial<ReliabilityConfig> = {}): Captured {
   const handlers: Record<string, Handler> = {};
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    registerTool: (...args: unknown[]) => {
       handlers[args[0] as string] = args[args.length - 1] as Handler;
     },
   } as unknown as McpServer;

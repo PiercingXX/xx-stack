@@ -127,7 +127,7 @@ function harness(options: HarnessOptions = {}): Harness {
   };
 
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    registerTool: (...args: unknown[]) => {
       captured.handler = args[args.length - 1] as Handler;
     },
   } as unknown as McpServer;
@@ -305,7 +305,7 @@ test("the diff is read from the session's repo, not the server's launch director
 
     let handler: Handler = async () => ({ content: [] });
     const fakeServer = {
-      tool: (...args: unknown[]) => {
+      registerTool: (...args: unknown[]) => {
         handler = args[args.length - 1] as Handler;
       },
     } as unknown as McpServer;
@@ -380,7 +380,7 @@ test("a real unreadable repo surfaces as unavailable rather than a clean tree", 
     let handler: Handler = async () => ({ content: [] });
     registerReviewTools(
       {
-        tool: (...args: unknown[]) => {
+        registerTool: (...args: unknown[]) => {
           handler = args[args.length - 1] as Handler;
         },
       } as unknown as McpServer,

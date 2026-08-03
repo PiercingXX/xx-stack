@@ -4,6 +4,21 @@ import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
 import { ContextCandidate, estimateTokens, selectContext } from "./context_selection_runtime.js";
+import { loadRegistry } from "./platform_runtime.js";
+import type { Registry } from "./platform_types.js";
+
+/**
+ * Test seam for the two process-spawning / registry-reading calls this module
+ * makes.
+ *
+ * Both failure paths — a `git log` that fails on an otherwise-usable repo, and
+ * a registry that cannot be loaded — are properties of the machine running the
+ * suite, not of any fixture, so they are only reachable from a test that can
+ * decide the outcome. The spawn count is also the *only* non-timing way to
+ * assert that the recency walk is one process and not one per file.
+ * Swapped only by `repo_map_runtime.test.ts`; production never reassigns it.
+ */
+export const __repoMapIo = { execFileSync, loadRegistry };
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,11 +36,11 @@ export interface RepoMapOmission {
   count: number;
   /**
    * At most {@link OMISSION_EXAMPLE_LIMIT} paths. Deterministic: every class
-   * except `droppedForBudget` and `truncated` keeps the lexicographically
-   * first paths, so the sample does not depend on filesystem or `git ls-files`
-   * ordering. Those two keep the highest-*ranked* paths instead, because
-   * "the next best file you did not get" is the useful sample there and rank
-   * order is itself deterministic.
+   * except `droppedForScale`, `droppedForBudget` and `truncated` keeps the
+   * lexicographically first paths, so the sample does not depend on filesystem
+   * or `git ls-files` ordering. Those three keep the highest-*ranked* paths
+   * instead, because "the next best file you did not get" is the useful sample
+   * there and rank order is itself deterministic.
    */
   examples: string[];
 }
@@ -63,10 +78,36 @@ export interface RepoMapOmissions {
   binary: RepoMapOmission;
   /** Zero-length; carries no context and was already being dropped in silence. */
   empty: RepoMapOmission;
+  /**
+   * Ranked below {@link MAX_SELECTION_CANDIDATES} and therefore never offered
+   * to selection at all — distinct from `droppedForBudget`, which competed and
+   * lost. A capped run is never silently partial.
+   */
+  droppedForScale: RepoMapOmission;
   /** Readable source that simply did not fit `tokenBudget`. */
   droppedForBudget: RepoMapOmission;
   /** Included, but only a head of it — the tail is not in `ranges`. */
   truncated: RepoMapOmission;
+}
+
+/** Where the applied token budget came from, and what it was derived from. */
+export interface RepoMapBudget {
+  /** The budget actually applied. */
+  tokenBudget: number;
+  /**
+   * `explicit` — the caller named a budget, used verbatim.
+   * `contextWindow` — derived from a caller-supplied window.
+   * `model` — derived from the window the registry records for that model.
+   * `default` — no window was available; {@link DEFAULT_TOKEN_BUDGET}.
+   */
+  source: "explicit" | "contextWindow" | "model" | "default";
+  /** The nominal window the budget was derived from, or null. */
+  contextWindow: number | null;
+  /**
+   * Tokens held back for the prompt itself. Always 0 for an `explicit` budget:
+   * a caller-named budget is used exactly as given.
+   */
+  reservedTokens: number;
 }
 
 export interface RepoMapResult {
@@ -74,14 +115,197 @@ export interface RepoMapResult {
   tokensEstimated: number;
   method: "heuristic" | "treesitter";
   omissions: RepoMapOmissions;
+  /** The budget that was applied, and where it came from. */
+  budget: RepoMapBudget;
 }
 
 export interface BuildRepoMapOptions {
   root: string;
+  /**
+   * Explicit budget. Always wins: when present the model/window inputs below
+   * are not consulted and nothing is reserved.
+   */
   tokenBudget?: number;
   focusPaths?: string[];
   includeSymbols?: boolean;
+  /**
+   * Model the context is being built for. When `tokenBudget` is omitted the
+   * budget is derived from this model's context window as recorded in the
+   * platform registry (a file read — no network call, and no probe).
+   */
+  model?: string;
+  /** Host id, to disambiguate a model name served by more than one host. */
+  host?: string;
+  /**
+   * Nominal context window, when the caller already knows it. Wins over the
+   * registry lookup; skips it entirely.
+   */
+  contextWindow?: number;
+  /**
+   * Tokens to hold back from a *derived* budget for the rest of the prompt —
+   * system prompt, task, tool definitions, conversation so far. Ignored when
+   * `tokenBudget` is explicit.
+   */
+  reservedTokens?: number;
+  /**
+   * Override {@link MAX_SELECTION_CANDIDATES}. Exists so the suite can exercise
+   * the cap without a thousand-file fixture, and so a caller who knows their
+   * repo can trade memory for reach; the default is the supported setting.
+   */
+  maxCandidates?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Token budget
+// ---------------------------------------------------------------------------
+
+/**
+ * Budget used when nothing is known about the target model's context window.
+ * The historical hardcoded value, kept exactly: an unknown or absent window
+ * must land on the same number the tool returned before it could derive one.
+ */
+export const DEFAULT_TOKEN_BUDGET = 8000;
+
+/**
+ * Fraction of a model's *nominal* context window the repo map may occupy when
+ * it derives its own budget.
+ *
+ * Nameplate context is not usable context — the same insight already accepted
+ * for VRAM in the residency work, where hosts reserve 20-25%
+ * (`executionPolicy.contextReservePercent`) rather than plan against the
+ * sticker number. For context windows the gap is wider still, for two reasons
+ * that compound:
+ *
+ * - The repo map is one input among several. The window also has to hold the
+ *   system prompt, the task, tool definitions, prior turns, and the model's
+ *   own output. A repo map that fills the window leaves nothing to think with.
+ * - Quality and latency degrade well before the nominal limit. Attention
+ *   dilutes over long contexts and prefill cost grows with it, which matters
+ *   most for exactly the small local models this stack targets.
+ *
+ * 0.25 is also what the old hardcoded default already implied: 8,000 tokens is
+ * 24.4% of a 32,768-token window, the commonest local size. So the discount
+ * keeps today's behaviour for the model class the hardcoded number was written
+ * for, and scales from there — a 262,144-window lane (the one this registry
+ * records) gets 65,536 instead of 8,000, and a 4,096-token lane gets 1,024
+ * instead of an 8,000-token budget it could never have honoured.
+ */
+export const USABLE_CONTEXT_FRACTION = 0.25;
+
+/**
+ * Floor for a derived budget. A tiny window with a large `reservedTokens` can
+ * arithmetically produce zero or less, and `selectContext` treats a
+ * non-positive budget as "select nothing" — an empty map is a worse answer than
+ * a small one. 512 tokens still returns the head of the top-ranked file.
+ */
+export const MIN_DERIVED_TOKEN_BUDGET = 512;
+
+/**
+ * Look up a model's recorded context window in the platform registry.
+ *
+ * When more than one host serves the same model name the smallest window wins:
+ * the budget has to be honourable wherever the task actually lands, and a
+ * too-small map is recoverable where an overflowing one is not.
+ */
+export function findContextWindow(
+  registry: Registry,
+  modelName: string,
+  hostId?: string
+): number | null {
+  let smallest: number | null = null;
+  for (const tier of registry.tiers ?? []) {
+    for (const host of tier.hosts ?? []) {
+      if (hostId !== undefined && host.id !== hostId) continue;
+      for (const model of host.models ?? []) {
+        if (typeof model === "string") continue;
+        if (model?.name !== modelName) continue;
+        const window = model?.contextWindow;
+        if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) continue;
+        if (smallest === null || window < smallest) smallest = window;
+      }
+    }
+  }
+  return smallest;
+}
+
+function positiveInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : null;
+}
+
+/**
+ * Resolve the budget to apply. Degrades in one direction only: any input that
+ * is missing, malformed, or unresolvable lands on {@link DEFAULT_TOKEN_BUDGET},
+ * never on an exception and never on a budget the caller did not ask for.
+ */
+async function resolveBudget(options: BuildRepoMapOptions): Promise<RepoMapBudget> {
+  const explicit = positiveInt(options.tokenBudget);
+  if (explicit !== null) {
+    return { tokenBudget: explicit, source: "explicit", contextWindow: null, reservedTokens: 0 };
+  }
+
+  let window = positiveInt(options.contextWindow);
+  let source: RepoMapBudget["source"] = window === null ? "default" : "contextWindow";
+
+  if (window === null && options.model) {
+    try {
+      const registry = await __repoMapIo.loadRegistry();
+      window = positiveInt(findContextWindow(registry, options.model, options.host));
+      if (window !== null) source = "model";
+    } catch {
+      // No registry, or an unreadable one. A repo map is not the place to fail
+      // over a routing file; fall through to the default budget.
+      window = null;
+    }
+  }
+
+  if (window === null) {
+    return {
+      tokenBudget: DEFAULT_TOKEN_BUDGET,
+      source: "default",
+      contextWindow: null,
+      reservedTokens: 0,
+    };
+  }
+
+  const reserved = Math.max(0, positiveInt(options.reservedTokens) ?? 0);
+  const derived = Math.floor(window * USABLE_CONTEXT_FRACTION) - reserved;
+  return {
+    tokenBudget: Math.max(MIN_DERIVED_TOKEN_BUDGET, derived),
+    source,
+    contextWindow: window,
+    reservedTokens: reserved,
+  };
+}
+
+/**
+ * Ceiling on how many files are handed to submodular selection.
+ *
+ * `selectContext` builds a full n x n similarity matrix. At the ~900 files of
+ * this repo that is 6 MB and ~0.8s; at 20,000 files it is 3.2 GB and minutes.
+ * The constant factor is not the problem — `prepare()` already tokenizes each
+ * candidate once rather than per pair — the absence of a ceiling is.
+ *
+ * 1,000 is where two independent bounds meet:
+ *
+ * - **It cannot cost quality.** The most files any budget could select is
+ *   bounded above by packing the *smallest* files first, which the rank-ordered
+ *   greedy never does. Measured on this repo that bound is 54 files at the
+ *   8,000 default, 213 at 65,536 (the largest budget derivable here — the
+ *   262,144-window lane at {@link USABLE_CONTEXT_FRACTION}) and 315 at an
+ *   implausible 131,072; the cap is 4.7x and 3.2x those. What the map *really*
+ *   returns at those budgets is 4, 17 and 27 files, so the cap sits ~37x above
+ *   the largest realistic selection.
+ * - **It keeps the <2s acceptance criterion true at any repo size.** The
+ *   similarity stage is O(K^2); measured on this repo's files, 1,000
+ *   candidates cost ~0.96s and 7.6 MB, 1,500 cost ~2.2s and 17 MB. 1,500 alone
+ *   would blow the budget the rest of this work exists to meet.
+ *
+ * Files above the cap are reported as `droppedForScale`, so a run that hits it
+ * says so.
+ */
+export const MAX_SELECTION_CANDIDATES = 1000;
 
 // ---------------------------------------------------------------------------
 // Read guards
@@ -100,7 +324,7 @@ export interface BuildRepoMapOptions {
  * 2 MiB is chosen to be far too generous to ever drop real code:
  *
  * - The largest text file tracked in this repo is 108 KB
- *   (`UPSTREAM-BORROW-TODO.md`); the largest source file is 82 KB. The cap is
+ *   (the repository history); the largest source file is 82 KB. The cap is
  *   ~19x the former.
  * - It cannot cost the caller a file they could have used. At the ~4 chars per
  *   token this module already estimates with, 2 MiB is ~524,000 tokens. The
@@ -136,12 +360,14 @@ const OMISSION_CLASSES: OmissionClass[] = [
   "oversized",
   "binary",
   "empty",
+  "droppedForScale",
   "droppedForBudget",
   "truncated",
 ];
 
 /** Classes whose examples are kept in rank order rather than sorted. */
 const RANK_ORDERED: ReadonlySet<OmissionClass> = new Set<OmissionClass>([
+  "droppedForScale",
   "droppedForBudget",
   "truncated",
 ]);
@@ -554,7 +780,7 @@ function getGitTimestamp(filePath: string, cwd: string): number {
     // `$( )` would otherwise execute arbitrary shell during a repo map.
     // The `|| echo 0` shell fallback the old command carried is replaced by
     // the catch below, which already returns 0 on any git failure.
-    const out = execFileSync("git", ["log", "-1", "--format=%ct", "--", rel], {
+    const out = __repoMapIo.execFileSync("git", ["log", "-1", "--format=%ct", "--", rel], {
       cwd,
       encoding: "utf8",
       timeout: 5000,
@@ -564,6 +790,113 @@ function getGitTimestamp(filePath: string, cwd: string): number {
     return Number.isFinite(ts) ? ts * 1000 : 0;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * Marker prefixed to each commit header in the recency walk.
+ *
+ * `--name-only` interleaves commit headers with path lists in one stream, so
+ * the parser has to tell them apart. A bare `%ct` cannot be told from a file
+ * literally named `1785760520`; a leading `/` can, because `--name-only`
+ * emits repo-relative paths and never an absolute one.
+ */
+const GIT_LOG_COMMIT_PREFIX = "/";
+
+/**
+ * Last-commit timestamp (ms) for every path in the repo's history, in **one**
+ * `git log`.
+ *
+ * This replaces one `execFileSync("git log")` per discovered file. On this
+ * repo that was 899 spawns costing ~2.4s of a ~2.9s repo map — against a
+ * recorded acceptance criterion of <2s — where the whole history walk costs
+ * ~20ms.
+ *
+ * Parsing notes, each one a way this goes wrong:
+ *
+ * - `-z` for the same reason `git ls-files` needs it: without it git C-quotes
+ *   any path with a quote, a backslash, a control character or a non-ASCII
+ *   byte, and the quoted string names no real file.
+ * - The stream is `<header>NUL "\n"<path>NUL<path>NUL...`. The newline belongs
+ *   to git's header/list separator and is only emitted when a commit has a
+ *   path list, so it is stripped from the first record after a header and
+ *   nowhere else — a file whose name legitimately begins with a newline keeps
+ *   its name.
+ * - A path repeats across every commit that touched it, and history is not
+ *   ordered by commit date, so the newest timestamp wins rather than the first
+ *   one seen. Deleted and renamed paths appear too; they simply never get
+ *   looked up.
+ * - `--relative` because `root` may be a subdirectory of the repo, where
+ *   `git ls-files` prints paths relative to cwd but `git log` would print them
+ *   relative to the repo top level.
+ *
+ * Returns null — never throws — when the walk is unusable (not a git repo, git
+ * missing, output past `maxBuffer`, timeout). The caller then degrades to the
+ * per-file behaviour this replaced.
+ */
+export function collectGitTimestamps(cwd: string): Map<string, number> | null {
+  let output: string;
+  try {
+    output = __repoMapIo.execFileSync(
+      "git",
+      ["log", "-z", "--name-only", "--relative", `--format=${GIT_LOG_COMMIT_PREFIX}%ct`],
+      {
+        cwd,
+        encoding: "utf8",
+        timeout: 30000,
+        maxBuffer: 256 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      }
+    );
+  } catch {
+    return null;
+  }
+
+  const timestamps = new Map<string, number>();
+  let current = 0;
+  let afterHeader = false;
+
+  for (const record of output.split("\0")) {
+    let text = record;
+    if (afterHeader && text.startsWith("\n")) {
+      text = text.slice(1);
+      afterHeader = false;
+    }
+    if (text === "") continue;
+
+    if (text.startsWith(GIT_LOG_COMMIT_PREFIX)) {
+      const seconds = Number(text.slice(GIT_LOG_COMMIT_PREFIX.length));
+      current = Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0;
+      afterHeader = true;
+      continue;
+    }
+
+    if (current === 0) continue;
+    const known = timestamps.get(text);
+    if (known === undefined || current > known) timestamps.set(text, current);
+  }
+
+  return timestamps;
+}
+
+/**
+ * True when `root` is inside a git worktree.
+ *
+ * Only consulted when the bulk walk failed, to decide whether the per-file
+ * fallback could possibly do better. Without it a non-git directory would pay
+ * one doomed spawn per file — the exact cost the bulk walk exists to remove.
+ */
+function isGitRepo(cwd: string): boolean {
+  try {
+    __repoMapIo.execFileSync("git", ["rev-parse", "--git-dir"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -614,12 +947,16 @@ function commonPrefixLength(a: string, b: string): number {
 // ---------------------------------------------------------------------------
 
 export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMapResult> {
-  const { root, tokenBudget = 8000, focusPaths = [], includeSymbols = false } = options;
+  const { root, focusPaths = [], includeSymbols = false } = options;
 
   const resolvedRoot = resolve(root);
   if (!existsSync(resolvedRoot)) {
     throw new Error(`Repo root not found: ${resolvedRoot}`);
   }
+
+  const budget = await resolveBudget(options);
+  const tokenBudget = budget.tokenBudget;
+  const maxCandidates = positiveInt(options.maxCandidates) ?? MAX_SELECTION_CANDIDATES;
 
   const omissions = newOmissions();
   const discovery = await discoverFiles(resolvedRoot);
@@ -633,8 +970,14 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
       tokensEstimated: 0,
       method: "heuristic",
       omissions: finalizeOmissions(omissions),
+      budget,
     };
   }
+
+  // One `git log` for the whole repo. Only when that is unusable *and* git
+  // could still answer per file do we pay the old spawn-per-file price.
+  const bulkTimestamps = collectGitTimestamps(resolvedRoot);
+  const perFileTimestamps = bulkTimestamps === null && isGitRepo(resolvedRoot);
 
   // Each file is read exactly once, behind the size and binary guards, and the
   // content is carried through scoring and selection.
@@ -650,7 +993,11 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
     contents.set(relPath, outcome.content);
     signals.push({
       path: relPath,
-      gitTimestamp: getGitTimestamp(fullPath, resolvedRoot),
+      gitTimestamp: bulkTimestamps
+        ? (bulkTimestamps.get(relPath) ?? 0)
+        : perFileTimestamps
+          ? getGitTimestamp(fullPath, resolvedRoot)
+          : 0,
       proximityScore: computeProximityScore(relPath, focusPaths),
       refCount: countReferences(outcome.content),
     });
@@ -662,6 +1009,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
       tokensEstimated: 0,
       method: "heuristic",
       omissions: finalizeOmissions(omissions),
+      budget,
     };
   }
 
@@ -677,6 +1025,12 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
 
   signals.sort((a, b) => b.proximityScore - a.proximityScore);
 
+  // Cap the candidate set before selection: rank by the cheap heuristic first,
+  // then run the O(n^2) submodular pass over the top K only. Everything below
+  // the cap is reported (`droppedForScale`), never dropped in silence.
+  const ranked = signals.slice(0, maxCandidates);
+  for (const s of signals.slice(maxCandidates)) noteOmission(omissions, "droppedForScale", s.path);
+
   // -------------------------------------------------------------------------
   // Budget fitting via submodular context selection (context_selection_runtime).
   // The heuristic score above stays the relevance signal; coverage/diversity
@@ -685,7 +1039,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
   // than stop at the first non-positive marginal gain.
   // -------------------------------------------------------------------------
 
-  const candidates: ContextCandidate[] = signals.map((s) => {
+  const candidates: ContextCandidate[] = ranked.map((s) => {
     const text = contents.get(s.path) ?? "";
     return { id: s.path, text, tokens: estimateTokens(text), relevance: s.proximityScore };
   });
@@ -702,7 +1056,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
   const selected: RepoMapFile[] = [];
   let runningTokens = selection.tokensEstimated;
 
-  for (const s of signals) {
+  for (const s of ranked) {
     if (!chosen.has(s.path)) continue;
     const fileContent = contents.get(s.path) ?? "";
 
@@ -724,7 +1078,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
   let truncatedPath: string | null = null;
   const remaining = tokenBudget - runningTokens;
   if (remaining > 0) {
-    const next = signals.find((s) => !chosen.has(s.path));
+    const next = ranked.find((s) => !chosen.has(s.path));
     if (next) {
       const fileContent = contents.get(next.path) ?? "";
       const lines = fileContent.split("\n");
@@ -769,7 +1123,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
     }
   }
 
-  for (const s of signals) {
+  for (const s of ranked) {
     if (chosen.has(s.path) || s.path === truncatedPath) continue;
     noteOmission(omissions, "droppedForBudget", s.path);
   }
@@ -779,6 +1133,7 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
     tokensEstimated: runningTokens,
     method: "heuristic",
     omissions: finalizeOmissions(omissions),
+    budget,
   };
 }
 

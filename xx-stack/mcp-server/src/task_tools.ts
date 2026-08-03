@@ -35,6 +35,7 @@ import type {
 } from "./supervisor_runtime.js";
 
 import { jsonContent, type JsonToolResult } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 interface TaskToolDeps {
   loadReliabilityConfig: () => Promise<ReliabilityConfig>;
   readSupervisorStore: () => Promise<SupervisorStore>;
@@ -46,7 +47,7 @@ function missingTask(taskId: string): JsonToolResult {
 }
 
 /**
- * Structured rejection for a fenced write (UPSTREAM-BORROW task 27, MCP-4).
+ * Structured rejection for a fenced write.
  * Every path that mutates and persists a task shares this shape so a lane can
  * tell "my claim is dead" apart from "the task does not exist".
  */
@@ -72,15 +73,22 @@ function leaseRejection(
 }
 
 export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
-  server.tool(
+  server.registerTool(
     "task_suspend",
-    "Suspend an active task with checkpoint/error metadata for later resume",
     {
-      taskId: z.string().min(1).describe("Task ID"),
-      checkpoint: z.string().max(4000).optional().describe("Checkpoint summary before suspension"),
-      error: z.string().max(4000).optional().describe("Optional error or blocker summary"),
-      worktreePath: z.string().max(4096).optional().describe("Optional isolated worktree path"),
-      parentCwd: z.string().max(4096).optional().describe("Optional parent workspace path"),
+      description: "Suspend an active task with checkpoint/error metadata for later resume",
+      inputSchema: {
+        taskId: z.string().min(1).describe("Task ID"),
+        checkpoint: z
+          .string()
+          .max(4000)
+          .optional()
+          .describe("Checkpoint summary before suspension"),
+        error: z.string().max(4000).optional().describe("Optional error or blocker summary"),
+        worktreePath: z.string().max(4096).optional().describe("Optional isolated worktree path"),
+        parentCwd: z.string().max(4096).optional().describe("Optional parent workspace path"),
+      },
+      annotations: toolAnnotations("task_suspend"),
     },
     async ({ taskId, checkpoint, error, worktreePath, parentCwd }) =>
       guardStoreAccess(() =>
@@ -133,17 +141,21 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       )
   );
 
-  server.tool(
+  server.registerTool(
     "task_resume",
-    "Resume a suspended or blocked task and emit a continuation directive with worktree context",
     {
-      taskId: z.string().min(1).describe("Task ID"),
-      checkpoint: z
-        .string()
-        .max(4000)
-        .optional()
-        .describe("Optional refreshed checkpoint before resume"),
-      clearError: z.boolean().optional().describe("Clear stored lastError on resume"),
+      description:
+        "Resume a suspended or blocked task and emit a continuation directive with worktree context",
+      inputSchema: {
+        taskId: z.string().min(1).describe("Task ID"),
+        checkpoint: z
+          .string()
+          .max(4000)
+          .optional()
+          .describe("Optional refreshed checkpoint before resume"),
+        clearError: z.boolean().optional().describe("Clear stored lastError on resume"),
+      },
+      annotations: toolAnnotations("task_resume"),
     },
     async ({ taskId, checkpoint, clearError }) =>
       guardStoreAccess(() =>
@@ -228,52 +240,56 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       `leaves the condition permanently unmet. ${NULL_RESULT_VALID_CLAUSE}.`
   );
 
-  server.tool(
+  server.registerTool(
     "task_create",
-    "Create a persistent task item for long-running orchestrated work. For supervised " +
-      "autonomous tasks, attach a goalContract (objective, constraints, validationCmd, " +
-      "stopCondition, docsNote); inspect the repo and surface hidden constraints before " +
-      "writing the contract, and never delete, skip, weaken, or narrow tests to make the goal pass",
     {
-      title: z.string().min(1).max(200).describe("Task title"),
-      description: z.string().max(4000).optional().describe("Optional task description"),
-      status: TASK_STATUS_SCHEMA.optional().describe("Initial status"),
-      resumable: z
-        .boolean()
-        .optional()
-        .describe("Whether this task supports structured resume directives"),
-      sessionId: z.string().max(120).optional().describe("Optional linked supervisor session ID"),
-      worktreePath: z
-        .string()
-        .max(4096)
-        .optional()
-        .describe("Optional worktree path where task edits are isolated"),
-      parentCwd: z
-        .string()
-        .max(4096)
-        .optional()
-        .describe("Optional parent working directory for inherited context"),
-      lastCheckpoint: z
-        .string()
-        .max(4000)
-        .optional()
-        .describe("Optional initial checkpoint summary"),
-      goalContract: GOAL_CONTRACT_INPUT,
-      lease: LEASE_INPUT,
-      priority: TASK_PRIORITY_SCHEMA.optional().describe("Optional priority"),
-      tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Optional tags"),
-      owner: z.string().max(120).optional().describe("Optional owner hint"),
-      blockedBy: z
-        .array(z.string().min(1).max(64))
-        .max(32)
-        .optional()
-        .describe(
-          "Optional blocker task IDs. Each ID must name an existing task and must not close a " +
-            "dependency cycle; a dangling or cycle-creating edge is rejected and nothing is " +
-            "written, rather than persisted as a silent deadlock. Blockers are read by " +
-            "task_list readyOnly, the _Stop hook, and route_parallel_tasks wave planning"
-        ),
-      dueAt: z.string().optional().describe("Optional due date as ISO-8601"),
+      description:
+        "Create a persistent task item for long-running orchestrated work. For supervised " +
+        "autonomous tasks, attach a goalContract (objective, constraints, validationCmd, " +
+        "stopCondition, docsNote); inspect the repo and surface hidden constraints before " +
+        "writing the contract, and never delete, skip, weaken, or narrow tests to make the goal pass",
+      inputSchema: {
+        title: z.string().min(1).max(200).describe("Task title"),
+        description: z.string().max(4000).optional().describe("Optional task description"),
+        status: TASK_STATUS_SCHEMA.optional().describe("Initial status"),
+        resumable: z
+          .boolean()
+          .optional()
+          .describe("Whether this task supports structured resume directives"),
+        sessionId: z.string().max(120).optional().describe("Optional linked supervisor session ID"),
+        worktreePath: z
+          .string()
+          .max(4096)
+          .optional()
+          .describe("Optional worktree path where task edits are isolated"),
+        parentCwd: z
+          .string()
+          .max(4096)
+          .optional()
+          .describe("Optional parent working directory for inherited context"),
+        lastCheckpoint: z
+          .string()
+          .max(4000)
+          .optional()
+          .describe("Optional initial checkpoint summary"),
+        goalContract: GOAL_CONTRACT_INPUT,
+        lease: LEASE_INPUT,
+        priority: TASK_PRIORITY_SCHEMA.optional().describe("Optional priority"),
+        tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Optional tags"),
+        owner: z.string().max(120).optional().describe("Optional owner hint"),
+        blockedBy: z
+          .array(z.string().min(1).max(64))
+          .max(32)
+          .optional()
+          .describe(
+            "Optional blocker task IDs. Each ID must name an existing task and must not close a " +
+              "dependency cycle; a dangling or cycle-creating edge is rejected and nothing is " +
+              "written, rather than persisted as a silent deadlock. Blockers are read by " +
+              "task_list readyOnly, the _Stop hook, and route_parallel_tasks wave planning"
+          ),
+        dueAt: z.string().optional().describe("Optional due date as ISO-8601"),
+      },
+      annotations: toolAnnotations("task_create"),
     },
     async ({
       title,
@@ -359,11 +375,14 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       })
   );
 
-  server.tool(
+  server.registerTool(
     "task_get",
-    "Get one persistent task by ID",
     {
-      taskId: z.string().min(1).describe("Task ID"),
+      description: "Get one persistent task by ID",
+      inputSchema: {
+        taskId: z.string().min(1).describe("Task ID"),
+      },
+      annotations: toolAnnotations("task_get"),
     },
     async ({ taskId }) =>
       guardStoreAccess(() =>
@@ -378,42 +397,46 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       )
   );
 
-  server.tool(
+  server.registerTool(
     "task_update",
-    "Update persistent task fields including status and blockers. This is the task-result " +
-      "write-back path: when the task carries a lease that is revoked or expired against the " +
-      "server clock, the write is rejected (reasonCode lease_revoked / lease_expired) rather " +
-      "than landing on top of the lane that took over",
     {
-      taskId: z.string().min(1).describe("Task ID"),
-      title: z.string().min(1).max(200).optional().describe("Updated title"),
-      description: z.string().max(4000).optional().describe("Updated description"),
-      status: TASK_STATUS_SCHEMA.optional().describe("Updated status"),
-      resumable: z
-        .boolean()
-        .optional()
-        .describe("Whether this task supports structured resume directives"),
-      sessionId: z.string().max(120).optional().describe("Updated supervisor session ID"),
-      worktreePath: z.string().max(4096).optional().describe("Updated worktree path"),
-      parentCwd: z.string().max(4096).optional().describe("Updated parent working directory"),
-      lastCheckpoint: z.string().max(4000).optional().describe("Updated checkpoint summary"),
-      lastError: z.string().max(4000).optional().describe("Updated error summary"),
-      goalContract: GOAL_CONTRACT_INPUT,
-      lease: LEASE_INPUT,
-      priority: TASK_PRIORITY_SCHEMA.optional().describe("Updated priority"),
-      tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Updated tags"),
-      owner: z.string().max(120).optional().describe("Updated owner"),
-      blockedBy: z
-        .array(z.string().min(1).max(64))
-        .max(32)
-        .optional()
-        .describe(
-          "Updated blocker task IDs. Each ID must name an existing task and must not close a " +
-            "dependency cycle; a dangling or cycle-creating edge is rejected (reasonCode " +
-            "blocked_by_unknown_task / blocked_by_cycle, with the unknown ID quoted or the " +
-            "cycle path named) and nothing is written"
-        ),
-      dueAt: z.string().optional().describe("Updated due date as ISO-8601"),
+      description:
+        "Update persistent task fields including status and blockers. This is the task-result " +
+        "write-back path: when the task carries a lease that is revoked or expired against the " +
+        "server clock, the write is rejected (reasonCode lease_revoked / lease_expired) rather " +
+        "than landing on top of the lane that took over",
+      inputSchema: {
+        taskId: z.string().min(1).describe("Task ID"),
+        title: z.string().min(1).max(200).optional().describe("Updated title"),
+        description: z.string().max(4000).optional().describe("Updated description"),
+        status: TASK_STATUS_SCHEMA.optional().describe("Updated status"),
+        resumable: z
+          .boolean()
+          .optional()
+          .describe("Whether this task supports structured resume directives"),
+        sessionId: z.string().max(120).optional().describe("Updated supervisor session ID"),
+        worktreePath: z.string().max(4096).optional().describe("Updated worktree path"),
+        parentCwd: z.string().max(4096).optional().describe("Updated parent working directory"),
+        lastCheckpoint: z.string().max(4000).optional().describe("Updated checkpoint summary"),
+        lastError: z.string().max(4000).optional().describe("Updated error summary"),
+        goalContract: GOAL_CONTRACT_INPUT,
+        lease: LEASE_INPUT,
+        priority: TASK_PRIORITY_SCHEMA.optional().describe("Updated priority"),
+        tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Updated tags"),
+        owner: z.string().max(120).optional().describe("Updated owner"),
+        blockedBy: z
+          .array(z.string().min(1).max(64))
+          .max(32)
+          .optional()
+          .describe(
+            "Updated blocker task IDs. Each ID must name an existing task and must not close a " +
+              "dependency cycle; a dangling or cycle-creating edge is rejected (reasonCode " +
+              "blocked_by_unknown_task / blocked_by_cycle, with the unknown ID quoted or the " +
+              "cycle path named) and nothing is written"
+          ),
+        dueAt: z.string().optional().describe("Updated due date as ISO-8601"),
+      },
+      annotations: toolAnnotations("task_update"),
     },
     async ({
       taskId,
@@ -448,7 +471,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
             return { kind: "result", result: missingTask(taskId) };
           }
 
-          // Self-enforced lease invariant (UPSTREAM-BORROW task 27). The
+          // Self-enforced lease invariant. The
           // task-result write-back path: a lane whose lease was revoked by
           // failover — or whose deadline passed against the server's own clock —
           // is rejected instead of silently overwriting the lane that took over.
@@ -519,24 +542,28 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       })
   );
 
-  server.tool(
+  server.registerTool(
     "task_list",
-    "List persistent tasks with optional status, tag, owner, and dependency-readiness filters",
     {
-      status: TASK_STATUS_SCHEMA.optional().describe("Optional status filter"),
-      tag: z.string().optional().describe("Optional tag filter"),
-      owner: z.string().optional().describe("Optional owner filter"),
-      includeCompleted: z.boolean().optional().describe("Include done and canceled tasks"),
-      readyOnly: z
-        .boolean()
-        .optional()
-        .describe(
-          "Return only tasks that can actually be started now: non-terminal, with every " +
-            "blockedBy entry already terminal (done, canceled, or force_synthesized). A task " +
-            "whose blocker names no existing task is never ready. This is a view, not a " +
-            "dispatcher — nothing is started on your behalf"
-        ),
-      limit: z.number().int().min(1).max(500).optional().describe("Maximum tasks to return"),
+      description:
+        "List persistent tasks with optional status, tag, owner, and dependency-readiness filters",
+      inputSchema: {
+        status: TASK_STATUS_SCHEMA.optional().describe("Optional status filter"),
+        tag: z.string().optional().describe("Optional tag filter"),
+        owner: z.string().optional().describe("Optional owner filter"),
+        includeCompleted: z.boolean().optional().describe("Include done and canceled tasks"),
+        readyOnly: z
+          .boolean()
+          .optional()
+          .describe(
+            "Return only tasks that can actually be started now: non-terminal, with every " +
+              "blockedBy entry already terminal (done, canceled, or force_synthesized). A task " +
+              "whose blocker names no existing task is never ready. This is a view, not a " +
+              "dispatcher — nothing is started on your behalf"
+          ),
+        limit: z.number().int().min(1).max(500).optional().describe("Maximum tasks to return"),
+      },
+      annotations: toolAnnotations("task_list"),
     },
     async ({ status, tag, owner, includeCompleted, readyOnly, limit }) =>
       guardStoreAccess(() =>

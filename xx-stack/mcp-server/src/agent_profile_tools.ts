@@ -10,12 +10,17 @@ import {
   validateAgentProfiles,
 } from "./config_runtime.js";
 import { buildCoordinatorContract, jsonContent } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 export function registerAgentProfileTools(server: McpServer): void {
-  server.tool(
+  server.registerTool(
     "agent_list_profiles",
-    "List merged agent profiles including required MCP servers, tool policy, memory scope, and coordinator contract flags",
-    {},
+    {
+      description:
+        "List merged agent profiles including required MCP servers, tool policy, memory scope, and coordinator contract flags",
+      inputSchema: {},
+      annotations: toolAnnotations("agent_list_profiles"),
+    },
     async () => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const profiles = Object.entries(runtime.agents)
@@ -47,23 +52,27 @@ export function registerAgentProfileTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_preflight",
-    "Validate whether an agent can run under current MCP availability and tool policy. " +
-      "Returns status 'config_invalid' with the offending paths when a config file exists but " +
-      "could not be parsed, so an unusable config is never misreported as a missing agent or a " +
-      "missing MCP server",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      requestedTools: z
-        .array(z.string())
-        .max(256)
-        .optional()
-        .describe("Optional tools requested for this run"),
-      isAsync: z
-        .boolean()
-        .optional()
-        .describe("Whether to apply background async safety restrictions"),
+      description:
+        "Validate whether an agent can run under current MCP availability and tool policy. " +
+        "Returns status 'config_invalid' with the offending paths when a config file exists but " +
+        "could not be parsed, so an unusable config is never misreported as a missing agent or a " +
+        "missing MCP server",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        requestedTools: z
+          .array(z.string())
+          .max(256)
+          .optional()
+          .describe("Optional tools requested for this run"),
+        isAsync: z
+          .boolean()
+          .optional()
+          .describe("Whether to apply background async safety restrictions"),
+      },
+      annotations: toolAnnotations("agent_preflight"),
     },
     async ({ agentId, requestedTools, isAsync }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -115,16 +124,19 @@ export function registerAgentProfileTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_filter_tools",
-    "Filter candidate tool names through the selected agent allow/deny policy",
     {
-      agentId: z.string().min(1).describe("Agent identifier"),
-      candidateTools: z.array(z.string()).min(1).max(512).describe("Tool names to evaluate"),
-      isAsync: z
-        .boolean()
-        .optional()
-        .describe("Whether to apply background async safety restrictions"),
+      description: "Filter candidate tool names through the selected agent allow/deny policy",
+      inputSchema: {
+        agentId: z.string().min(1).describe("Agent identifier"),
+        candidateTools: z.array(z.string()).min(1).max(512).describe("Tool names to evaluate"),
+        isAsync: z
+          .boolean()
+          .optional()
+          .describe("Whether to apply background async safety restrictions"),
+      },
+      annotations: toolAnnotations("agent_filter_tools"),
     },
     async ({ agentId, candidateTools, isAsync }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
@@ -144,10 +156,13 @@ export function registerAgentProfileTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "agent_validate_profiles",
-    "Validate merged agent profile configuration and report errors/warnings",
-    {},
+    {
+      description: "Validate merged agent profile configuration and report errors/warnings",
+      inputSchema: {},
+      annotations: toolAnnotations("agent_validate_profiles"),
+    },
     async () => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const findings = validateAgentProfiles(runtime.agents, runtime.configuredMcpServers);
@@ -161,14 +176,17 @@ export function registerAgentProfileTools(server: McpServer): void {
     }
   );
 
-  server.tool(
+  server.registerTool(
     "build_coordinator_contract",
-    "Generate a hardened coordinator worker contract prompt from agent policy",
     {
-      agentId: z
-        .string()
-        .optional()
-        .describe("Agent identifier (defaults to execution-orchestrator)"),
+      description: "Generate a hardened coordinator worker contract prompt from agent policy",
+      inputSchema: {
+        agentId: z
+          .string()
+          .optional()
+          .describe("Agent identifier (defaults to execution-orchestrator)"),
+      },
+      annotations: toolAnnotations("build_coordinator_contract"),
     },
     async ({ agentId }) => {
       const resolvedAgentId = agentId?.trim() || "execution-orchestrator";

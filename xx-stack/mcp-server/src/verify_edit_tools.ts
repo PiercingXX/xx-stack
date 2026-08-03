@@ -9,6 +9,7 @@ import { guardedExecFile } from "./execution_policy.js";
 import { jsonContent } from "./agent_tool_helpers.js";
 import { compactOutput } from "./output_compaction.js";
 import { redactSecrets } from "./supervisor_completion_tools.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 // --- Capture-then-truncate -------------------------------------------------
 //
@@ -331,31 +332,35 @@ async function runCommand(
 }
 
 export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps): void {
-  server.tool(
+  server.registerTool(
     "verify_edit",
-    "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Each result carries an `outcome` of pass | fail | could_not_run | denied with a machine-readable `reasonCode`: 'could_not_run' means this lane could not execute the command (missing binary, missing node_modules, bad cwd, timeout) and is NOT evidence about the code, and carries a one-sentence `remediation`. Commands are split on whitespace and run as argv with no shell, so quoted arguments cannot be expressed (a denial with reasonCode 'hook_arg_pattern_blocked' says so in `remediation`). Output is captured in full, returned as a bounded head+tail view with secrets redacted, and the complete unredacted capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
     {
-      cwd: z.string().describe("Working directory for the commands"),
-      lintCmd: z
-        .string()
-        .optional()
-        .describe(
-          "Lint command to run (e.g. 'npx eslint .'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
-        ),
-      testCmd: z
-        .string()
-        .optional()
-        .describe(
-          "Test command to run (e.g. 'npm test'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
-        ),
-      compactOptions: z
-        .object({
-          cap: z.number().optional().describe("Maximum output length in characters"),
-          stripAnsi: z.boolean().optional().describe("Strip ANSI escape sequences"),
-          collapseRepeats: z.boolean().optional().describe("Collapse repeated consecutive lines"),
-        })
-        .optional()
-        .describe("If provided, compact command outputs using these options"),
+      description:
+        "After an edit, run the project's linter and/or tests and return structured pass/fail with failure payload for a continuation prompt. Each result carries an `outcome` of pass | fail | could_not_run | denied with a machine-readable `reasonCode`: 'could_not_run' means this lane could not execute the command (missing binary, missing node_modules, bad cwd, timeout) and is NOT evidence about the code, and carries a one-sentence `remediation`. Commands are split on whitespace and run as argv with no shell, so quoted arguments cannot be expressed (a denial with reasonCode 'hook_arg_pattern_blocked' says so in `remediation`). Output is captured in full, returned as a bounded head+tail view with secrets redacted, and the complete unredacted capture is kept at fullOutputPath when truncated. Shells out through the execution-policy gate.",
+      inputSchema: {
+        cwd: z.string().describe("Working directory for the commands"),
+        lintCmd: z
+          .string()
+          .optional()
+          .describe(
+            "Lint command to run (e.g. 'npx eslint .'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
+          ),
+        testCmd: z
+          .string()
+          .optional()
+          .describe(
+            "Test command to run (e.g. 'npm test'). Split on whitespace and run as argv — no shell, so quoted arguments are not supported."
+          ),
+        compactOptions: z
+          .object({
+            cap: z.number().optional().describe("Maximum output length in characters"),
+            stripAnsi: z.boolean().optional().describe("Strip ANSI escape sequences"),
+            collapseRepeats: z.boolean().optional().describe("Collapse repeated consecutive lines"),
+          })
+          .optional()
+          .describe("If provided, compact command outputs using these options"),
+      },
+      annotations: toolAnnotations("verify_edit"),
     },
     async ({ cwd, lintCmd, testCmd, compactOptions }) => {
       const result: { lint: CmdResult | null; test: CmdResult | null; compacted?: string[] } = {

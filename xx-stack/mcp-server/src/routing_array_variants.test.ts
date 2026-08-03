@@ -64,7 +64,7 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<{
 function captureRoutingTools(registry: unknown): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
   const fakeServer = {
-    tool: (...toolArgs: unknown[]) => {
+    registerTool: (...toolArgs: unknown[]) => {
       handlers.set(toolArgs[0] as string, toolArgs[toolArgs.length - 1] as ToolHandler);
     },
   } as unknown as McpServer;

@@ -16,9 +16,11 @@ import {
   TASK_TERMINAL_STATUSES,
   withTaskStoreLock,
   writeTaskStore,
+  type GoalContract,
 } from "./task_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 
 export type ContinuationPromptVariant = "default" | "handoff" | "force_synthesis";
 
@@ -367,7 +369,7 @@ export function buildContinuationPrompt(
   return lines.join("\n");
 }
 
-// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ---
+// --- Self-enforced task leases ---
 
 export interface LeasedTaskFence {
   taskId: string;
@@ -432,7 +434,7 @@ export async function collectSessionLeaseFences(sessionId: string): Promise<Leas
     .sort((left, right) => left.taskId.localeCompare(right.taskId));
 }
 
-// --- Failover handoff variant (UPSTREAM-BORROW task 22) ---
+// --- Failover handoff variant ---
 
 export interface HandoffStateItem {
   item: string;
@@ -564,18 +566,147 @@ export function buildHandoffPrompt(
   );
 }
 
-// --- Budget-exhausted forced synthesis variant (UPSTREAM-BORROW task 14) ---
+// --- Budget-exhausted forced synthesis variant ---
+
+//
+// Forced synthesis is the salvage path, reached exactly when the budget is
+// exhausted and the incentive to inflate peaks — and its `evidence` argument is
+// entirely agent-authored. The prompt then said "cite only these items" and
+// "cite the specific evidence item supporting every claim", so an agent that
+// invents its evidence list can cite it perfectly and the citation requirement
+// verifies nothing.
+//
+// The strict path is already grounded: `supervisor_complete_session` checks the
+// store for a real verify_edit result matching the contract's validationCmd and
+// refuses with `goal_contract_validation_evidence_missing`. This path had no
+// equivalent. So the prompt now opens with facts the SERVER recorded and the
+// agent could not author, the caller's evidence is rendered separately and
+// labelled as the unverified claim it is, and where the two disagree the
+// recorded fact wins and the conflict must be declared as a gap.
+//
+// Everything below is read from state already persisted: no new tool call, no
+// new state, no schema change.
+
+/** One completion check the supervisor recorded, with its command and outcome. */
+export interface RecordedCompletionCheck {
+  /** What was checked, e.g. "completion judge verdict". */
+  label: string;
+  /** The command the check ran, when the store records one. */
+  command: string | null;
+  /**
+   * `pass` / `fail` are real verdicts. `recorded` means the check happened but
+   * carries no verdict of its own; `not_recorded` means it never happened —
+   * which is the fact most likely to contradict an inflated evidence list.
+   */
+  outcome: "pass" | "fail" | "recorded" | "not_recorded";
+}
+
+/**
+ * Facts about a session that the supervisor recorded itself.
+ *
+ * Every field is a pure function of persisted store state — including
+ * `elapsedMs`, which is derived from `forceSynthesisAt - startedAt` rather than
+ * from a live clock read, so the rendered block is byte-identical for identical
+ * store state and holds the same determinism contract the other prompt variants
+ * already hold.
+ */
+export interface ForceSynthesisRecordedFacts {
+  continuationCount: number;
+  elapsedMs: number;
+  recordedEventCount: number;
+  checks: RecordedCompletionCheck[];
+}
+
+/**
+ * Derive the recorded-fact block from session state plus its linked goal
+ * contracts. Contracts arrive already filtered to this session's non-terminal
+ * tasks — the same set `supervisor_complete_session` gates on — and are sorted
+ * by task id here so store iteration order can never reach the prompt.
+ */
+export function collectForceSynthesisRecordedFacts(
+  state: SupervisorSessionState,
+  contractTasks: Array<{ taskId: string; goalContract: GoalContract }>
+): ForceSynthesisRecordedFacts {
+  const checks: RecordedCompletionCheck[] = [
+    {
+      label: "completion evidence recorded via supervisor_record_completion_check",
+      command: null,
+      outcome: state.completionEvidenceAt === undefined ? "not_recorded" : "recorded",
+    },
+    {
+      label: "completion judge verdict",
+      command: null,
+      outcome: state.completionJudgeVerdict ?? "not_recorded",
+    },
+  ];
+
+  const sorted = [...contractTasks].sort((left, right) => left.taskId.localeCompare(right.taskId));
+  for (const task of sorted) {
+    // The same evaluator the strict completion gate uses, so the two paths
+    // cannot report different answers about the same contract.
+    const check = evaluateGoalContractCompletion(
+      task.goalContract,
+      state.completionEvidenceSummary
+    );
+    checks.push({
+      label: `goal-contract validation for task ${task.taskId}`,
+      command: check.expectedValidationCmd ?? null,
+      outcome: check.ok ? "pass" : "fail",
+    });
+  }
+
+  // `forceSynthesisAt` is stamped onto the state immediately before the prompt
+  // is built, so this is the session's wall-clock span without a second clock
+  // read. A session that somehow reaches here unstamped falls back to the last
+  // recorded progress, and a negative span is clamped rather than printed.
+  const endedAt = state.forceSynthesisAt ?? state.lastProgressAt;
+  return {
+    continuationCount: state.continuationCount,
+    elapsedMs: Math.max(0, endedAt - state.startedAt),
+    recordedEventCount: state.events.length,
+    checks,
+  };
+}
+
+/** Render the harness-recorded block. Deterministic for identical facts. */
+function renderRecordedFactLines(facts: ForceSynthesisRecordedFacts): string[] {
+  const lines: string[] = [
+    "- harness-recorded facts (recorded by the supervisor; not authored by the agent):",
+    `  - continuation-attempts: ${facts.continuationCount}`,
+    `  - session-elapsed-ms: ${facts.elapsedMs}`,
+    `  - recorded-events: ${facts.recordedEventCount}`,
+    "  - recorded completion checks:",
+  ];
+  if (facts.checks.length === 0) {
+    // Stated, never rendered as an empty list: "no check was recorded" is
+    // itself the most load-bearing fact this block can carry.
+    lines.push("    - none: no completion check was recorded in this session");
+    return lines;
+  }
+  for (const check of facts.checks) {
+    const command = check.command === null ? "" : ` [command: ${check.command}]`;
+    lines.push(`    - ${check.label}${command}: ${check.outcome}`);
+  }
+  return lines;
+}
 
 export function buildForceSynthesisSections(
   trigger: string,
   evidence: string[],
-  unresolvedGaps: string[]
+  unresolvedGaps: string[],
+  facts: ForceSynthesisRecordedFacts
 ): string[] {
   const lines: string[] = [];
 
   lines.push(`- budget-trigger: ${trigger}`);
 
-  lines.push("- evidence gathered so far (cite these; gather no more):");
+  // The grounded block goes FIRST, so the agent-authored list below is read
+  // against it rather than the other way round.
+  lines.push(...renderRecordedFactLines(facts));
+
+  lines.push(
+    "- evidence claimed by the agent (UNVERIFIED — supplied by the caller of supervisor_force_synthesis, not recorded by the supervisor):"
+  );
   if (evidence.length === 0) {
     lines.push("  (no evidence recorded — state this explicitly and mark confidence low)");
   }
@@ -596,6 +727,9 @@ export function buildForceSynthesisSections(
   lines.push("  2) best-effort answer built only from the evidence above, citing [E#] items");
   lines.push("  3) explicit confidence: high | medium | low, with a one-line justification");
   lines.push("  4) explicit list of unresolved gaps and what evidence would close each");
+  lines.push(
+    "  5) where a claim conflicts with a harness-recorded fact above, the recorded fact wins; name the conflict in the unresolved gaps list"
+  );
 
   return lines.map((line) => redactSecrets(line));
 }
@@ -606,7 +740,8 @@ export function buildForceSynthesisPrompt(
   currentRoute: SupervisorSessionState["currentRoute"],
   trigger: string,
   evidence: string[],
-  unresolvedGaps: string[]
+  unresolvedGaps: string[],
+  facts: ForceSynthesisRecordedFacts
 ): string {
   const pending =
     unresolvedGaps.length > 0
@@ -623,7 +758,7 @@ export function buildForceSynthesisPrompt(
     trigger,
     [],
     pending,
-    buildForceSynthesisSections(trigger, evidence, unresolvedGaps),
+    buildForceSynthesisSections(trigger, evidence, unresolvedGaps, facts),
     "force_synthesis"
   );
 }
@@ -685,18 +820,22 @@ export function registerSupervisorCompletionTools(
   server: McpServer,
   deps: SupervisorToolDeps
 ): void {
-  server.tool(
+  server.registerTool(
     "supervisor_record_completion_check",
-    "Record deterministic completion evidence and independent judge verdict for a supervised session",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      checkType: z.enum(["evidence", "judge"]).describe("Completion check type"),
-      summary: z
-        .string()
-        .min(1)
-        .max(8000)
-        .describe("Human-readable summary for evidence or judge result"),
-      verdict: z.enum(["pass", "fail"]).optional().describe("Required when checkType='judge'"),
+      description:
+        "Record deterministic completion evidence and independent judge verdict for a supervised session",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        checkType: z.enum(["evidence", "judge"]).describe("Completion check type"),
+        summary: z
+          .string()
+          .min(1)
+          .max(8000)
+          .describe("Human-readable summary for evidence or judge result"),
+        verdict: z.enum(["pass", "fail"]).optional().describe("Required when checkType='judge'"),
+      },
+      annotations: toolAnnotations("supervisor_record_completion_check"),
     },
     async ({ sessionId, checkType, summary, verdict }) =>
       guardStoreAccess(() =>
@@ -752,64 +891,69 @@ export function registerSupervisorCompletionTools(
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_complete_session",
-    "Mark a supervised session with a final terminal outcome",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      outcome: z
-        .enum(["completed", "blocked", "interrupted", "exhausted"])
-        .optional()
-        .describe("Final outcome"),
-      note: z.string().optional().describe("Optional completion note"),
-      forceComplete: z
-        .boolean()
-        .optional()
-        .describe("Override output validation gates and finalize immediately"),
-      memorySync: z
-        .object({
-          agentId: z
-            .string()
-            .min(1)
-            .describe("Agent identifier to enforce memory snapshot sync on completion"),
-          scope: z
-            .enum(["user", "project", "local"])
-            .optional()
-            .describe("Memory scope to enforce; defaults to project"),
-          cwd: z
-            .string()
-            .optional()
-            .describe("Project root used for project/local scope; defaults to current process cwd"),
-        })
-        .optional()
-        .describe("Optional completion-time override for memory sync guard"),
-      validationAttempts: z
-        .array(
-          z.object({
-            command: z.string().min(1).max(1000).describe("The validation command as it was run"),
-            outcome: z
-              .enum(["pass", "fail", "could_not_run", "denied"])
-              .describe("verify_edit's outcome for that command"),
-            reasonCode: z
+      description: "Mark a supervised session with a final terminal outcome",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        outcome: z
+          .enum(["completed", "blocked", "interrupted", "exhausted"])
+          .optional()
+          .describe("Final outcome"),
+        note: z.string().optional().describe("Optional completion note"),
+        forceComplete: z
+          .boolean()
+          .optional()
+          .describe("Override output validation gates and finalize immediately"),
+        memorySync: z
+          .object({
+            agentId: z
               .string()
               .min(1)
-              .max(200)
+              .describe("Agent identifier to enforce memory snapshot sync on completion"),
+            scope: z
+              .enum(["user", "project", "local"])
               .optional()
-              .describe("verify_edit's machine-readable cause, e.g. deps_not_installed"),
-            remediation: z
+              .describe("Memory scope to enforce; defaults to project"),
+            cwd: z
               .string()
-              .min(1)
-              .max(1000)
               .optional()
-              .describe("verify_edit's one-sentence remediation for a could_not_run"),
+              .describe(
+                "Project root used for project/local scope; defaults to current process cwd"
+              ),
           })
-        )
-        .max(32)
-        .optional()
-        .describe(
-          "verify_edit outcomes for goal-contract validation commands. A could_not_run attempt " +
-            "blocks completion as an ENVIRONMENT problem, never as a code failure"
-        ),
+          .optional()
+          .describe("Optional completion-time override for memory sync guard"),
+        validationAttempts: z
+          .array(
+            z.object({
+              command: z.string().min(1).max(1000).describe("The validation command as it was run"),
+              outcome: z
+                .enum(["pass", "fail", "could_not_run", "denied"])
+                .describe("verify_edit's outcome for that command"),
+              reasonCode: z
+                .string()
+                .min(1)
+                .max(200)
+                .optional()
+                .describe("verify_edit's machine-readable cause, e.g. deps_not_installed"),
+              remediation: z
+                .string()
+                .min(1)
+                .max(1000)
+                .optional()
+                .describe("verify_edit's one-sentence remediation for a could_not_run"),
+            })
+          )
+          .max(32)
+          .optional()
+          .describe(
+            "verify_edit outcomes for goal-contract validation commands. A could_not_run attempt " +
+              "blocks completion as an ENVIRONMENT problem, never as a code failure"
+          ),
+      },
+      annotations: toolAnnotations("supervisor_complete_session"),
     },
     async ({ sessionId, outcome, note, forceComplete, memorySync, validationAttempts }) =>
       guardStoreAccess(() =>
@@ -887,7 +1031,7 @@ export function registerSupervisorCompletionTools(
               });
             }
 
-            // Goal-contract gate (UPSTREAM-BORROW task 21): when a linked task
+            // Goal-contract gate: when a linked task
             // carries a goal contract, completion evaluation cites its stop
             // condition and — if validationCmd is set — expects a verify_edit
             // result for that exact command in the completion evidence.
@@ -1001,12 +1145,19 @@ export function registerSupervisorCompletionTools(
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_emit_continuation_prompt",
-    "Emit a bounded continuation prompt for stalled sessions and record continuation attempts",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      remainingTasks: z.array(z.string()).optional().describe("Optional remaining task checklist"),
+      description:
+        "Emit a bounded continuation prompt for stalled sessions and record continuation attempts",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        remainingTasks: z
+          .array(z.string())
+          .optional()
+          .describe("Optional remaining task checklist"),
+      },
+      annotations: toolAnnotations("supervisor_emit_continuation_prompt"),
     },
     async ({ sessionId, remainingTasks }) =>
       guardStoreAccess(() =>
@@ -1103,7 +1254,7 @@ export function registerSupervisorCompletionTools(
                 )
               : deps.buildCompletionRepairChecklist(completionRecoveryReason);
 
-          // Leased tasks carry the self-fencing clause (UPSTREAM-BORROW task 27).
+          // Leased tasks carry the self-fencing clause.
           // With no leased tasks the extra sections stay undefined, so the prompt
           // is byte-identical to the pre-lease continuation directive.
           const leaseFences = await collectSessionLeaseFences(sessionId);
@@ -1138,73 +1289,77 @@ export function registerSupervisorCompletionTools(
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_emit_handoff_prompt",
-    "Emit a structured failover handoff prompt for the lane taking over a failed-over or ending session: Goal / Current State (DONE, PARTIAL, NOT STARTED — state, not instructions) / Key Decisions and why / Traps & Dead Ends (approaches that FAILED) / Relevant Files with line ranges / Open Work with dependencies, ending with a verify-don't-trust preamble. Never include credential values — reference where credentials live",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      goal: z.string().min(1).max(2000).describe("What the task is trying to achieve"),
-      currentState: z
-        .array(
-          z.object({
-            item: z.string().min(1).max(1000).describe("Work item"),
-            status: z.enum(["DONE", "PARTIAL", "NOT_STARTED"]).describe("Ground-truth state"),
-            detail: z.string().max(2000).optional().describe("Optional supporting detail"),
-          })
-        )
-        .max(64)
-        .optional()
-        .describe("Ground truth about work state — state, not instructions"),
-      keyDecisions: z
-        .array(
-          z.object({
-            decision: z.string().min(1).max(1000).describe("Decision made"),
-            why: z.string().min(1).max(2000).describe("Why it was made"),
-          })
-        )
-        .max(64)
-        .optional()
-        .describe("Key decisions taken so far and their rationale"),
-      trapsAndDeadEnds: z
-        .array(
-          z.object({
-            approach: z.string().min(1).max(1000).describe("Approach that was tried"),
-            whyItFailed: z.string().min(1).max(2000).describe("Why it failed"),
-          })
-        )
-        .max(64)
-        .optional()
-        .describe("Approaches tried that FAILED — the least recoverable information"),
-      relevantFiles: z
-        .array(
-          z.object({
-            path: z.string().min(1).max(1000).describe("File path"),
-            lines: z.string().max(64).optional().describe("Line range, e.g. '120-180'"),
-            note: z.string().max(1000).optional().describe("Why this file matters"),
-          })
-        )
-        .max(128)
-        .optional()
-        .describe("Relevant files with line ranges"),
-      openWork: z
-        .array(
-          z.object({
-            item: z.string().min(1).max(1000).describe("Open work item"),
-            dependsOn: z
-              .array(z.string().min(1).max(200))
-              .max(32)
-              .optional()
-              .describe("Items this work depends on"),
-          })
-        )
-        .max(64)
-        .optional()
-        .describe("Open work with dependencies"),
-      credentialsNote: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Where credentials live (path or env var name) — never their values"),
+      description:
+        "Emit a structured failover handoff prompt for the lane taking over a failed-over or ending session: Goal / Current State (DONE, PARTIAL, NOT STARTED — state, not instructions) / Key Decisions and why / Traps & Dead Ends (approaches that FAILED) / Relevant Files with line ranges / Open Work with dependencies, ending with a verify-don't-trust preamble. Never include credential values — reference where credentials live",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        goal: z.string().min(1).max(2000).describe("What the task is trying to achieve"),
+        currentState: z
+          .array(
+            z.object({
+              item: z.string().min(1).max(1000).describe("Work item"),
+              status: z.enum(["DONE", "PARTIAL", "NOT_STARTED"]).describe("Ground-truth state"),
+              detail: z.string().max(2000).optional().describe("Optional supporting detail"),
+            })
+          )
+          .max(64)
+          .optional()
+          .describe("Ground truth about work state — state, not instructions"),
+        keyDecisions: z
+          .array(
+            z.object({
+              decision: z.string().min(1).max(1000).describe("Decision made"),
+              why: z.string().min(1).max(2000).describe("Why it was made"),
+            })
+          )
+          .max(64)
+          .optional()
+          .describe("Key decisions taken so far and their rationale"),
+        trapsAndDeadEnds: z
+          .array(
+            z.object({
+              approach: z.string().min(1).max(1000).describe("Approach that was tried"),
+              whyItFailed: z.string().min(1).max(2000).describe("Why it failed"),
+            })
+          )
+          .max(64)
+          .optional()
+          .describe("Approaches tried that FAILED — the least recoverable information"),
+        relevantFiles: z
+          .array(
+            z.object({
+              path: z.string().min(1).max(1000).describe("File path"),
+              lines: z.string().max(64).optional().describe("Line range, e.g. '120-180'"),
+              note: z.string().max(1000).optional().describe("Why this file matters"),
+            })
+          )
+          .max(128)
+          .optional()
+          .describe("Relevant files with line ranges"),
+        openWork: z
+          .array(
+            z.object({
+              item: z.string().min(1).max(1000).describe("Open work item"),
+              dependsOn: z
+                .array(z.string().min(1).max(200))
+                .max(32)
+                .optional()
+                .describe("Items this work depends on"),
+            })
+          )
+          .max(64)
+          .optional()
+          .describe("Open work with dependencies"),
+        credentialsNote: z
+          .string()
+          .max(1000)
+          .optional()
+          .describe("Where credentials live (path or env var name) — never their values"),
+      },
+      annotations: toolAnnotations("supervisor_emit_handoff_prompt"),
     },
     async ({
       sessionId,
@@ -1237,7 +1392,7 @@ export function registerSupervisorCompletionTools(
 
           // At-most-one-live-instance: the failover flow already revoked the prior
           // lane's claim; the handoff states it so the receiving lane knows it is
-          // the only writer (UPSTREAM-BORROW task 27).
+          // the only writer.
           const revokedLeases = (await collectSessionLeaseFences(sessionId)).filter(
             (lease) => lease.revoked === true
           );
@@ -1271,22 +1426,30 @@ export function registerSupervisorCompletionTools(
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_force_synthesis",
-    "Terminal state between success and failure: when a session's budget, step, or stall threshold has tripped, mark it force_synthesized and emit a forced-synthesis prompt demanding a best-effort answer from existing evidence only (no new tool calls), with explicit confidence, explicit unresolved gaps, and citations. Never presented as a normal completion",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
-      evidence: z
-        .array(z.string().min(1).max(4000))
-        .max(64)
-        .optional()
-        .describe("Evidence gathered so far; the synthesis must cite only these items"),
-      unresolvedGaps: z
-        .array(z.string().min(1).max(2000))
-        .max(64)
-        .optional()
-        .describe("Known unresolved gaps the synthesis must declare"),
-      note: z.string().max(2000).optional().describe("Optional operator note"),
+      description:
+        "Terminal state between success and failure: when a session's budget, step, or stall threshold has tripped, mark it force_synthesized and emit a forced-synthesis prompt demanding a best-effort answer from existing evidence only (no new tool calls), with explicit confidence, explicit unresolved gaps, and citations. Never presented as a normal completion",
+      inputSchema: {
+        sessionId: z.string().describe("Supervisor session ID"),
+        evidence: z
+          .array(z.string().min(1).max(4000))
+          .max(64)
+          .optional()
+          .describe(
+            "Evidence gathered so far. These items are agent-authored and are NOT verified by the " +
+              "server: the prompt renders them as unverified claims beneath the facts the supervisor " +
+              "itself recorded, and a claim that conflicts with a recorded fact loses"
+          ),
+        unresolvedGaps: z
+          .array(z.string().min(1).max(2000))
+          .max(64)
+          .optional()
+          .describe("Known unresolved gaps the synthesis must declare"),
+        note: z.string().max(2000).optional().describe("Optional operator note"),
+      },
+      annotations: toolAnnotations("supervisor_force_synthesis"),
     },
     async ({ sessionId, evidence, unresolvedGaps, note }) =>
       guardStoreAccess(() =>
@@ -1338,12 +1501,19 @@ export function registerSupervisorCompletionTools(
           // Mark linked tasks so the task record distinguishes
           // completed | failed | force_synthesized.
           const nowIso = new Date(now).toISOString();
+          // The goal contracts are captured on this same pass, before the
+          // outcome is applied — no second store read, and the same
+          // session-linked non-terminal set the strict completion gate uses.
+          const contractTasks: Array<{ taskId: string; goalContract: GoalContract }> = [];
           const linkedTasksMarked = await withTaskStoreLock(async () => {
             const taskStore = await readTaskStore();
             const marked: string[] = [];
             for (const task of Object.values(taskStore.tasks)) {
               if (task.sessionId !== sessionId) continue;
               if (TASK_TERMINAL_STATUSES.has(task.status)) continue;
+              if (task.goalContract !== undefined) {
+                contractTasks.push({ taskId: task.taskId, goalContract: task.goalContract });
+              }
               applyForceSynthesisOutcome(
                 task,
                 `forced synthesis (${trigger.reasonCode}); best-effort answer produced from partial evidence — not a normal completion`,
@@ -1357,13 +1527,18 @@ export function registerSupervisorCompletionTools(
             return marked;
           });
 
+          // Ground the salvage prompt in what the supervisor recorded, so the
+          // agent-authored `evidence` list below it is read against facts it
+          // could not write.
+          const recordedFacts = collectForceSynthesisRecordedFacts(state, contractTasks);
           const prompt = buildForceSynthesisPrompt(
             sessionId,
             state.continuationCount,
             state.currentRoute,
             trigger.reasonCode,
             evidence ?? [],
-            unresolvedGaps ?? []
+            unresolvedGaps ?? [],
+            recordedFacts
           );
 
           return jsonContent({
@@ -1373,6 +1548,7 @@ export function registerSupervisorCompletionTools(
             trigger: trigger.reasonCode,
             continuationCount: state.continuationCount,
             linkedTasksMarked,
+            recordedFacts,
             prompt,
           });
         })

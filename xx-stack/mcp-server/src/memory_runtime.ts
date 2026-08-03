@@ -271,7 +271,7 @@ export async function getCompletionMemorySyncStatus(
 }
 
 // ---------------------------------------------------------------------------
-// Memory entry parsing (UPSTREAM-BORROW-TODO task 20)
+// Memory entry parsing
 // ---------------------------------------------------------------------------
 
 const SUPERSEDED_MARKER_RE = /^- \[superseded:([^\]]*)\] ?(.*)$/;
@@ -548,7 +548,7 @@ export function markMemoryEntriesSuperseded(
 }
 
 // ---------------------------------------------------------------------------
-// Compare-and-swap writes (UPSTREAM-BORROW-TODO task 29)
+// Compare-and-swap writes
 //
 // Concurrent agents share one memory scope, and both write paths below are
 // read-modify-write over the same file. An optional expectedHash (obtained

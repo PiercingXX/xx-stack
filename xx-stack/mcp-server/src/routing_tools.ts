@@ -16,20 +16,25 @@ import {
 } from "./routing_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 interface RoutingToolDeps {
   loadRegistry: () => Promise<Registry>;
 }
 
 export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): void {
-  server.tool(
+  server.registerTool(
     "route_task",
-    "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend which platform tier, host, and model to use",
     {
-      description: z
-        .union([z.string(), z.array(z.string()).min(1).max(64)])
-        .describe(
-          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
-        ),
+      description:
+        "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend which platform tier, host, and model to use",
+      inputSchema: {
+        description: z
+          .union([z.string(), z.array(z.string()).min(1).max(64)])
+          .describe(
+            "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+          ),
+      },
+      annotations: toolAnnotations("route_task"),
     },
     async ({ description }) => {
       const registry = await deps.loadRegistry();
@@ -59,37 +64,41 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "route_parallel_tasks",
-    "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts. Decompose work into tracer-bullet tasks before calling: each task should be a vertical slice through every layer it touches, sized to fit one fresh context window, with blocking edges between slices declared explicitly rather than discovered mid-run. Declared edges are now honored: pass objects with blockedBy and the result carries a dependencySchedule of waves. This returns a plan — xx-stack never dispatches, polls, or sequences the waves; the calling agent runs a wave, confirms it finished, and calls back for the next.",
     {
-      tasks: z
-        .union([
-          z.array(z.string()).min(1).max(128),
-          z
-            .array(
-              z.object({
-                id: z
-                  .string()
-                  .min(1)
-                  .max(64)
-                  .optional()
-                  .describe("Optional slice ID; defaults to the array index as a string"),
-                description: z.string().describe("Task description for this slice"),
-                blockedBy: z
-                  .array(z.string().min(1).max(64))
-                  .max(32)
-                  .optional()
-                  .describe("IDs of slices in this same array that must finish before this one"),
-              })
-            )
-            .min(1)
-            .max(128),
-        ])
-        .describe(
-          "Task descriptions to schedule in parallel. Flat strings return today's schedule " +
-            "unchanged; objects with blockedBy additionally return dependency waves"
-        ),
+      description:
+        "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts. Decompose work into tracer-bullet tasks before calling: each task should be a vertical slice through every layer it touches, sized to fit one fresh context window, with blocking edges between slices declared explicitly rather than discovered mid-run. Declared edges are now honored: pass objects with blockedBy and the result carries a dependencySchedule of waves. This returns a plan — xx-stack never dispatches, polls, or sequences the waves; the calling agent runs a wave, confirms it finished, and calls back for the next.",
+      inputSchema: {
+        tasks: z
+          .union([
+            z.array(z.string()).min(1).max(128),
+            z
+              .array(
+                z.object({
+                  id: z
+                    .string()
+                    .min(1)
+                    .max(64)
+                    .optional()
+                    .describe("Optional slice ID; defaults to the array index as a string"),
+                  description: z.string().describe("Task description for this slice"),
+                  blockedBy: z
+                    .array(z.string().min(1).max(64))
+                    .max(32)
+                    .optional()
+                    .describe("IDs of slices in this same array that must finish before this one"),
+                })
+              )
+              .min(1)
+              .max(128),
+          ])
+          .describe(
+            "Task descriptions to schedule in parallel. Flat strings return today's schedule " +
+              "unchanged; objects with blockedBy additionally return dependency waves"
+          ),
+      },
+      annotations: toolAnnotations("route_parallel_tasks"),
     },
     async ({ tasks }) => {
       const registry = await deps.loadRegistry();
@@ -105,26 +114,30 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "route_task_with_watchdog",
-    "Route a task with host/model liveness checks and automatic failover recommendations",
     {
-      description: z.string().describe("Description of the task to route"),
-      preferredHost: z
-        .string()
-        .optional()
-        .describe("Optional host ID override for the primary attempt"),
-      preferredModel: z
-        .string()
-        .optional()
-        .describe("Optional model override for the primary attempt"),
-      maxFallbacks: z
-        .number()
-        .int()
-        .min(1)
-        .max(8)
-        .optional()
-        .describe("Maximum fallback hosts to probe"),
+      description:
+        "Route a task with host/model liveness checks and automatic failover recommendations",
+      inputSchema: {
+        description: z.string().describe("Description of the task to route"),
+        preferredHost: z
+          .string()
+          .optional()
+          .describe("Optional host ID override for the primary attempt"),
+        preferredModel: z
+          .string()
+          .optional()
+          .describe("Optional model override for the primary attempt"),
+        maxFallbacks: z
+          .number()
+          .int()
+          .min(1)
+          .max(8)
+          .optional()
+          .describe("Maximum fallback hosts to probe"),
+      },
+      annotations: toolAnnotations("route_task_with_watchdog"),
     },
     async ({ description, preferredHost, preferredModel, maxFallbacks }) => {
       const registry = await deps.loadRegistry();
@@ -179,23 +192,27 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "route_architect_editor",
-    "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend two lanes: an architect (deep reasoning) and an editor (fast execution). Reuses the existing tier-selection mechanism — the architect lane targets the coder-deep alias and the editor lane targets the coder-fast alias. Cloud hosts excluded by default.",
     {
-      description: z
-        .union([z.string(), z.array(z.string()).min(1).max(64)])
-        .describe(
-          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
-        ),
-      preferArchitectHost: z
-        .string()
-        .optional()
-        .describe("Optional host ID override for the architect lane"),
-      preferEditorHost: z
-        .string()
-        .optional()
-        .describe("Optional host ID override for the editor lane"),
+      description:
+        "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend two lanes: an architect (deep reasoning) and an editor (fast execution). Reuses the existing tier-selection mechanism — the architect lane targets the coder-deep alias and the editor lane targets the coder-fast alias. Cloud hosts excluded by default.",
+      inputSchema: {
+        description: z
+          .union([z.string(), z.array(z.string()).min(1).max(64)])
+          .describe(
+            "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+          ),
+        preferArchitectHost: z
+          .string()
+          .optional()
+          .describe("Optional host ID override for the architect lane"),
+        preferEditorHost: z
+          .string()
+          .optional()
+          .describe("Optional host ID override for the editor lane"),
+      },
+      annotations: toolAnnotations("route_architect_editor"),
     },
     async ({ description, preferArchitectHost, preferEditorHost }) => {
       const registry = await deps.loadRegistry();
@@ -236,21 +253,25 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "route_competitive_task",
-    "Given a task description (or an array of descriptions for a batched, position-aligned result), produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default. The caller creates one git worktree per lane and MUST bootstrap each before its agent starts — a bare worktree is the #1 way a parallel lane fails confusingly: copy (never symlink) env files into the worktree, install dependencies, pin shared-service identity/ports per lane so worktrees don't fight, and rebuild gitignored artifacts. Keep that checklist in a scripts/setup-worktree.sh at the repo root so every lane bootstraps identically.",
     {
-      description: z
-        .union([z.string(), z.array(z.string()).min(1).max(64)])
-        .describe(
-          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
-        ),
-      laneCount: z
-        .number()
-        .int()
-        .min(2)
-        .max(5)
-        .describe("Number of competitive lanes to request (2–5)"),
+      description:
+        "Given a task description (or an array of descriptions for a batched, position-aligned result), produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default. The caller creates one git worktree per lane and MUST bootstrap each before its agent starts — a bare worktree is the #1 way a parallel lane fails confusingly: copy (never symlink) env files into the worktree, install dependencies, pin shared-service identity/ports per lane so worktrees don't fight, and rebuild gitignored artifacts. Keep that checklist in a scripts/setup-worktree.sh at the repo root so every lane bootstraps identically.",
+      inputSchema: {
+        description: z
+          .union([z.string(), z.array(z.string()).min(1).max(64)])
+          .describe(
+            "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+          ),
+        laneCount: z
+          .number()
+          .int()
+          .min(2)
+          .max(5)
+          .describe("Number of competitive lanes to request (2–5)"),
+      },
+      annotations: toolAnnotations("route_competitive_task"),
     },
     async ({ description, laneCount }) => {
       const registry = await deps.loadRegistry();
@@ -279,15 +300,19 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "score_candidates",
-    "Given a list of candidate task descriptions, score each against the tier keyword matcher and return a deterministic ranking with per-candidate rationale. Useful for selecting the best-matching lane from a set of options.",
     {
-      candidates: z
-        .array(z.string())
-        .min(1)
-        .max(50)
-        .describe("Candidate task descriptions to score and rank"),
+      description:
+        "Given a list of candidate task descriptions, score each against the tier keyword matcher and return a deterministic ranking with per-candidate rationale. Useful for selecting the best-matching lane from a set of options.",
+      inputSchema: {
+        candidates: z
+          .array(z.string())
+          .min(1)
+          .max(50)
+          .describe("Candidate task descriptions to score and rank"),
+      },
+      annotations: toolAnnotations("score_candidates"),
     },
     async ({ candidates }) => {
       const registry = await deps.loadRegistry();
@@ -302,23 +327,27 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
     }
   );
 
-  server.tool(
+  server.registerTool(
     "route_review",
-    "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity — a different model family catches what the authoring model is systematically blind to). Collapses gracefully to same-model review with explicit reasoning when the registry offers no alternative. Cloud hosts excluded by default.",
     {
-      description: z.string().describe("Description of the work to be reviewed"),
-      authoredByModel: z
-        .string()
-        .optional()
-        .describe(
-          "Model that authored the work — the reviewer lane avoids this model where the registry allows"
-        ),
-      authoredByHost: z
-        .string()
-        .optional()
-        .describe(
-          "Host that authored the work — a different host is preferred for the reviewer lane"
-        ),
+      description:
+        "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity — a different model family catches what the authoring model is systematically blind to). Collapses gracefully to same-model review with explicit reasoning when the registry offers no alternative. Cloud hosts excluded by default.",
+      inputSchema: {
+        description: z.string().describe("Description of the work to be reviewed"),
+        authoredByModel: z
+          .string()
+          .optional()
+          .describe(
+            "Model that authored the work — the reviewer lane avoids this model where the registry allows"
+          ),
+        authoredByHost: z
+          .string()
+          .optional()
+          .describe(
+            "Host that authored the work — a different host is preferred for the reviewer lane"
+          ),
+      },
+      annotations: toolAnnotations("route_review"),
     },
     async ({ description, authoredByModel, authoredByHost }) => {
       const registry = await deps.loadRegistry();

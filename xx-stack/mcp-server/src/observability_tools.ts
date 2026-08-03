@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import type { LogEventResult, TelemetryHealth } from "./log_worker.js";
@@ -54,11 +55,75 @@ export const TOOL_CATEGORIES = [
 
 export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
 
+/**
+ * The four MCP tool hints, all four required rather than optional.
+ *
+ * `ToolAnnotations` makes every hint optional, and an omitted hint is not a
+ * neutral statement — a client that sees no `readOnlyHint` has to assume the
+ * tool writes, and one that sees no `destructiveHint` on a writer has to assume
+ * the worst. Requiring all four forces the author to decide, which is the whole
+ * point: `list_platforms` and `verify_edit` are not equally dangerous, and a
+ * client can only auto-approve the first if we say so.
+ */
+export type ToolHints = Required<
+  Pick<ToolAnnotations, "readOnlyHint" | "destructiveHint" | "idempotentHint" | "openWorldHint">
+>;
+
+/**
+ * What a tool gets when nobody declared anything for it.
+ *
+ * Fail closed, exactly like `cloudRoutingAllowed()`: an unannotated tool is
+ * treated as a destructive one that reaches the network, so forgetting to
+ * annotate costs an approval prompt rather than silently granting a write path
+ * the auto-approve treatment. The drift test in `observability_tools.test.ts`
+ * makes reaching this default a test failure, so it is a backstop and not a
+ * shipping state.
+ */
+export const FAIL_SAFE_TOOL_HINTS: ToolHints = {
+  readOnlyHint: false,
+  destructiveHint: true,
+  idempotentHint: false,
+  openWorldHint: true,
+};
+
+/**
+ * Hints for the tools that are deliberately absent from `TOOL_CATALOG`.
+ *
+ * `_Stop` and `_PostCompact` are hook-protocol surfaces, never discovered by an
+ * agent through `search_tools`, so they must stay out of the catalog (the drift
+ * test asserts that). They still register, so they still need honest hints.
+ * This is the one exemption, it is two entries long, and the same drift test
+ * that keeps the catalog honest fails if a third tool tries to hide here.
+ */
+export const HIDDEN_TOOL_ANNOTATIONS: Record<string, ToolHints> = {
+  // Both hooks read the task and supervisor stores and nothing else — the
+  // memory-drift check passes `ensureFiles: false` precisely so a read path
+  // never scaffolds files (§5: "two file reads, no walks", MCP-9).
+  _Stop: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  _PostCompact: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+};
+
 export interface ToolCatalogEntry {
   name: string;
   category: ToolCategory;
   description: string;
   keywords: string[];
+  /**
+   * The client-facing safety hints for this tool. Declared here, next to the
+   * category and keywords, so there is exactly one place per tool — adding a
+   * parallel annotation map is how MCP-13 happened the first time.
+   */
+  annotations: ToolHints;
 }
 
 /**
@@ -75,7 +140,7 @@ export interface ToolCatalogEntry {
  * (`_Stop`, `_PostCompact`), which are named as an explicit exemption in that
  * test — they are called by a hook-aware harness, never discovered by an agent.
  *
- * ## Why this stays curated instead of being derived from `server.tool(...)`
+ * ## Why this stays curated instead of being derived from the registrations
  *
  * The obvious next step is to delete this list and read name + description
  * straight off the registrations, since the drift test already drives every
@@ -109,6 +174,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     category: "routing",
     description: "List tiers, hosts, execution policy, and hardware metadata from the registry",
     keywords: ["inventory", "registry", "hosts", "tiers"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "check_health",
@@ -116,198 +187,415 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Ping configured model endpoints and report reachability, latency, and — where the host can be asked — the models it currently has loaded and its VRAM pressure",
     keywords: ["latency", "health", "ping", "availability", "resident", "loaded", "vram", "memory"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: "list_models",
     category: "observability",
     description: "Fetch model catalogs from reachable model endpoints",
     keywords: ["models", "catalog", "tags"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: "probe_endpoint_compatibility",
     category: "observability",
     description: "Validate OpenAI-compatible behavior for models, chat completions, and JSON mode",
     keywords: ["compatibility", "chat", "json", "probe"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: "route_task",
     category: "routing",
     description: "Recommend best tier, host, and model for a single task",
     keywords: ["route", "single", "placement"],
+    // Every routing tool reads a live registry and returns a recommendation;
+    // none of them dispatches, claims, or persists anything, so they are reads.
+    // The `void logEvent(...)` line each one ends with is a telemetry sink, not
+    // state — treating it as a write would make every read tool on this surface
+    // look like a mutator and defeat the point of the hint. The exception is
+    // route_task_with_watchdog, which probes live hosts: openWorldHint true.
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "route_parallel_tasks",
     category: "routing",
     description: "Schedule many tasks across hosts with capacity-aware wave planning",
     keywords: ["parallel", "schedule", "waves", "capacity"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "route_task_with_watchdog",
     category: "routing",
     description: "Route task with liveness checks and failover candidates",
     keywords: ["watchdog", "failover", "fallback", "liveness"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
   },
   {
     name: "supervisor_start_session",
     category: "supervisor",
     description: "Start supervised execution state with fallback queue",
     keywords: ["session", "start", "recovery"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
   },
   {
     name: "supervisor_record_event",
     category: "supervisor",
     description: "Record canonical lifecycle events and update session state",
     keywords: ["event", "state", "transition"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_tick",
     category: "supervisor",
     description: "Detect stalls and advance cooldown or fallback",
     keywords: ["tick", "stall", "backoff", "fallback"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
   },
   {
     name: "supervisor_abort_session",
     category: "supervisor",
     description: "Interrupt active supervised session",
     keywords: ["abort", "interrupt"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_record_completion_check",
     category: "supervisor",
     description: "Record deterministic completion evidence and independent judge verdict",
     keywords: ["completion", "evidence", "judge", "qa"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_complete_session",
     category: "supervisor",
     description: "Finalize supervised session outcome with validation gates",
     keywords: ["complete", "terminal", "outcome"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_status",
     category: "supervisor",
     description: "Inspect sessions and circuit-breaker state",
     keywords: ["status", "breaker", "summary"],
+    // Judgment call. This is a status poll, but it does write in one case: when
+    // pruning actually expired something it persists the pruned store (MCP-1
+    // narrowed it to exactly that case, so a poll can no longer truncate). The
+    // write is TTL garbage collection of records already past their deadline,
+    // never a caller-visible mutation, and any other supervisor call would have
+    // done the same collection. So it is annotated as the read it is.
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_emit_continuation_prompt",
     category: "supervisor",
     description: "Generate bounded continuation prompt for stalled work",
     keywords: ["continuation", "prompt", "stalled"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_run_self_test",
     category: "supervisor",
     description: "Run deterministic reliability self-checks",
     keywords: ["self-test", "reliability", "validation"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "get_hardware",
     category: "observability",
     description: "Detect local CPU/RAM/GPU hardware for routing decisions",
     keywords: ["hardware", "gpu", "vram", "ram"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "search_tools",
     category: "observability",
     description: "Search the MCP tool catalog by intent, name, and keywords",
     keywords: ["discover", "catalog", "search", "tooling"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_create",
     category: "tasks",
     description: "Create a persistent task record",
     keywords: ["task", "create", "todo", "queue"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_get",
     category: "tasks",
     description: "Fetch one persistent task by ID",
     keywords: ["task", "read", "lookup"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_update",
     category: "tasks",
     description: "Update task status and metadata",
     keywords: ["task", "update", "status", "blockers"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_list",
     category: "tasks",
     description: "List persistent tasks with filtering",
     keywords: ["task", "list", "filter", "backlog"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_suspend",
     category: "tasks",
     description: "Suspend a task with checkpoint metadata for resumption",
     keywords: ["task", "suspend", "checkpoint", "resume"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "task_resume",
     category: "tasks",
     description: "Resume a suspended or blocked task with a generated continuation directive",
     keywords: ["task", "resume", "continuation", "worktree"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_list_profiles",
     category: "agents",
     description: "List effective agent policies merged from repo and user config",
     keywords: ["agent", "profile", "policy", "config"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_preflight",
     category: "agents",
     description: "Validate required MCP servers and tool policy for an agent",
     keywords: ["agent", "mcp", "required", "preflight"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_filter_tools",
     category: "agents",
     description: "Filter a candidate tool set through agent allow and deny rules",
     keywords: ["agent", "tools", "allow", "deny"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_validate_profiles",
     category: "agents",
     description: "Validate merged agent profiles and report policy/configuration issues",
     keywords: ["agent", "validate", "lint", "config"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_get",
     category: "agents",
     description: "Read persistent memory for an agent by scope",
     keywords: ["agent", "memory", "scope", "read"],
+    // Judgment call, shared with agent_memory_snapshot_status and
+    // agent_memory_compaction_prompt: all three call ensureMemoryEntrypoint,
+    // which creates an empty MEMORY.md when one is absent. That is scaffolding
+    // a first read cannot avoid, not a change to anything the caller can
+    // observe, and it converges after one call — so these stay reads. `_Stop`
+    // takes the stricter line for the same check (ensureFiles: false) because
+    // it runs under a hard latency budget, not because the write is unsafe.
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_append",
     category: "agents",
     description: "Append persistent memory notes for an agent by scope",
     keywords: ["agent", "memory", "append", "continuity"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_snapshot_status",
     category: "agents",
     description: "Check memory snapshot sync status and drift for an agent scope",
     keywords: ["agent", "memory", "snapshot", "drift"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_snapshot_sync",
     category: "agents",
     description: "Write or apply memory snapshots for an agent scope",
     keywords: ["agent", "memory", "snapshot", "sync"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "build_coordinator_contract",
     category: "agents",
     description: "Generate a hardened coordinator worker contract prompt",
     keywords: ["coordinator", "contract", "worker", "prompt"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "record_telemetry",
     category: "observability",
     description: "Record a telemetry event with lane, tokensIn, tokensOut, and costUsd",
     keywords: ["telemetry", "cost", "tokens", "lane", "usage"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "route_architect_editor",
@@ -315,6 +603,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Recommend two lanes for a task: an architect lane for deep reasoning and an editor lane for fast execution",
     keywords: ["architect", "editor", "split", "deep", "fast", "pair"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "route_competitive_task",
@@ -322,6 +616,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Produce up to N distinct host/model lanes for competitive fan-out, one git worktree per lane",
     keywords: ["competitive", "fanout", "worktree", "lanes", "diversity"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "route_review",
@@ -329,6 +629,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity)",
     keywords: ["review", "reviewer", "diversity", "second-opinion"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "score_candidates",
@@ -336,6 +642,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Score candidate task descriptions against the tier keyword matcher and return a deterministic ranking with rationale",
     keywords: ["score", "rank", "candidates", "compare", "selection"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_emit_handoff_prompt",
@@ -343,6 +655,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Emit a structured failover handoff prompt for the lane taking over: goal, state, decisions, traps, files, open work",
     keywords: ["handoff", "failover", "takeover", "prompt", "continuity"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "supervisor_force_synthesis",
@@ -350,6 +668,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Mark a session force_synthesized and demand a best-effort answer from existing evidence with explicit gaps and confidence",
     keywords: ["synthesis", "forced", "budget", "terminal", "partial"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "review_to_continuation",
@@ -357,6 +681,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Review uncommitted changes and emit a bounded continuation prompt with a mustAddress item for every review note",
     keywords: ["review", "continuation", "diff", "notes", "mustaddress"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_mark_superseded",
@@ -364,6 +694,17 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Mark memory entries as superseded by abstracted rules, annotated in place and never deleted (compare-and-swap on expectedHash)",
     keywords: ["agent", "memory", "superseded", "compaction", "rules"],
+    // The one writer that is both non-destructive and idempotent, and both for
+    // the same reason: entries are annotated in place and never deleted, so
+    // re-marking the same ids reports them as alreadySuperseded and changes no
+    // content. Contrast agent_memory_snapshot_sync, which overwrites a whole
+    // file and is destructive.
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "agent_memory_compaction_prompt",
@@ -371,6 +712,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Emit a deterministic distillation prompt plus candidate memory entries for rule abstraction",
     keywords: ["agent", "memory", "compaction", "distill", "prompt"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "build_repo_map",
@@ -378,6 +725,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Return the most relevant slice of a codebase for a token budget, ranked by git recency, path proximity, and reference counts, with an `omissions` report naming every excluded class (ignored, unreadable, oversized, binary, empty, dropped-for-budget, truncated) — though the absence of an omission is not a completeness guarantee",
     keywords: ["repo", "map", "context", "budget", "files", "codebase", "omissions"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   },
   {
     name: "verify_edit",
@@ -385,33 +738,83 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description:
       "Run the project's linter and/or tests after an edit and return structured pass/fail with a bounded failure payload",
     keywords: ["verify", "lint", "test", "check", "edit", "gate"],
+    // The only tool here that spawns a process, and the command is
+    // caller-supplied. `destructive` and `openWorld` are the honest reading
+    // rather than the cautious one: the allowlist includes `node` and `npx`,
+    // which is arbitrary execution (MCP-15), and a test suite routinely touches
+    // the working tree and the network. Not idempotent — it also writes a
+    // capture into the scratch ring on every truncated run.
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
   },
 ];
 
+/** name -> hints, built once from the two declaration sites above. */
+const TOOL_HINTS_BY_NAME: ReadonlyMap<string, ToolHints> = new Map<string, ToolHints>([
+  ...TOOL_CATALOG.map((entry) => [entry.name, entry.annotations] as const),
+  ...Object.entries(HIDDEN_TOOL_ANNOTATIONS),
+]);
+
+/**
+ * The declared hints for `name`, or `null` when nobody declared any.
+ *
+ * The null is what the drift test asserts against — `toolAnnotations` can never
+ * return it, so this is the only way to tell "declared as a writer" apart from
+ * "never declared and silently defaulted to a writer".
+ */
+export function lookupToolAnnotations(name: string): ToolHints | null {
+  return TOOL_HINTS_BY_NAME.get(name) ?? null;
+}
+
+/**
+ * The hints to hand `server.registerTool`. Every registration site calls this
+ * rather than spelling its own object inline, so the catalog is the only place
+ * a hint is ever written and the drift test only has one list to check.
+ */
+export function toolAnnotations(name: string): ToolHints {
+  return lookupToolAnnotations(name) ?? FAIL_SAFE_TOOL_HINTS;
+}
+
 export function registerObservabilityTools(server: McpServer, deps: ObservabilityToolDeps): void {
-  server.tool(
+  server.registerTool(
     "list_platforms",
-    "List all platform tiers, hosts, and their configuration from the xx-stack registry",
-    {},
+    {
+      description:
+        "List all platform tiers, hosts, and their configuration from the xx-stack registry",
+      inputSchema: {},
+      annotations: toolAnnotations("list_platforms"),
+    },
     // MCP-DUP-3: the same shaping `xx platforms` renders, from one module.
     async () => jsonContent(summarizePlatforms(await deps.loadRegistry()))
   );
 
-  server.tool(
+  server.registerTool(
     "check_health",
-    "Check health and latency of all configured model endpoints in the platform registry. " +
-      "Hosts that support resident-model inspection (Ollama runtimes in the current registry) " +
-      "also report residentModels and memoryPressure; the absence of those fields means the " +
-      "host cannot be asked, not that it is idle.",
-    {},
+    {
+      description:
+        "Check health and latency of all configured model endpoints in the platform registry. " +
+        "Hosts that support resident-model inspection (Ollama runtimes in the current registry) " +
+        "also report residentModels and memoryPressure; the absence of those fields means the " +
+        "host cannot be asked, not that it is idle.",
+      inputSchema: {},
+      annotations: toolAnnotations("check_health"),
+    },
     // MCP-DUP-3: the same shaping `xx diagnose` renders, from one module.
     async () => jsonContent(await diagnoseHosts(await deps.loadRegistry()))
   );
 
-  server.tool(
+  server.registerTool(
     "list_models",
-    "List models available on all reachable model endpoints (provider-aware live query)",
-    {},
+    {
+      description:
+        "List models available on all reachable model endpoints (provider-aware live query)",
+      inputSchema: {},
+      annotations: toolAnnotations("list_models"),
+    },
     async () => {
       const registry = await deps.loadRegistry();
       const allHosts = registry.tiers.flatMap((tier) =>
@@ -441,20 +844,24 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     }
   );
 
-  server.tool(
+  server.registerTool(
     "probe_endpoint_compatibility",
-    "Probe endpoint compatibility for /v1/models, /v1/chat/completions, and JSON mode semantics",
     {
-      hostId: z.string().optional().describe("Host ID from the platform registry"),
-      endpoint: z
-        .string()
-        .optional()
-        .describe("Optional endpoint override when hostId is not provided"),
-      provider: z
-        .string()
-        .optional()
-        .describe("Provider label for endpoint override (default: openai-compatible)"),
-      model: z.string().optional().describe("Optional model override for chat/json probes"),
+      description:
+        "Probe endpoint compatibility for /v1/models, /v1/chat/completions, and JSON mode semantics",
+      inputSchema: {
+        hostId: z.string().optional().describe("Host ID from the platform registry"),
+        endpoint: z
+          .string()
+          .optional()
+          .describe("Optional endpoint override when hostId is not provided"),
+        provider: z
+          .string()
+          .optional()
+          .describe("Provider label for endpoint override (default: openai-compatible)"),
+        model: z.string().optional().describe("Optional model override for chat/json probes"),
+      },
+      annotations: toolAnnotations("probe_endpoint_compatibility"),
     },
     async ({ hostId, endpoint, provider, model }) => {
       const registry = await deps.loadRegistry();
@@ -488,38 +895,45 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     }
   );
 
-  server.tool(
+  server.registerTool(
     "get_hardware",
-    "Detect local hardware (GPUs, VRAM, RAM) for routing decisions",
-    {},
+    {
+      description: "Detect local hardware (GPUs, VRAM, RAM) for routing decisions",
+      inputSchema: {},
+      annotations: toolAnnotations("get_hardware"),
+    },
     async () => jsonContent(await deps.detectHardware())
   );
 
-  server.tool(
+  server.registerTool(
     "record_telemetry",
-    "Record a telemetry event with token usage and cost. Appends to the JSONL telemetry stream " +
-      "and awaits that append before returning, so the event is on its way to disk before the " +
-      'caller proceeds. A telemetry failure never fails this call — status stays "accepted" — ' +
-      'but it is never hidden either: "durability" is "best-effort" when the append completed, ' +
-      '"failed" (with a reason) when the writer reported an I/O error, and "none" when the ' +
-      'writer itself threw, which is reported as status "error". "writer" carries the ' +
-      "process-lifetime failure count when earlier writes have failed.",
     {
-      skill: z.string().describe("Skill or operation name"),
-      outcome: z
-        .enum(["success", "failure", "error", "timeout", "cancelled"])
-        .describe("Outcome of the operation"),
-      durationMs: z.number().int().min(0).describe("Duration in milliseconds"),
-      lane: z.string().optional().describe("Routing lane (e.g. local, cloud, tailscale-ollama)"),
-      tokensIn: z.number().int().min(0).optional().describe("Input tokens consumed"),
-      tokensOut: z.number().int().min(0).optional().describe("Output tokens generated"),
-      model: z.string().optional().describe("Model name for cost estimation"),
-      costUsd: z
-        .number()
-        .min(0)
-        .optional()
-        .describe("Override cost in USD. If omitted, estimated from model-rates.json"),
-      sessionId: z.string().optional().describe("Optional session ID for per-session log stream"),
+      description:
+        "Record a telemetry event with token usage and cost. Appends to the JSONL telemetry stream " +
+        "and awaits that append before returning, so the event is on its way to disk before the " +
+        'caller proceeds. A telemetry failure never fails this call — status stays "accepted" — ' +
+        'but it is never hidden either: "durability" is "best-effort" when the append completed, ' +
+        '"failed" (with a reason) when the writer reported an I/O error, and "none" when the ' +
+        'writer itself threw, which is reported as status "error". "writer" carries the ' +
+        "process-lifetime failure count when earlier writes have failed.",
+      inputSchema: {
+        skill: z.string().describe("Skill or operation name"),
+        outcome: z
+          .enum(["success", "failure", "error", "timeout", "cancelled"])
+          .describe("Outcome of the operation"),
+        durationMs: z.number().int().min(0).describe("Duration in milliseconds"),
+        lane: z.string().optional().describe("Routing lane (e.g. local, cloud, tailscale-ollama)"),
+        tokensIn: z.number().int().min(0).optional().describe("Input tokens consumed"),
+        tokensOut: z.number().int().min(0).optional().describe("Output tokens generated"),
+        model: z.string().optional().describe("Model name for cost estimation"),
+        costUsd: z
+          .number()
+          .min(0)
+          .optional()
+          .describe("Override cost in USD. If omitted, estimated from model-rates.json"),
+        sessionId: z.string().optional().describe("Optional session ID for per-session log stream"),
+      },
+      annotations: toolAnnotations("record_telemetry"),
     },
     async ({
       skill,
@@ -631,15 +1045,18 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     }
   );
 
-  server.tool(
+  server.registerTool(
     "search_tools",
-    "Search xx-stack MCP tools by name, category, description, and keywords",
     {
-      query: z.string().optional().describe("Optional natural language query"),
-      // Derived from TOOL_CATEGORIES so the filter can never accept a value the
-      // catalog does not use, or reject one it does.
-      category: z.enum(TOOL_CATEGORIES).optional().describe("Optional category filter"),
-      limit: z.number().int().min(1).max(50).optional().describe("Maximum results to return"),
+      description: "Search xx-stack MCP tools by name, category, description, and keywords",
+      inputSchema: {
+        query: z.string().optional().describe("Optional natural language query"),
+        // Derived from TOOL_CATEGORIES so the filter can never accept a value the
+        // catalog does not use, or reject one it does.
+        category: z.enum(TOOL_CATEGORIES).optional().describe("Optional category filter"),
+        limit: z.number().int().min(1).max(50).optional().describe("Maximum results to return"),
+      },
+      annotations: toolAnnotations("search_tools"),
     },
     async ({ query, category, limit }) => {
       const tokens = (query ?? "")
