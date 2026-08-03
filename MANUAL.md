@@ -433,7 +433,7 @@ CI). Both green.
 **This pack is vendored, not authored here** — a correction to an earlier
 belief recorded in this manual. It was described as clean-room reinterpretation
 because the files say "Design System Inspired by Apple"; a byte-level audit
-found 121 of 137 `design-systems/` files **identical** to
+found 117 of 137 `design-systems/` files **identical** to
 `nexu-io/open-design`. That framing is upstream's, not ours. The pack
 redistributes, which is why Apache-2.0's requirement to ship the license text
 applies to it:
@@ -570,8 +570,11 @@ is the bug this gate exists to prevent. Two waiver classes to know about:
   every run rather than hidden, and the first three words must still match, so
   the waiver covers the lane wording and not a rewrite of what the agent is.
 - **`OPEN` entries** are unresolved differences a human has to adjudicate. They
-  are waived so the gate stays usable and printed in full every run. There is
-  currently one; see §11.1.
+  are waived so the gate stays usable and printed in full every run. There are
+  currently none. The one that existed — the `design-system-pick` prompts
+  disagreeing about two design systems — was adjudicated and closed rather than
+  re-waived; see §11.2. The mechanism stays: a divergence nobody can classify
+  yet belongs here, visible, not absorbed into a looser regex.
 
 A new mirrored top-level document must be classified as gated or explicitly
 excluded, or the check fails — that is how a runbook drifted 90 lines
@@ -755,7 +758,6 @@ judgment call rather than a fix.
 
 | Item | Severity | Why it is still open |
 |---|---|---|
-| `design-system-pick` prompt: the OpenCode copy lists `ollama` and `opencode` design systems the xx-stack copy omits. | OPEN | Both exist under `packs/design/design-systems`, and both prompts claim the same 137 brands. The stale side is **canonical**, so the repo's "canonical wins" rule does not resolve it: this is either deliberate de-branding of the xx-stack surface or a rotted curated list. `drift:check` prints it as `OPEN` with full reasoning on every run rather than hiding it. |
 | The design pack records no upstream commit sha. | OPEN | `packs/rules` pins `9c87636`; the design pack has no equivalent, so drift can only be measured against upstream HEAD — which cannot distinguish our edits from upstream's without reading every diff. 40 Apache-licensed files differ from HEAD and it is not currently knowable which changed on which side. Resolving it means bisecting upstream history against our hashes, or re-vendoring at a pinned sha. |
 | Apache-2.0 §4(b) notice placement for modified files. | OPEN | The 40 modified files are recorded centrally in `packs/design/manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call. |
 | Trademark posture for ~100 brand names in `design-systems/`. | OPEN | Nominative descriptive use is normally fine and the risk is inherited from upstream, but no explicit decision is recorded in this repo. |
@@ -763,10 +765,11 @@ judgment call rather than a fix.
 
 ### 11.2 Closed since the audit
 
-Three items moved out of §11.1. Each has a test that fails without the fix.
+Four items moved out of §11.1. Each has a test or gate that fails without the fix.
 
 | Item | How it was resolved |
 |---|---|
+| `design-system-pick` prompt: the OpenCode copy listed `ollama` and `opencode` design systems the xx-stack copy omitted — the register's one `OPEN` drift waiver. | Adjudicated as a rotted list, not de-branding, on git evidence. `d458c02` ("dedupe, de-brand, fix CI") touched both copies in one commit: it removed `` from **both** — that was the de-branding, and no `/` directory exists to select anyway — and added `ollama`/`opencode` to the OpenCode copy **only**. The canonical copy was simply missed. De-branding also could not explain it, because both components resolve `packs/design` to the same directory (`opencode-orchestration/packs/design` is a symlink), so there is no per-component brand subset. A brand in the pack but absent from the list is unselectable, which makes this a functional gap. Both copies now list `ollama` and `opencode-ai`. The same pass found the enumerated ids had never been validated against the tree: `mistral`, `runway`, `linear`, `the-verge`, and the newly-added `opencode` resolved to nothing — corrected to `mistral-ai`, `runwayml`, `linear-app`, `theverge`, `opencode-ai`. Every id in both copies now resolves to a directory. The dead `KNOWN_DELTAS` entry was deleted rather than left to rot, and `drift:check` prints no `OPEN` line. |
 | `log_worker.logEvent` swallowed every write error. | The policy question is answered: **telemetry never fails a caller's operation** — it is an observability sink, and a metrics failure taking down routing would be absurd. Silence is the part that was wrong. `logEvent` still never throws, but it now returns a `LogEventResult`, counts failures in `telemetryHealth()`, and announces each distinct failure once on stderr (stdout is the MCP channel). `record_telemetry` reports `durability: "failed"` with the reason instead of always claiming `best-effort`, and surfaces the process-lifetime counter — the only trace the 24 fire-and-forget `void logEvent(...)` call sites ever leave. The `dirEnsured` latch is cleared on failure, so a deleted log directory is re-created instead of killing telemetry for the life of the process. |
 | `hardwareCache` cached partial probe results permanently. | Per-probe memoization. A probe that succeeds never runs again; a probe that fails is retried on the next call until it has failed 3 times, then treated as genuinely absent. A fully-successful call is still cached wholesale, so the common path is unchanged at three `execFile`s once. An unavailable probe still leaves its field unset rather than throwing. |
 | `search_tools` categories were a stretch for some tools. | The enum was widened with `context` and `verification`, and `build_repo_map` / `verify_edit` were re-filed out of `observability`. It is a schema change, but an additive one on a *discovery* surface: the five original values still validate and the filter is optional. `TOOL_CATALOG` stays curated — see the comment above it for the measured reasons derivation from `server.tool(...)` was rejected. |

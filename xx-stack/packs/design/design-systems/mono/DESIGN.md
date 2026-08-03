@@ -19,12 +19,12 @@ Monospace-driven, matrix-inspired design with high-contrast elements, compact de
 - **Warning:** `#FE9900` — Token from style foundations.
 - **Danger:** `#FF2157` — Token from style foundations.
 - **Surface:** `#E7E5E4` — Token from style foundations.
-- **Text:** `#78716B` — Token from style foundations.
+- **Text:** `#111827` — Token from style foundations.
 - **Neutral:** `#E7E5E4` — Derived from the surface token for official format compatibility.
 
 - Favor Primary (#37F712) for CTA emphasis.
 - Use Surface (#E7E5E4) for large backgrounds and cards.
-- Keep body copy on Text (#78716B) for legibility.
+- Keep body copy on Text (#111827) for legibility.
 
 ## 3. Typography
 

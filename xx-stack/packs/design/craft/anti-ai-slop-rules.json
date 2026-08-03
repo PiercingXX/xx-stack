@@ -271,7 +271,7 @@
     {
       "id": "animate-layout-property",
       "source": "stitch-skills",
-      "severity": "P1",
+      "severity": "P0",
       "kind": "regexAny",
       "patterns": [
         "transition\\s*:[^;{}]*(?<![-\\w])(?:top|left|right|bottom|width|height)(?![-\\w])",
@@ -280,7 +280,7 @@
       ],
       "message": "Animating a layout property ({match}) — top/left/width/height force layout on every frame.",
       "fix": "Animate transform and opacity only; they composite. A progress bar becomes `transform: scaleX(p)` on a full-width element with `transform-origin: left`.",
-      "note": "The one rule in this table that is performance correctness rather than taste, which is why it was taken. P1 rather than P0 because it has six real hits in this pack, all the same construct: a 3px fixed `.deck-progress` bar with `transition: width 0.18s ease` in replit-deck (4 vendored examples + the seed template) and simple-deck's seed template. Four of the six are upstream files this pack does not rewrite, so the choice was between six same-reason exemptions that read as 'this is fine' and one advisory that stays visible on every run with the fix attached. The advisory is the honest record: the finding is real, we did not rewrite vendored content for it, and nothing is silenced."
+      "note": "The one rule in this table that is performance correctness rather than taste, which is why it was taken. It shipped at P1 because it had six real hits in this pack, all the same construct: a fixed `.deck-progress` bar with `transition: width 0.18s ease` in replit-deck (4 vendored examples + the seed template) and simple-deck's seed template. Promoted to P0 on 2026-08-03 after all six were rewritten to the fix this rule prescribes — `width: 100%` + `transform: scaleX(p)` + `transform-origin: left`, transitioning `transform`. The alternative, exempting the four vendored files, would have written 'animating width is fine here' into the pack that teaches the opposite, in the example decks agents copy from; and the exemptions would have outlived the advisory. The four vendored edits are recorded in ../manifest.json under subtree `workflow-skills/` — they are the only local edits to vendored example HTML in this pack. The rule now has zero hits over the pack's 67 files, so P0 costs nothing here and enforces on generated artifacts, which is where a layout-thrashing animation actually lands."
     },
     {
       "id": "fabricated-metric-section",

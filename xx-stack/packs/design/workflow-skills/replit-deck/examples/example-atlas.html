@@ -343,9 +343,11 @@
       top: 0; left: 0;
       height: 2px;
       background: var(--accent);
-      width: 0;
+      width: 100%;
+      transform: scaleX(0);
+      transform-origin: left;
       z-index: 10;
-      transition: width 0.18s ease;
+      transition: transform 0.18s ease;
     }
   </style>
 </head>
@@ -450,7 +452,7 @@
       function setActive(i) {
         active = i;
         if (counter)  counter.textContent  = (i + 1) + ' / ' + slides.length;
-        if (progress) progress.style.width = (((i + 1) / slides.length) * 100) + '%';
+        if (progress) progress.style.transform = 'scaleX(' + ((i + 1) / slides.length) + ')';
         try { localStorage.setItem(KEY, String(i)); } catch (_) {}
       }
       function go(i) {

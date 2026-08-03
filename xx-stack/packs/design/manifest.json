@@ -94,15 +94,15 @@
       "path": "design-systems/",
       "contents": "137 directories, one DESIGN.md each",
       "provenance": "verified",
-      "nature": "vendored, with local modifications to 8 files (7 further files differ only because upstream moved on)",
+      "nature": "vendored, with local modifications to 12 files (7 further files differ only because upstream moved on)",
       "primarySource": "open-design",
       "license": "Apache-2.0",
       "detail": {
         "fromOpenDesign": 136,
         "fromAwesomeDesignMd": 1,
-        "byteIdenticalToOpenDesignHead": 121,
-        "modifiedOrDrifted": 15,
-        "modificationCause": "Two causes, both observed in sampled diffs. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. (2) Upstream drift since vendoring — e.g. design-systems/arc gained a '## 7. Usage Guardrails' section upstream that this copy predates.",
+        "byteIdenticalToOpenDesignHead": 117,
+        "modifiedOrDrifted": 19,
+        "modificationCause": "Three causes, all observed in sampled diffs. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. (2) Upstream drift since vendoring — e.g. design-systems/arc gained a '## 7. Usage Guardrails' section upstream that this copy predates. (3) Accessibility defect fix, 2026-08-03: four Schema-B files (bold, energetic, mono, pacman) shipped a declared Text/Surface pair below WCAG AA and had their Text token corrected — see knownContentDefects id declared-text-on-surface-contrast for the per-file values and reasoning. This is the first cause under which a vendored byte was changed for a reason other than de-branding; it is recorded here rather than annotated in the files so the remaining bytes stay comparable to upstream.",
         "exceptions": [
           {
             "slug": "bmw-m",
@@ -113,12 +113,16 @@
           }
         ],
         "modifiedByUs": [
+          "bold",
           "cal",
           "dashboard",
+          "energetic",
           "expo",
           "framer",
           "kami",
+          "mono",
           "ollama",
+          "pacman",
           "replicate",
           "voltagent"
         ],
@@ -132,16 +136,20 @@
           "openai"
         ],
         "apacheSection4bModifiedSet": [
+          "bold",
           "cal",
           "dashboard",
+          "energetic",
           "expo",
           "framer",
           "kami",
+          "mono",
           "ollama",
+          "pacman",
           "replicate",
           "voltagent"
         ],
-        "separationMethod": "Separated by matching every file against upstream history with a blob:none clone: files whose content matches SOME historical upstream state are upstream drift; files matching NO upstream state at any commit are our edits. Before this, the two causes could not be told apart and all 15 were recorded as modified."
+        "separationMethod": "Separated by matching every file against upstream history with a blob:none clone: files whose content matches SOME historical upstream state are upstream drift; files matching NO upstream state at any commit are our edits. Before this, the two causes could not be told apart and all 15 were recorded as modified. The four 2026-08-03 contrast fixes (bold, energetic, mono, pacman) did not need that inference: they are recorded as our edits at the moment they were made, which is the cheaper and more reliable half of this method and the one any future local edit should use. All four were in the byte-identical-to-upstream-HEAD group before the edit, which is why that count drops 121 → 117 and modifiedOrDrifted rises 15 → 19."
       },
       "copyrightNote": "The content is written as 'Design System Inspired by <brand>' — prose analysis of publicly observable visual language, not copied brand assets. That framing is upstream's, authored at nexu-io/open-design and VoltAgent/awesome-design-md; it was NOT clean-room reinterpretation performed in this repo. Everything here is a redistributed copy of upstream text. Brand names, wordmarks, and trademarks referenced in the prose remain the property of their respective owners and are used nominatively.",
       "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 121 of 137 files are byte-identical to upstream. The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m)."
@@ -194,7 +202,7 @@
       "path": "workflow-skills/",
       "contents": "31 skill directories plus quality-gates.json",
       "provenance": "verified",
-      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (6 with local edits); the other 79 have no upstream counterpart at any path or commit and were written here.",
+      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (10 with local edits: 6 SKILL.md and 4 replit-deck example decks); the other 79 have no upstream counterpart at any path or commit and were written here.",
       "primarySource": "open-design",
       "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
       "detail": {
@@ -209,7 +217,7 @@
           "wireframe-sketch"
         ],
         "modifiedOrDrifted": 25,
-        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten.",
+        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten. A third cause was added 2026-08-03: four replit-deck example decks were edited to satisfy this pack's own animate-layout-property rule.",
         "inFileAttribution": "All 31 SKILL.md files retain upstream's `od:` frontmatter block — open-design's own metadata namespace — which is what identifies the subtree's origin from inside the files.",
         "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick).",
         "skillMdModifiedByUs": [
@@ -221,7 +229,7 @@
           "tweaks"
         ],
         "authoredHereFiles": "every references/checklist.md (31), references/layouts.md (31), and assets/template.html (31), plus quality-gates.json — upstream ships only SKILL.md + example.html per template",
-        "authoredHereFileCount": 93,
+        "authoredHereFileCount": 79,
         "authoredHereEvidence": "No upstream counterpart exists at any path in any commit, and the checklists cite this repo's own design-prototype skill and its P0/P1/P2 severity vocabulary.",
         "apacheSection4bModifiedSet": [
           "critique",
@@ -230,7 +238,16 @@
           "replit-deck",
           "saas-landing",
           "tweaks"
-        ]
+        ],
+        "exampleHtmlModifiedByUs": [
+          "replit-deck/examples/example-atlas.html",
+          "replit-deck/examples/example-bluehouse.html",
+          "replit-deck/examples/example-helix.html",
+          "replit-deck/examples/example-holm.html"
+        ],
+        "exampleHtmlModificationReason": "2026-08-03. craft/anti-ai-slop-rules.json rule `animate-layout-property` was promoted P1 -> P0; these four decks animated `.deck-progress` with `transition: width`, forcing layout every frame. Each received the identical prescribed change: width:0 -> width:100% plus transform:scaleX(0) and transform-origin:left; transition:width -> transition:transform; and the one JS line setting style.width now sets style.transform. Nine lines per file. The two files with the same construct — replit-deck/assets/template.html and simple-deck/assets/template.html — are authored here and need no section 4(b) record.",
+        "apacheSection4bNote": "Slug-granular. replit-deck was already listed for its SKILL.md; as of 2026-08-03 it also covers exampleHtmlModifiedByUs. No new slug — simple-deck's edited file is authored here.",
+        "authoredHereCountNote": "79 is the count of files with no upstream counterpart. An earlier value of 93 counted every checklist.md + layouts.md + template.html (31 each) plus quality-gates.json without subtracting the skills whose template.html does exist upstream. 79 is the measured figure and the one `nature` states."
       },
       "exceptions": [
         {
@@ -256,7 +273,7 @@
       "provenance": "verified",
       "nature": "vendored verbatim, zero local edits to any vendored file",
       "primarySource": "open-design",
-      "license": "Apache-2.0 (nexu-io/open-design), over a two-hop chain from referodesign/refero_skill (MIT)",
+      "license": "Apache-2.0 (nexu-io/open-design). Three of the 11 rulebooks additionally sit over a two-hop chain from referodesign/refero_skill (MIT); the other eight do not.",
       "axis": "A fourth content axis for this pack, and the one genuinely new KIND of content. design-systems/ says what a brand looks like; design-skills/ supplies aesthetic direction; workflow-skills/ says how to build one artifact type; craft/ supplies the universal rules that hold regardless of brand (ALL CAPS needs >=0.06em tracking; cap visible accent uses at ~2 per screen; every stateful surface needs empty/loading/error/partial states).",
       "detail": {
         "upstreamPath": "nexu-io/open-design craft/",
@@ -276,7 +293,7 @@
             "bytes": 3067,
             "tokensEstimated": 767,
             "vendored": true,
-            "reforoAttributedInline": true
+            "referoAttributedInline": true
           },
           {
             "file": "typography-hierarchy.md",
@@ -298,7 +315,7 @@
             "bytes": 3118,
             "tokensEstimated": 780,
             "vendored": true,
-            "reforoAttributedInline": true
+            "referoAttributedInline": true
           },
           {
             "file": "anti-ai-slop.md",
@@ -306,7 +323,7 @@
             "bytes": 3919,
             "tokensEstimated": 980,
             "vendored": true,
-            "reforoAttributedInline": true
+            "referoAttributedInline": true
           },
           {
             "file": "state-coverage.md",
@@ -459,22 +476,33 @@
         "scripts/quality-gate-html.mjs — reads craft/anti-ai-slop-rules.json",
         "scripts/check-craft-references.mjs — resolves od.craft.requires slugs",
         "scripts/test-anti-slop-rules.mjs — fixture coverage for the rule table"
-      ]
+      ],
+      "referoScopeNote": "craft/README.md's Attribution section claims all craft content is adapted from refero_skill. Per-file evidence scopes that: exactly 3 of 11 rulebooks carry an inline 'Adapted from refero_skill' line — typography.md, color.md, anti-ai-slop.md — 10,104 of 102,042 rulebook bytes (~10%). Those three landed upstream in 1edab99 alongside that README; the other eight landed 2026-05-05 through 2026-06-14, after it was written, and carry no attribution. The README is vendored byte-for-byte and deliberately not edited, so the scoping is recorded here. Both license texts ship regardless, so the narrower reading costs nothing."
     },
     {
       "path": "evals/",
-      "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures",
+      "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures. evals/design-system-lint/ — 4 DESIGN.md fixtures for scripts/lint-design-systems.mjs.",
       "provenance": "verified",
       "nature": "authored in this repository",
       "primarySource": null,
       "license": "MIT (repo root LICENSE, Copyright (c) 2026 xx-stack contributors)",
       "detail": {
-        "evidence": "tasks.json grades this repo's own agents by name (build, plan, execution-orchestrator, design-engineer, reviewer) against this repo's paths (runtime/skills/, packs/design/evals/golden-tasks/responses/) and encodes this repo's authoring conventions. No `evals` or `golden-tasks` tree exists in any of the three upstreams at their audited heads."
+        "evidence": "tasks.json grades this repo's own agents by name (build, plan, execution-orchestrator, design-engineer, reviewer) against this repo's paths (runtime/skills/, packs/design/evals/golden-tasks/responses/) and encodes this repo's authoring conventions. No `evals` or `golden-tasks` tree exists in any of the three upstreams at their audited heads.",
+        "designSystemLintFixtures": {
+          "why": "Calibrated to this corpus, the structural check in lint-design-systems.mjs passes 137/137 on day one — the vacuous-pass shape MANUAL §11 BUILD-6 warns about. These four files are the only evidence the checks can fail at all, so the gate runs them on every invocation before it touches the corpus.",
+          "files": {
+            "clean/DESIGN.md": "valid Schema B, AA-passing declared pair — must produce zero findings, at least one colour token, and a declared pair",
+            "low-contrast/DESIGN.md": "Text #111827 on Surface #111111 (1.06:1) — reproduces the upstream generator defect the four real fixes removed, so the check that caught them cannot silently regress",
+            "malformed-order/DESIGN.md": "Components placed before Color — legal in neither shipped schema",
+            "no-color-section/DESIGN.md": "palette stated under a heading the colour-scope regex does not match — must be reported, not silently pass over zero tokens"
+          },
+          "warning": "These are DELIBERATELY BROKEN and are not design systems. Do not repair them, do not move them under design-systems/, and do not add them to DESIGN-CATALOG.md. Each carries a blockquote at the top saying so."
+        }
       }
     },
     {
       "path": "scripts/",
-      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs",
+      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs, lint-design-systems.mjs",
       "provenance": "verified",
       "nature": "authored in this repository",
       "primarySource": null,
@@ -482,7 +510,8 @@
       "detail": {
         "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream.",
         "licenceBoundary": "quality-gate-html.mjs evaluates the anti-slop rules but holds none of their values — those live in craft/anti-ai-slop-rules.json, which is data derived from two Apache-2.0 upstreams. The engine's rule KINDS (gradientContainsAny, literalAny, emojiInElement, regexAny, countHexOutsideRoot, countLiteralOutsideStyle, …) were written here; no upstream code was transliterated. That is what keeps the script MIT.",
-        "notWiredIntoVerify": "check-craft-references.mjs and test-anti-slop-rules.mjs both run clean and exit non-zero on failure, but neither is in `npm run verify` — adding them needs a package.json edit outside the scope of the change that introduced them. A human should wire them, or decide not to."
+        "wiredIntoVerify": "All five gates are now in `npm run verify`: design:golden, design:html-gate, design:systems-lint, design:craft-refs, design:anti-slop-test. This key previously said check-craft-references.mjs and test-anti-slop-rules.mjs were unwired; that stopped being true when they were added to the verify chain, and the note is corrected here rather than left to rot (MANUAL §11 CONTENT-12).",
+        "lintDesignSystemsNote": "lint-design-systems.mjs is the only script in this pack that reads design-systems/ content and can fail on it. It is read-only by construction — every mutating fs entry point is replaced with a throwing stub before the first file is opened — because byte-comparability against upstream is what `separationMethod` depends on. It reimplements two rules from google-labs-code/design.md rather than taking that package as a dependency: that linter requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for a single systematic lineage difference. No upstream code was transliterated; the script is MIT like the rest of scripts/."
       }
     },
     {
@@ -525,21 +554,65 @@
  "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: upstream's `` (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
     "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), git hash-object over all 304 vendored files, match-counted against every historical state of upstream's design-systems/, skills/, and design-templates/ trees."
   },
-  "knownContentDefects": [
+  "knownContentDefects": [],
+  "resolvedContentDefects": [
     {
       "id": "declared-text-on-surface-contrast",
       "severity": "real defect in shipped content",
+      "status": "fixed here 2026-08-03; still present upstream",
       "affects": [
         "design-systems/bold/",
-        "design-systems/pacman/",
-        "design-systems/energetic/"
+        "design-systems/energetic/",
+        "design-systems/mono/",
+        "design-systems/pacman/"
       ],
-      "finding": "Each declares a Text token and a Surface token, and its own prose instructs pairing them — bold says 'Keep body copy on Text (#111827) for legibility' while 'Use Surface (#111111) for large backgrounds'. Measured WCAG AA contrast: bold 1.06:1, pacman 1.18:1, energetic 2.11:1. AA requires 4.5:1 for body text, so an agent following the file produces unreadable output.",
-      "cause": "Upstream generator defect, not ours. All three came in with the 57-file Schema-B batch from nexu-io/open-design; the dark themes kept a light-theme Text default. Verified against our vendored bytes, so re-vendoring may or may not carry the fix.",
-      "detectedBy": "Manual WCAG computation over the declared Text/Surface pair, prompted by the google-labs-code/design.md review. Nothing in this repo checks it: design:golden covers 5 eval tasks and design:html-gate covers 67 generated artifacts — neither reads the 137 design systems.",
-      "status": "recorded, not fixed",
-      "whyNotFixed": "Editing vendored bytes destroys the byte-comparability the provenance record depends on (see separationMethod). Fixing needs either a recorded local-edit entry or an upstream fix. The durable answer is a design-system lint gate over declared pairs only — cross-producing role-bucketed tokens was measured at 52% false positives and must not be shipped.",
-      "reportUpstream": "https://github.com/nexu-io/open-design"
+      "finding": "Each declares a Text token and a Surface token, and its own prose instructs pairing them — bold says 'Keep body copy on Text (#111827) for legibility' while 'Use Surface (#111111) for large backgrounds'. Measured WCAG AA contrast before the fix: bold 1.06:1, pacman 1.18:1, energetic 2.11:1, mono 3.82:1. AA requires 4.5:1 for body text, so an agent following the file produced unreadable output.",
+      "fourthFileFoundByTheGate": "mono was NOT in the original hand-measured set of three. It was found by scripts/lint-design-systems.mjs on its first run over the corpus — Text #78716B (stone-500) on Surface #E7E5E4 (stone-200) at 3.82:1, the same generator defect in a less obvious form. It is recorded separately because it is the first evidence this gate finds anything a careful manual pass missed.",
+      "cause": "Upstream generator defect, not ours. All four came in with the 57-file Schema-B batch from nexu-io/open-design: the dark themes (bold, pacman) kept the light-theme Text default #111827, energetic set Text to a near-copy of its own Primary (#EA580C against Primary #EA580B), and mono picked a mid-ramp grey against a light surface. Verified against our vendored bytes, so re-vendoring may or may not carry the fix.",
+      "detectedBy": "Originally, manual WCAG computation over the declared Text/Surface pair, prompted by the google-labs-code/design.md review. Now checked on every run by scripts/lint-design-systems.mjs, wired into `npm run design:systems-lint` and into `npm run verify` after design:html-gate.",
+      "fix": "Only the Text token changed, in two places per file (the token bullet and the 'Keep body copy on Text (#…)' prose line). No other byte was touched, so each file remains diffable against upstream at every other line.",
+      "fixValues": [
+        {
+          "slug": "bold",
+          "surface": "#111111",
+          "textWas": "#111827",
+          "textNow": "#FAFAFA",
+          "ratioWas": 1.06,
+          "ratioNow": 18.09,
+          "reasoning": "Dark surface. #FAFAFA is not an invention: it is the Text token this same generator emits for the other dark-surface systems in this batch (dashboard and dramatic both declare Text #FAFAFA on Surface #09090B). Using the batch's own correct dark-theme output is the smallest change that fixes the defect without introducing a value the pack does not already use. bold's stated identity is 'high-contrast colors', which 18.09:1 serves and 1.06:1 contradicted."
+        },
+        {
+          "slug": "pacman",
+          "surface": "#000000",
+          "textWas": "#111827",
+          "textNow": "#FAFAFA",
+          "ratioWas": 1.18,
+          "ratioNow": 20.12,
+          "reasoning": "Same dark-surface rule and same source value as bold. The in-file alternative was Secondary #F4B9B0 (12.41:1, and a genuine arcade colour), but promoting Secondary to body text collapses two roles into one and the file's own Anti-patterns section forbids flattening hierarchy. #FAFAFA leaves every other token's role intact."
+        },
+        {
+          "slug": "energetic",
+          "surface": "#FDBA74",
+          "textWas": "#EA580C",
+          "textNow": "#111827",
+          "ratioWas": 2.11,
+          "ratioNow": 10.52,
+          "reasoning": "Light surface. #111827 is the Text token 34 of the 57 Schema-B files already declare against light surfaces, so it is this batch's own light-theme default. Nothing in energetic's own vocabulary reaches AA against #FDBA74 — the darkest in-file candidate, Danger #DC2626, manages only 2.86:1 — so an in-file value was not available. A warm near-black (orange-950 #431407, 9.28:1) would have been more on-brand but is a value the pack uses nowhere, and inventing one to fix a defect is a design change, not a repair."
+        },
+        {
+          "slug": "mono",
+          "surface": "#E7E5E4",
+          "textWas": "#78716B",
+          "textNow": "#111827",
+          "ratioWas": 3.82,
+          "ratioNow": 14.13,
+          "reasoning": "Light surface, same rule and same value as energetic. #78716B and #E7E5E4 are stone-500 and stone-200 from one ramp, two steps apart — the file's high-contrast, 'matrix-inspired' stated intent is served by the batch default, not by a mid-ramp grey."
+        }
+      ],
+      "whyNotAllowlisted": "An allowlist would have kept four files shipping prose that promises legibility while producing 1.06:1. Editing vendored bytes does cost byte-comparability against upstream, which is why each file is now in modifiedByUs and apacheSection4bModifiedSet (Apache-2.0 §4(b)) and why the diff is confined to one token per file.",
+      "notFixedHere": "The cross-produced role-bucket contrast check was measured at 52.4% false positives (3114 pairs, 1633 below AA) and is deliberately NOT implemented; see the header comment in scripts/lint-design-systems.mjs. Accent-on-surface below 3:1 is reported as a NOTE on 14 files and deliberately does not fail the gate — those are brand primaries on non-text fills, an upstream design choice rather than a defect.",
+      "reportUpstream": "https://github.com/nexu-io/open-design",
+      "upstreamStillAffected": "Yes. The fix here is local; upstream's generator still emits these defaults. If this pack is re-vendored at a newer sha, re-check these four slugs before assuming the fix survived — the gate will catch it either way."
     }
   ]
 }

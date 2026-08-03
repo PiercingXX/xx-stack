@@ -63,7 +63,7 @@ Context boundary rule:
 ## Available design systems (137 brands)
 
 ### AI & Dev platforms
- elevenlabs, mistral, ollama, opencode, replicate, runway, together-ai, voltagent, x-ai, cohere, minimax
+ elevenlabs, mistral-ai, ollama, opencode-ai, replicate, runwayml, together-ai, voltagent, x-ai, cohere, minimax
 
 ### Dev tools
 expo, lovable, raycast, superhuman, vercel, warp
@@ -72,7 +72,7 @@ expo, lovable, raycast, superhuman, vercel, warp
 clickhouse, composio, hashicorp, mongodb, posthog, sanity, sentry, supabase
 
 ### Productivity / SaaS
-cal, intercom, linear, mintlify, notion, resend, zapier
+cal, intercom, linear-app, mintlify, notion, resend, zapier
 
 ### Design tools
 airtable, clay, figma, framer, miro, webflow
@@ -84,7 +84,7 @@ binance, coinbase, kraken, mastercard, revolut, stripe, wise
 airbnb, meta, nike, shopify, starbucks
 
 ### Media / consumer tech
-apple, ibm, nvidia, pinterest, playstation, spacex, spotify, the-verge, uber, vodafone, wired
+apple, ibm, nvidia, pinterest, playstation, spacex, spotify, theverge, uber, vodafone, wired
 
 ### Automotive
 bmw, bmw-m, bugatti, ferrari, lamborghini, renault, tesla

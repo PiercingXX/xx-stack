@@ -19,12 +19,12 @@ Retro arcade-inspired design with pixel fonts, dotted borders, playful high-cont
 - **Warning:** `#D97706` — Token from style foundations.
 - **Danger:** `#DC2626` — Token from style foundations.
 - **Surface:** `#000000` — Token from style foundations.
-- **Text:** `#111827` — Token from style foundations.
+- **Text:** `#FAFAFA` — Token from style foundations.
 - **Neutral:** `#000000` — Derived from the surface token for official format compatibility.
 
 - Favor Primary (#2A3FE5) for CTA emphasis.
 - Use Surface (#000000) for large backgrounds and cards.
-- Keep body copy on Text (#111827) for legibility.
+- Keep body copy on Text (#FAFAFA) for legibility.
 
 ## 3. Typography
 

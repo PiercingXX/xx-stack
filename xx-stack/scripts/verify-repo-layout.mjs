@@ -120,6 +120,8 @@ checkDir("packs/design");
 checkDir("packs/design/design-systems");
 checkDir("packs/design/design-skills");
 checkDir("packs/design/workflow-skills");
+checkDir("packs/design/craft");
+checkDir("packs/design/licenses");
 checkDir("packs/design/evals/golden-tasks");
 
 checkFile("README.md");
@@ -129,6 +131,43 @@ checkFile("packs/design/DESIGN-CATALOG.md");
 checkFile("packs/design/scripts/generate-design-catalog.mjs");
 checkFile("packs/design/scripts/evaluate-golden-tasks.mjs");
 checkFile("packs/design/scripts/quality-gate-html.mjs");
+
+// craft/ and licenses/ are vendored subtrees. A directory check alone would not
+// catch a rulebook or a license text being deleted or renamed — which is the
+// failure mode this gate exists for, and the reason an unmapped directory is
+// worse than no directory. Each file is named so the layout gate has to notice.
+// Rulebook slugs are also the `od.craft.requires` vocabulary; renaming one here
+// silently breaks every skill that binds to it.
+for (const rulebook of [
+  "accessibility-baseline",
+  "animation-discipline",
+  "anti-ai-slop",
+  "color",
+  "form-validation",
+  "laws-of-ux",
+  "rtl-and-bidi",
+  "state-coverage",
+  "typography",
+  "typography-hierarchy",
+  "typography-hierarchy-editorial",
+]) {
+  checkFile(`packs/design/craft/${rulebook}.md`);
+}
+
+checkFile("packs/design/craft/README.md");
+checkFile("packs/design/craft/FUTURE_SECTIONS.md");
+checkFile("packs/design/craft/XX-STACK-NOTES.md");
+checkFile("packs/design/craft/anti-ai-slop-rules.json");
+
+for (const license of [
+  "bergside-awesome-design-skills-MIT",
+  "google-labs-code-stitch-skills-Apache-2.0",
+  "nexu-io-open-design-Apache-2.0",
+  "referodesign-refero_skill-MIT",
+  "voltagent-awesome-design-md-MIT",
+]) {
+  checkFile(`packs/design/licenses/${license}.txt`);
+}
 
 // VS Code / Copilot wiring is only shipped by components that generate editor
 // mirrors from canonical agent contracts.
