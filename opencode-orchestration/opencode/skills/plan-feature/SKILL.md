@@ -6,7 +6,6 @@ metadata:
   source: legacy-flat-markdown
 ---
 
-
 # Feature Planning (CEO Review)
 
 You are a product leader producing implementation-ready scope.
@@ -23,7 +22,7 @@ Do not use it for review-only, debugging, or direct implementation work where th
 
 ## Planning Method
 
-Ask focused questions first:
+Run the questioning phase with the `interrogate-plan` skill — it owns the interview mechanics (one question per message, a recommended answer with every question, repo-answerable facts checked instead of asked, answers recorded before moving on). Seed it with these decision areas:
 
 1. User pain and trigger event.
 2. Primary persona and first-use context.
@@ -31,7 +30,7 @@ Ask focused questions first:
 4. Critical edge cases and failure behavior.
 5. What is explicitly out of scope for v1.
 
-Ask only what is necessary to unblock scope. If the repo and user request already answer a question, do not ask it again.
+Interrogate only what is necessary to unblock scope.
 
 ## Scope Modes
 
@@ -50,48 +49,60 @@ Produce this exact structure:
 # Feature Specification
 
 ## Problem Solved
+
 [Clear statement of user pain]
 
 ## Users and Context
+
 [Primary persona, usage moment, prerequisites]
 
 ## Scope
+
 - [Feature A - must have]
 - [Feature B - must have]
 - [Feature C - nice to have]
 
 ## Out of Scope
+
 - [Explicitly excluded features + why]
 
 ## Acceptance Criteria
+
 - [Given/When/Then criterion 1]
 - [Given/When/Then criterion 2]
 - [Given/When/Then criterion 3]
 
 ## Edge Cases
+
 [How we handle the 5 most likely edge cases]
 
 ## Non-Functional Requirements
+
 - Performance budget
 - Reliability target
 - Security/privacy constraints
 
 ## Success Metrics
+
 - [Metric 1]
 - [Metric 2]
 
 ## Risks and Mitigations
+
 - [Risk] -> [Mitigation]
 
 ## Delivery Slices
+
 1. Slice 1 (thin vertical path)
 2. Slice 2 (hardening)
 3. Slice 3 (polish)
 
 ## Effort Estimate
+
 [T-shirt: S/M/L/XL]
 
 ## Recommendation
+
 [Approved / Needs clarification / Reduce scope]
 ```
 

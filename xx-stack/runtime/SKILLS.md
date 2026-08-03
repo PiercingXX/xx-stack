@@ -44,6 +44,7 @@ Shadowing rules:
 Not every workflow is equally critical.
 
 Critical workflow surface:
+
 - `execution-orchestrator`
 - `fast-build`
 - `review-code`
@@ -51,6 +52,7 @@ Critical workflow surface:
 - `deploy-ship`
 
 Graceful/optional workflow surface:
+
 - `benchmark-performance`
 - `ops-canary`
 - `setup-observability`
@@ -70,81 +72,116 @@ Additional routing pattern:
 ## Core Workflows (5)
 
 1. ideate-product
+
 - Purpose: Product validation through forcing questions
 - Model: self-hosted-api/coder-deep
 
 2. plan-feature
+
 - Purpose: Scope feature into testable spec
 - Model: self-hosted-api/coder-main
 
 3. plan-architecture
+
 - Purpose: Architecture decisions, risks, verification plan
 - Model: self-hosted-api/coder-deep
 
 4. review-code
+
 - Purpose: Production-grade pre-merge review
 - Model: self-hosted-api/coder-main
 
 5. deploy-ship
+
 - Purpose: Release gates and deployment verification
 - Model: self-hosted-api/coder-main
 
-## Advanced Workflows (10)
+## Advanced Workflows (13)
 
 6. debug-investigate
+
 - Root-cause debugging workflow
 
 7. plan-design
+
 - Design system and UX review
 
 8. audit-security
+
 - OWASP/STRIDE security audit
 
 9. ops-deploy-land
+
 - Post-deploy operations and rollback
 
 10. reflect-retrospective
+
 - Post-project retrospective
 
 11. plan-autoreview
+
 - Automated product/design/engineering planning gauntlet
 
 12. ops-canary
+
 - Post-deploy canary monitoring
 
 13. benchmark-performance
+
 - Performance regression benchmarking
 
 14. rewrite-rust-oneshot
+
 - Autonomous one-shot full-application rewrite to Rust with compile/test auto-repair loops
 
 15. train-model-knowledge-injection
+
 - End-to-end model training and knowledge injection from repository/PDF/Markdown/software stacks
+
+16. plan-decision-map
+
+- Multi-session decision-map planning: persistent map of decision tickets backed by the task tools, one decision resolved per session until the fog clears
+
+17. interrogate-plan
+
+- One-question-at-a-time decision interrogation with a recommended answer per question; owns the questioning phase delegated by the plan-* skills
+
+18. research-deep
+
+- Budget-bounded iterative research loop (search → read → reason → reflect) with an explicit knowledge-gaps queue and completion-judge-gated termination
 
 ## Utility Workflows (7)
 
-16. diagnose-stack
+19. diagnose-stack
+
 - Stack health check: verifies MCP server, agent definitions, skill structure, environment variables, and config wiring
 
-17. write-docs
+20. write-docs
+
 - README/API/deployment doc generation
 
-18. setup-observability
+21. setup-observability
+
 - Metrics, logs, alerts, traces
 
-19. test-qa
+22. test-qa
+
 - Journey QA with regression checks
 
-20. release-doc-sync
+23. release-doc-sync
+
 - Post-release documentation synchronization
 
-21. safety-guardrails
+24. safety-guardrails
+
 - Destructive-command and edit-scope safety mode
 
-22. orchestrate-platform-routing
+25. orchestrate-platform-routing
+
 - Delegation planning across local, remote, and cloud model tiers
 
-23. ensemble-consensus
+26. ensemble-consensus
+
 - Ask at least three models the same question in parallel — across machines, or
   three local models when nothing can be delegated — then merge the answers and
   report where they disagreed
@@ -160,17 +197,21 @@ debug-investigate -> review-code -> deploy-ship -> ops-canary -> reflect-retrosp
 ## Directory Layout
 
 .xx-stack/skills/
+
 - <skill-name>/SKILL.md (canonical repo skill content)
 
 Installed runtime discovery:
+
 - ~/.config/xx-stack/skills/<skill-name>/SKILL.md (top-level shim created by setup.sh)
 - ~/.config/xx-stack/skills/xx-stack/.xx-stack/skills/<skill-name>/SKILL.md (installed canonical copy)
 
 Migration status:
+
 - Native discovery conversion complete for all skills.
 - Duplicate and internal orchestration helper skills have been absorbed into `execution-orchestrator` and removed from the user-facing surface.
 
 Telemetry:
+
 - Optional and disabled by default via `.xx-stack/telemetry.json`.
 - Recommended only for ops/eval workflows where trend data is actionable.
 - Extended to selected orchestration workflows when run metrics improve planning or delivery automation.
@@ -205,4 +246,3 @@ Across agents and skills, completion language should map to one of:
 - `PASS`: deterministic evidence supports the claim
 - `FAIL`: deterministic evidence disproves the claim
 - `AMBIGUOUS`: evidence exists but a stronger validation surface is unavailable
-
