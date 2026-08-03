@@ -4,7 +4,7 @@ Ideas worth pulling into xx-stack, harvested from a review of Orca (stablyai), A
 
 Guiding constraint: xx-stack is a headless, local-first MCP control plane. It routes, supervises, and qualifies — it does not become a desktop app. Every task below respects that: no GUI, cloud stays opt-in, inventory.json stays the single source of truth, and the full npm run verify pipeline must stay green.
 
-Status (2026-08-02): tasks 1-25 are LANDED. Everything from the Aider, Orca, Titus-AI, mattpocock, agent-rules-books, jina-ai, remix-run and davidondrej reviews has been built and shipped behind a green npm run verify. Task descriptions below are kept as the rationale record for what was built and why — read them as history, not as a queue. The open queue is tasks 26-29 (from block/buzz, reviewed 2026-08-02, at the end of this file).
+Status (2026-08-02): ALL tasks 1-29 are LANDED — every borrow from the Aider, Orca, Titus-AI, mattpocock, agent-rules-books, jina-ai, remix-run, davidondrej and block/buzz reviews has been built and shipped behind a green npm run verify. Nothing here is an open queue. Task descriptions below are kept as the rationale record for what was built and why — read them as history. New harvests append below with the next free number (30).
 
 Ground rules for whoever executes (Skippy):
 
