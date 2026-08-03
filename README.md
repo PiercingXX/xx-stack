@@ -66,7 +66,10 @@ consider cloud without being asked.
 
 Works with any MCP-compatible host — OpenCode, VS Code, or your own client.
 Your agent gets 45 new tools for routing, health checks, and supervision, plus 2
-optional hook tools behind `XX_STACK_HOOK_TOOLS=1`.
+optional lifecycle hooks behind `XX_STACK_HOOK_TOOLS=1`. Every tool declares
+whether it only reads, whether it can destroy state, and whether it reaches the
+network — so a host can auto-approve the safe ones instead of prompting on all
+of them.
 
 ### Split a big job across your machines
 
@@ -225,7 +228,8 @@ specialised for OpenCode and kept structurally in step by
 | `npm run inventory:scan` | Find machines on your Tailscale network |
 | `npm run inventory:list` | Show machines and which are enabled |
 | `npm run inventory:sync` | Apply inventory changes |
-| `npm test` | MCP server tests |
+| `npm test` | MCP server tests (542) |
+| `npm run design:systems-lint` | Check the 151 design systems parse and meet contrast |
 
 ---
 
@@ -245,16 +249,20 @@ it exists, and the stack falls back to running everything locally.
 
 ## License
 
-[MIT](LICENSE), for everything except the two content packs, which are largely
-vendored from upstream projects under their own licenses:
+[MIT](LICENSE) — the server, the routing and supervision engine, the gates, and
+the agent contracts.
+
+The two content packs are vendored third-party material and keep their own
+licenses. The tooling built over them (the design-system lint gate, the HTML
+quality gate, the rule engine) is ours and is MIT with everything else:
 
 - **`xx-stack/packs/rules`** — MIT, from
   [ciembor/agent-rules-books](https://github.com/ciembor/agent-rules-books).
-  Upstream text at
+  License text at
   [`packs/rules/LICENSE`](xx-stack/packs/rules/LICENSE); provenance at
   [`packs/rules/manifest.json`](xx-stack/packs/rules/manifest.json).
-- **`xx-stack/packs/design`** — Apache-2.0 and MIT, from three upstreams.
-  Upstream texts at
+- **`xx-stack/packs/design`** — Apache-2.0 and MIT, from three source projects.
+  License texts at
   [`packs/design/licenses/`](xx-stack/packs/design/licenses) plus
   [`packs/design/workflow-skills/guizang-ppt/LICENSE`](xx-stack/packs/design/workflow-skills/guizang-ppt/LICENSE);
   per-subtree provenance, including what could not be established, at
