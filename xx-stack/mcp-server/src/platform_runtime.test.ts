@@ -5,9 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  __hardwareIo,
+  detectHardware,
   loadModelRates,
   lookupModelCost,
   matchModelRateKey,
+  resetHardwareCache,
   type ModelRates,
 } from "./platform_runtime.js";
 import { xxStackRepoRoot } from "./runtime_constants.js";
@@ -119,5 +122,124 @@ test("MCP-DUP-2: xxStackRepoRoot normalizes a relative XX_STACK_REPO", () => {
   } finally {
     if (original === undefined) delete process.env.XX_STACK_REPO;
     else process.env.XX_STACK_REPO = original;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// §11.1: detectHardware runs three probes, each independently try/caught, and
+// used to cache whatever came back — so a probe that was transiently missing at
+// the first call could never contribute again for the life of the process. This
+// is a long-lived stdio server; the probes are stubbed here because whether
+// `free` and `lspci` exist is a property of the machine running the suite.
+// ---------------------------------------------------------------------------
+
+const PROBE_OUTPUT: Record<string, string> = {
+  free: "              total        used\nMem:    17179869184   123\n",
+  lspci: "01:00.0 VGA compatible controller: Some Vendor Fast GPU\n00:1f.0 ISA bridge: chipset\n",
+  bash: "8589934592\n",
+};
+
+interface HardwareHarness {
+  calls: string[];
+  /** Commands that should fail on this attempt. */
+  failing: Set<string>;
+  restore: () => void;
+}
+
+function stubHardwareProbes(): HardwareHarness {
+  const real = { ...__hardwareIo };
+  const harness: HardwareHarness = {
+    calls: [],
+    failing: new Set(),
+    restore: () => {
+      Object.assign(__hardwareIo, real);
+      resetHardwareCache();
+    },
+  };
+  __hardwareIo.guardedExecFile = (async (command: string) => {
+    harness.calls.push(command);
+    if (harness.failing.has(command)) throw new Error(`${command}: command not found`);
+    return { stdout: PROBE_OUTPUT[command] ?? "", stderr: "" };
+  }) as unknown as typeof __hardwareIo.guardedExecFile;
+  resetHardwareCache();
+  return harness;
+}
+
+test("§11.1: a probe that was missing on the first call is retried on the next one", async () => {
+  const io = stubHardwareProbes();
+  try {
+    io.failing.add("lspci");
+    const first = await detectHardware();
+    // Pre-existing contract: an unavailable probe leaves its field unset and
+    // never throws.
+    assert.equal(first.gpus, undefined);
+    assert.equal(first.ramGb, 16);
+
+    io.failing.delete("lspci");
+    const second = await detectHardware();
+    assert.deepEqual(
+      second.gpus,
+      ["Some Vendor Fast GPU"],
+      "the partial result was cached forever — a recovered probe must be able to contribute"
+    );
+    assert.equal(second.ramGb, 16);
+    assert.equal(second.totalVramGb, 8);
+  } finally {
+    io.restore();
+  }
+});
+
+test("§11.1: a probe that already succeeded is never run a second time", async () => {
+  const io = stubHardwareProbes();
+  try {
+    io.failing.add("bash");
+    await detectHardware();
+    assert.deepEqual(io.calls, ["free", "lspci", "bash"]);
+
+    io.calls.length = 0;
+    io.failing.delete("bash");
+    await detectHardware();
+    assert.deepEqual(io.calls, ["bash"], "only the probe that failed should be re-attempted");
+  } finally {
+    io.restore();
+  }
+});
+
+test("§11.1: a fully successful detection is still cached wholesale", async () => {
+  const io = stubHardwareProbes();
+  try {
+    const first = await detectHardware();
+    assert.deepEqual(io.calls, ["free", "lspci", "bash"]);
+
+    io.calls.length = 0;
+    const second = await detectHardware();
+    assert.deepEqual(io.calls, [], "three 3s shell-outs must not be repeated on a complete result");
+    assert.equal(second, first, "the cached object is returned as-is");
+  } finally {
+    io.restore();
+  }
+});
+
+test("§11.1: a genuinely absent tool stops being probed after the attempt budget", async () => {
+  const io = stubHardwareProbes();
+  try {
+    io.failing.add("lspci");
+    for (let i = 0; i < 6; i += 1) {
+      const hw = await detectHardware();
+      assert.equal(hw.gpus, undefined);
+      assert.equal(hw.ramGb, 16, "the probes that work keep working");
+    }
+    assert.equal(
+      io.calls.filter((command) => command === "lspci").length,
+      3,
+      "a missing binary should cost a bounded number of attempts, not one per call"
+    );
+    assert.equal(
+      io.calls.filter((command) => command === "free").length,
+      1,
+      "and the succeeding probes are still memoized while it retries"
+    );
+  } finally {
+    io.restore();
   }
 });

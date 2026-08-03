@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { diagnoseHosts, summarizePlatforms } from "./observability_runtime.js";
-import { registerObservabilityTools, TOOL_CATALOG } from "./observability_tools.js";
+import {
+  registerObservabilityTools,
+  TOOL_CATALOG,
+  TOOL_CATEGORIES,
+} from "./observability_tools.js";
 import type { Registry } from "./platform_types.js";
 
 // --- fake server ----------------------------------------------------------
@@ -19,6 +23,15 @@ function fakeServer(sink: (name: string, handler: Handler) => void): McpServer {
   return {
     tool: (...args: unknown[]) => {
       sink(args[0] as string, args[args.length - 1] as Handler);
+    },
+  } as unknown as McpServer;
+}
+
+/** Same recorder, but keeping the zod shape so the declared schema is testable. */
+function fakeServerWithSchemas(sink: (name: string, schema: any) => void): McpServer {
+  return {
+    tool: (...args: unknown[]) => {
+      sink(args[0] as string, args.length >= 4 ? args[2] : undefined);
     },
   } as unknown as McpServer;
 }
@@ -322,4 +335,145 @@ test("MCP-16: cost estimation still reports its source alongside the honest stat
   });
   assert.equal(explicit.costUsd, 1.5);
   assert.equal(explicit.costSource, "explicit");
+});
+
+// --- §11.1: a telemetry failure never fails the caller, and is never hidden --
+
+function telemetryWith(deps: Record<string, unknown>): Handler {
+  const handlers: Record<string, Handler> = {};
+  registerObservabilityTools(
+    fakeServer((name, handler) => {
+      handlers[name] = handler;
+    }),
+    { loadModelRates: async () => ({ comment: "test", rates: {} }), ...deps } as never
+  );
+  return handlers.record_telemetry!;
+}
+
+test("§11.1: a write the logger reports as failed is not passed off as best-effort", async () => {
+  const handler = telemetryWith({
+    logEvent: async () => ({
+      ok: false,
+      outcome: "failed",
+      error: "EACCES: permission denied, open 'mcp-server.jsonl'",
+    }),
+  });
+
+  const payload = JSON.parse((await handler(TELEMETRY_ARGS)).content[0]!.text);
+  // The policy: telemetry is an observability sink, so the caller's operation
+  // still succeeds...
+  assert.equal(payload.status, "accepted");
+  // ...but the durability claim tells the truth instead of always saying
+  // "best-effort", which is what the bare `catch` used to force.
+  assert.equal(payload.durability, "failed");
+  assert.match(payload.error, /EACCES/);
+});
+
+test("§11.1: a rejected session log path is reported rather than silently dropped", async () => {
+  const handler = telemetryWith({ logEvent: async () => ({ ok: false, outcome: "skipped" }) });
+
+  const payload = JSON.parse(
+    (await handler({ ...TELEMETRY_ARGS, sessionId: "sx-1" })).content[0]!.text
+  );
+  assert.equal(payload.status, "accepted");
+  assert.equal(payload.durability, "failed");
+  assert.match(payload.error, /skipped/);
+});
+
+test("§11.1: earlier fire-and-forget write failures surface through the writer counter", async () => {
+  const healthy = telemetryWith({
+    logEvent: async () => ({ ok: true, outcome: "written" }),
+    telemetryHealth: () => ({ failures: 0, lastError: null, lastFailureAt: null }),
+  });
+  const clean = JSON.parse((await healthy(TELEMETRY_ARGS)).content[0]!.text);
+  assert.equal(clean.durability, "best-effort");
+  assert.equal(clean.writer, undefined, "a healthy writer adds nothing to the payload");
+
+  const degraded = telemetryWith({
+    logEvent: async () => ({ ok: true, outcome: "written" }),
+    telemetryHealth: () => ({
+      failures: 4,
+      lastError: "ENOSPC: no space left on device",
+      lastFailureAt: "2026-08-02T00:00:00.000Z",
+    }),
+  });
+  const payload = JSON.parse((await degraded(TELEMETRY_ARGS)).content[0]!.text);
+  // This write landed, but four events from `void logEvent(...)` call sites did
+  // not, and this counter is the only place they are ever visible.
+  assert.equal(payload.status, "accepted");
+  assert.equal(payload.durability, "best-effort");
+  assert.equal(payload.writer.failures, 4);
+  assert.match(payload.writer.lastError, /ENOSPC/);
+  assert.equal(payload.writer.lastFailureAt, "2026-08-02T00:00:00.000Z");
+});
+
+test("§11.1: a logger honoring the old void contract still reports best-effort", async () => {
+  const handler = telemetryWith({ logEvent: async () => {} });
+  const payload = JSON.parse((await handler(TELEMETRY_ARGS)).content[0]!.text);
+  assert.equal(payload.status, "accepted");
+  assert.equal(payload.durability, "best-effort");
+  assert.equal(payload.error, undefined);
+});
+
+// --- §11.1: search_tools categories describe the tools they are filed under --
+
+test("§11.1: build_repo_map and verify_edit are no longer filed under observability", () => {
+  const category = (name: string): string =>
+    TOOL_CATALOG.find((entry) => entry.name === name)!.category;
+
+  assert.equal(category("build_repo_map"), "context");
+  assert.equal(category("verify_edit"), "verification");
+});
+
+test("§11.1: search_tools accepts every category the catalog actually uses", () => {
+  const schemas: Record<string, any> = {};
+  registerObservabilityTools(
+    fakeServerWithSchemas((name, schema) => {
+      schemas[name] = schema;
+    }),
+    {} as never
+  );
+
+  const filter = schemas.search_tools!.category;
+  for (const value of TOOL_CATEGORIES) {
+    assert.ok(
+      filter.safeParse(value).success,
+      `search_tools rejects its own category "${value}" — the enum and the catalog have drifted`
+    );
+  }
+  for (const entry of TOOL_CATALOG) {
+    assert.ok(
+      filter.safeParse(entry.category).success,
+      `${entry.name} is filed under "${entry.category}", which the filter rejects`
+    );
+  }
+  assert.ok(!filter.safeParse("nonsense").success, "the filter is still a closed set");
+});
+
+test("§11.1: filtering by the new categories returns those tools and only those", async () => {
+  const handlers: Record<string, Handler> = {};
+  registerObservabilityTools(
+    fakeServer((name, handler) => {
+      handlers[name] = handler;
+    }),
+    {} as never
+  );
+
+  const context = await call(handlers.search_tools!, { category: "context" });
+  assert.deepEqual(
+    (context.tools as Array<{ name: string }>).map((tool) => tool.name),
+    ["build_repo_map"]
+  );
+
+  const verification = await call(handlers.search_tools!, { category: "verification" });
+  assert.deepEqual(
+    (verification.tools as Array<{ name: string }>).map((tool) => tool.name),
+    ["verify_edit"]
+  );
+
+  const observability = await call(handlers.search_tools!, { category: "observability" });
+  const names = (observability.tools as Array<{ name: string }>).map((tool) => tool.name);
+  assert.ok(!names.includes("build_repo_map"), "a repo map is not observability");
+  assert.ok(!names.includes("verify_edit"), "a lint/test runner is not observability");
+  assert.ok(names.includes("check_health"), "the genuine observability tools are still there");
 });

@@ -28,6 +28,11 @@ jobs:
       - name: Verify VS Code agent mirrors are in sync
         run: npm run agents:check
 
+      # Names AND content: the mirrored skill/agent bodies must differ only by
+      # the deliberate host deltas. Content drift used to reach main freely.
+      - name: Verify canonical and mirrored sources have not drifted
+        run: npm run drift:check
+
       - name: Verify generated registries match inventory.json
         run: npm run inventory:check
 

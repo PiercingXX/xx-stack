@@ -119,21 +119,32 @@ outstanding warning — annotate it and this section should say zero.
 
 ### Agent Development
 
-Canonical agent contracts live in `xx-stack/runtime/agents/`. The files under
-`xx-stack/adapters/agents/` are **generated mirrors** — never hand-edit them.
+Canonical agent contracts live in `xx-stack/runtime/agents/` (and, for the
+OpenCode-specialized surface, `opencode-orchestration/opencode/agents/`). Both
+editor mirrors are **generated — never hand-edit them**:
 
-1. Update `xx-stack/runtime/agents/<name>.md`
-2. Register the agent in `xx-stack/runtime/config.json`
+| Canonical source | Generated mirror |
+|---|---|
+| `xx-stack/runtime/agents/` | `xx-stack/adapters/agents/` |
+| `opencode-orchestration/opencode/agents/` | `opencode-orchestration/vscode/agents/` |
+
+1. Update the canonical agent `<name>.md`
+2. Register the agent in that component's `config.json`
 3. Run `npm run agents:sync` to regenerate the mirrors
 4. Test with your MCP-compatible host
 
-`npm run agents:check` derives the expected mirror set by **reading
-`runtime/agents/`**, so a new agent fails the check until step 3 is done. If the
-agent deliberately gets no VS Code mirror — a health probe, a compatibility
-alias — add it to `NOT_MIRRORED` in
+`npm run agents:check` derives the expected mirror set for **each component** by
+reading its agent directory, so a new agent fails the check until step 3 is
+done. If the agent deliberately gets no editor mirror — a health probe, a
+compatibility alias — add it to that component's `NOT_MIRRORED` in
 `xx-stack/scripts/sync-vscode-agents.mjs` **with a reason**. There is no third
 option: the check will not quietly skip it. `*.nano.md` variants are derived
 tiers, not agents, and are covered by `npm run nano:check` instead.
+
+The generated mirror carries the canonical body verbatim plus `name`,
+`description`, and `tools`. It deliberately drops the source's `model:` pin:
+those are OpenCode provider ids that the VS Code / Copilot surface cannot
+resolve.
 
 Tool lists for a new mirror are derived from the agent's `permission` block
 (`edit: deny` drops `editFiles`, `bash: deny` drops `runCommands`). Add an entry
@@ -144,7 +155,24 @@ permissions do not imply, such as `findTestFailures`.
 
 1. Create `xx-stack/runtime/skills/<name>/SKILL.md`
 2. Register it in `xx-stack/runtime/SKILLS.md`
-3. Add adapter surfaces only when a downstream host requires them
+3. Mirror it into `opencode-orchestration/opencode/skills/<name>/SKILL.md`
+4. Add adapter surfaces only when a downstream host requires them
+
+Skill mirrors are copies, not symlinks, and are **not** generated — so
+`npm run drift:check` gates them. It compares names *and content*, normalizing
+only the deliberate deltas (`compatibility:`, `model:` pins and the pinned-lane
+`description:` tail, `runtime/`→`opencode/` and `adapters/`→`vscode/` path
+rewrites, and OpenCode's nested `skill:` permission syntax). The same check
+covers `xx-stack/adapters/skills/` against
+`opencode-orchestration/vscode/skills/`, which are hand-maintained on both
+sides.
+
+Anything else that differs is drift, and canonical wins: resync the mirror.
+Only if a divergence is genuinely deliberate, add it to `KNOWN_DELTAS` in
+`xx-stack/scripts/check-stack-source-drift.mjs` **with a reason** — the entry
+must match the exact lines, so it cannot silently swallow the next change. Run
+`node xx-stack/scripts/check-stack-source-drift.mjs --names-only` or
+`--content-only` to isolate one half while debugging.
 
 ### Hardware and Endpoint Config — generated, do not hand-edit
 
