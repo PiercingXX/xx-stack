@@ -12,12 +12,73 @@ import {
 let registryCache: { value: Registry; expiresAt: number } | null = null;
 const REGISTRY_CACHE_TTL_MS = 10_000;
 
-// Deliberately has no invalidation path: hardware does not change while the
-// process lives, and the probes shell out. `invalidateRegistryCache` used to sit
-// here as the counterpart for the registry cache and was never called by
-// anything (MCP-DEAD-1); it is gone rather than kept as a decoy, since the
-// registry cache expires on its own after REGISTRY_CACHE_TTL_MS.
+/**
+ * Test seam for the process-spawning call the hardware probes make.
+ *
+ * A probe's failure path is only reachable from a test that can decide whether
+ * `free` / `lspci` / the VRAM probe succeed, which is not a property of the
+ * machine running the suite. Swapped only by `platform_runtime.test.ts`;
+ * production never reassigns it.
+ */
+export const __hardwareIo = { guardedExecFile };
+
+/**
+ * The whole-result fast path: set only when every probe has succeeded, so a
+ * fully-successful first call still costs three `execFile`s exactly once.
+ * Hardware does not change while the process lives, so there is no TTL — but
+ * there *is* now an invalidation path, because a partial result is no longer
+ * allowed to become permanent (§11.1).
+ */
 let hardwareCache: Record<string, unknown> | null = null;
+
+/**
+ * Per-probe memoization, so a transient failure is not baked in for the life of
+ * a long-running stdio server. A probe that succeeds is never run again; a probe
+ * that fails is retried on the next call until it has failed
+ * MAX_PROBE_ATTEMPTS times, after which it is treated as genuinely absent on
+ * this host and costs nothing further. That keeps both properties that matter:
+ * a missing `lspci` costs a bounded number of attempts, not one per call, and a
+ * probe that was merely busy at startup still gets to report later.
+ */
+interface HardwareProbeState {
+  /** Fields contributed by the probe, set once it succeeds. */
+  fields: Record<string, unknown> | null;
+  failures: number;
+}
+const MAX_PROBE_ATTEMPTS = 3;
+const hardwareProbes = new Map<string, HardwareProbeState>();
+
+/**
+ * Run one probe unless its result is already known. Returns null when the probe
+ * did not (or may no longer) contribute — the caller leaves the field unset
+ * rather than throwing, which is the pre-existing contract.
+ */
+async function memoizedProbe(
+  name: string,
+  probe: () => Promise<Record<string, unknown>>
+): Promise<Record<string, unknown> | null> {
+  let state = hardwareProbes.get(name);
+  if (!state) {
+    state = { fields: null, failures: 0 };
+    hardwareProbes.set(name, state);
+  }
+  if (state.fields !== null) return state.fields;
+  if (state.failures >= MAX_PROBE_ATTEMPTS) return null;
+  try {
+    state.fields = await probe();
+    return state.fields;
+  } catch {
+    /* probe unavailable on this attempt; retried until the budget runs out */
+    state.failures += 1;
+    return null;
+  }
+}
+
+/** Test-only: drop the whole-result cache and every per-probe memo. */
+export function resetHardwareCache(): void {
+  hardwareCache = null;
+  hardwareProbes.clear();
+}
 
 function validateRegistry(value: unknown): Registry {
   if (!value || typeof value !== "object") {
@@ -68,58 +129,71 @@ export async function loadRegistry(): Promise<Registry> {
   return value;
 }
 
+async function probeRam(): Promise<Record<string, unknown>> {
+  const { stdout } = await __hardwareIo.guardedExecFile(
+    "free",
+    ["-b"],
+    { timeout: 3000 },
+    { context: "internal" }
+  );
+  const match = stdout.match(/Mem:\s+(\d+)/);
+  // A `free` that runs but prints something unrecognizable is a success with no
+  // field, exactly as before — not a failure worth retrying.
+  return match ? { ramGb: Math.round((Number(match[1]) / 1073741824) * 10) / 10 } : {};
+}
+
+async function probeGpus(): Promise<Record<string, unknown>> {
+  const { stdout } = await __hardwareIo.guardedExecFile(
+    "lspci",
+    [],
+    { timeout: 3000 },
+    { context: "internal" }
+  );
+  const gpus = stdout
+    .split("\n")
+    .filter((line: string) => /vga|3d|display/i.test(line))
+    .map((line: string) => line.replace(/^[\da-f:.]+\s+\w.*?:\s*/i, "").trim());
+  return { gpus };
+}
+
+async function probeVram(): Promise<Record<string, unknown>> {
+  const { stdout } = await __hardwareIo.guardedExecFile(
+    "bash",
+    ["-c", INTERNAL_VRAM_PROBE],
+    { timeout: 3000 },
+    { context: "internal" }
+  );
+  const vrams = stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((value: string) => Math.round(Number(value) / 1073741824));
+  return {
+    vramGb: vrams,
+    totalVramGb: vrams.reduce((left: number, right: number) => left + right, 0),
+  };
+}
+
 export async function detectHardware(): Promise<Record<string, unknown>> {
   if (hardwareCache) return hardwareCache;
+
+  // Sequential, as before: three probes that each shell out with a 3s timeout,
+  // and nothing here is on a hot path.
+  const results = [
+    await memoizedProbe("ram", probeRam),
+    await memoizedProbe("gpus", probeGpus),
+    await memoizedProbe("vram", probeVram),
+  ];
+
   const hw: Record<string, unknown> = {};
-
-  try {
-    const { stdout } = await guardedExecFile(
-      "free",
-      ["-b"],
-      { timeout: 3000 },
-      { context: "internal" }
-    );
-    const match = stdout.match(/Mem:\s+(\d+)/);
-    if (match) hw.ramGb = Math.round((Number(match[1]) / 1073741824) * 10) / 10;
-  } catch {
-    /* probe unavailable on this host; leave field unset */
+  for (const fields of results) {
+    if (fields !== null) Object.assign(hw, fields);
   }
 
-  try {
-    const { stdout } = await guardedExecFile(
-      "lspci",
-      [],
-      { timeout: 3000 },
-      { context: "internal" }
-    );
-    const gpus = stdout
-      .split("\n")
-      .filter((line: string) => /vga|3d|display/i.test(line))
-      .map((line: string) => line.replace(/^[\da-f:.]+\s+\w.*?:\s*/i, "").trim());
-    hw.gpus = gpus;
-  } catch {
-    /* probe unavailable on this host; leave field unset */
-  }
-
-  try {
-    const { stdout } = await guardedExecFile(
-      "bash",
-      ["-c", INTERNAL_VRAM_PROBE],
-      { timeout: 3000 },
-      { context: "internal" }
-    );
-    const vrams = stdout
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((value: string) => Math.round(Number(value) / 1073741824));
-    hw.vramGb = vrams;
-    hw.totalVramGb = vrams.reduce((left: number, right: number) => left + right, 0);
-  } catch {
-    /* probe unavailable on this host; leave field unset */
-  }
-
-  hardwareCache = hw;
+  // Only a complete answer is frozen. A partial one used to be cached for the
+  // life of the process, so a probe that was transiently missing at the first
+  // call could never contribute again (§11.1).
+  if (results.every((fields) => fields !== null)) hardwareCache = hw;
   return hw;
 }
 

@@ -6,7 +6,7 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { logEvent, initServerLog } from "./log_worker.js";
+import { logEvent, initServerLog, telemetryHealth } from "./log_worker.js";
 import {
   applyAsyncToolSafety,
   applyToolPolicy,
@@ -152,6 +152,7 @@ registerObservabilityTools(server, {
   detectHardware,
   logEvent,
   loadModelRates,
+  telemetryHealth,
 });
 
 registerRoutingTools(server, {

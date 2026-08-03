@@ -7,7 +7,13 @@
  *
  * Telemetry is append-only JSONL (one JSON object per line).
  * The server log rotates to mcp-server.jsonl.1 when it exceeds 5 MB.
- * All write errors are silently swallowed — telemetry must never crash the server.
+ *
+ * A write failure never propagates to the caller — telemetry is an observability
+ * sink, and a full disk must not take down routing. It is no longer *silent*
+ * either: every failure is returned to the caller as a `LogEventResult`, counted
+ * in `telemetryHealth()`, and announced once on stderr (MCP-16/§11.1). Silence
+ * was the actual defect: `record_telemetry` reported "accepted / best-effort"
+ * while ENOSPC threw the line away, and nothing anywhere recorded it.
  */
 
 import { appendFile, mkdir, rename, stat } from "node:fs/promises";
@@ -21,19 +27,93 @@ const MAX_SERVER_LOG_BYTES = 5 * 1024 * 1024; // 5 MB
 /** A session log filename is capped so a long id cannot trip ENAMETOOLONG. */
 const MAX_SESSION_FILENAME_LENGTH = 128;
 
+/**
+ * Test seam for the four filesystem calls telemetry makes.
+ *
+ * The failure paths below are the whole point of this module's contract, and
+ * they are unreachable from a test that is not allowed to break the user's real
+ * log directory. Swapped only by `log_worker.test.ts`; production never
+ * reassigns it.
+ */
+export const __logIo = { mkdir, appendFile, rename, stat };
+
 let dirEnsured = false;
+
+let failureCount = 0;
+let lastError: string | null = null;
+let lastFailureAt: string | null = null;
+/** The message already announced on stderr, so a wedged disk cannot flood it. */
+let announcedError: string | null = null;
+
+/** The outcome of one `logEvent` call. `ok` is false only for `"failed"`. */
+export interface LogEventResult {
+  ok: boolean;
+  /**
+   * "written" — the append call completed.
+   * "skipped" — nothing was attempted (the session id resolved outside the log
+   *             directory), which is a rejection, not an I/O failure.
+   * "failed"  — the append was attempted and threw.
+   */
+  outcome: "written" | "skipped" | "failed";
+  /** Present only on "failed". */
+  error?: string;
+}
+
+/** Process-lifetime telemetry write health, for callers that want to report it. */
+export interface TelemetryHealth {
+  failures: number;
+  lastError: string | null;
+  lastFailureAt: string | null;
+}
+
+export function telemetryHealth(): TelemetryHealth {
+  return { failures: failureCount, lastError, lastFailureAt };
+}
+
+/** Test-only: forget the recorded failures and the stderr announcement latch. */
+export function resetTelemetryHealth(): void {
+  failureCount = 0;
+  lastError = null;
+  lastFailureAt = null;
+  announcedError = null;
+  dirEnsured = false;
+}
+
+function noteFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  failureCount += 1;
+  lastError = message;
+  lastFailureAt = new Date().toISOString();
+
+  // The log directory may have been removed under us. `dirEnsured` used to latch
+  // for the process lifetime, so telemetry then died silently forever; clearing
+  // it makes the next call re-create the directory and recover.
+  dirEnsured = false;
+
+  // stderr only — stdout carries the MCP protocol (same rule as
+  // execution_policy's denylist warning). Announce once per distinct message:
+  // a full disk fails every event, and one line per event would bury the log,
+  // but a *new* failure mode is never hidden behind an old one.
+  if (announcedError !== message) {
+    announcedError = message;
+    console.error(
+      `xx-stack log_worker: telemetry write failed (${failureCount} total, non-fatal): ${message}`
+    );
+  }
+  return message;
+}
 
 async function ensureLogDir(): Promise<void> {
   if (dirEnsured) return;
-  await mkdir(SESSIONS_DIR, { recursive: true });
+  await __logIo.mkdir(SESSIONS_DIR, { recursive: true });
   dirEnsured = true;
 }
 
 async function rotateLargeLog(logPath: string): Promise<void> {
   try {
-    const s = await stat(logPath);
+    const s = await __logIo.stat(logPath);
     if (s.size > MAX_SERVER_LOG_BYTES) {
-      await rename(logPath, `${logPath}.1`);
+      await __logIo.rename(logPath, `${logPath}.1`);
     }
   } catch {
     // file does not exist yet — nothing to rotate
@@ -46,9 +126,9 @@ async function rotateLargeLog(logPath: string): Promise<void> {
  * The id reaches here verbatim from `supervisor_start_session`, where the
  * schema is a bare `z.string()`. Joined unsanitized, an id of
  * `../../../../tmp/x` appends outside the log directory entirely — and because
- * `logEvent` swallows every error, the escape is invisible. Everything outside
- * `[A-Za-z0-9._-]` becomes `-`, and a dot-only result (`.`, `..`) is replaced
- * outright because those name directories rather than files.
+ * `logEvent` used to swallow every error, the escape was invisible. Everything
+ * outside `[A-Za-z0-9._-]` becomes `-`, and a dot-only result (`.`, `..`) is
+ * replaced outright because those name directories rather than files.
  */
 export function sanitizeSessionIdForPath(sessionId: string): string {
   const collapsed = sessionId.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
@@ -74,6 +154,10 @@ export function resolveSessionLogPath(sessionId: string): string | null {
 /**
  * Append one event line to the chosen stream.
  *
+ * Never throws and never rejects: callers may `void logEvent(...)` without
+ * risking an unhandled rejection, which several routing and supervisor tools
+ * do. Callers that care about durability read the returned result instead.
+ *
  * @param stream  "server" for the shared server log, or { session: "<id>" } for a session trace.
  * @param type    Event type string (e.g. "tick.result", "fallback.applied").
  * @param payload Extra fields merged into the log line.
@@ -82,33 +166,44 @@ export async function logEvent(
   stream: "server" | { session: string },
   type: string,
   payload: Record<string, unknown>
-): Promise<void> {
+): Promise<LogEventResult> {
   try {
     await ensureLogDir();
     const line = JSON.stringify({ at: new Date().toISOString(), type, ...payload }) + "\n";
 
     if (stream === "server") {
       await rotateLargeLog(SERVER_LOG);
-      await appendFile(SERVER_LOG, line, "utf-8");
+      await __logIo.appendFile(SERVER_LOG, line, "utf-8");
     } else {
       const sessionLog = resolveSessionLogPath(stream.session);
-      if (sessionLog === null) return;
-      await appendFile(sessionLog, line, "utf-8");
+      if (sessionLog === null) return { ok: false, outcome: "skipped" };
+      await __logIo.appendFile(sessionLog, line, "utf-8");
     }
-  } catch {
-    // telemetry must never crash the server
+  } catch (error) {
+    // Telemetry must never fail a caller's operation. It must also never be
+    // silent about failing: the reason goes back to the caller, into the
+    // counter, and (once) onto stderr.
+    return { ok: false, outcome: "failed", error: noteFailure(error) };
   }
+
+  // A write that lands clears the announcement latch, so a failure that recurs
+  // after a recovery is reported again rather than being deduped forever.
+  announcedError = null;
+  return { ok: true, outcome: "written" };
 }
 
 /**
  * Called once at server startup to ensure the log directory exists and rotate
  * the server log if it is already oversized.
  */
-export async function initServerLog(): Promise<void> {
+export async function initServerLog(): Promise<LogEventResult> {
   try {
     await ensureLogDir();
     await rotateLargeLog(SERVER_LOG);
-  } catch {
-    // non-fatal
+  } catch (error) {
+    // Non-fatal, but recorded and announced — a log directory that cannot be
+    // created at startup used to be completely invisible.
+    return { ok: false, outcome: "failed", error: noteFailure(error) };
   }
+  return { ok: true, outcome: "written" };
 }

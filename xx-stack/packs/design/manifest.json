@@ -1,0 +1,245 @@
+{
+  "$comment": "Provenance record for the design content pack. Method: every file in the pack was byte-compared (md5) against the candidate upstream repositories named in runtime/agents/design-engineer.md, fetched from GitHub raw at the shas recorded under `sources`. Licenses were read from the upstream LICENSE files themselves (copied verbatim into packs/design/licenses/), not inferred from a README or from memory. HONESTY RULE: `provenance` is `verified` only when a byte-level or field-level comparison against a named upstream succeeded during this audit; `asserted` when the origin is documented in-repo but was not independently confirmed; `unknown` when neither holds. A license is never recorded unless it was read from an upstream LICENSE file or declared in the vendored file's own frontmatter. Where the audit could not establish something — most importantly the commit each subtree was originally vendored at — the field is null with a `nullReason`, rather than guessed. Paths are relative to xx-stack/packs/design/.",
+  "pack": "design",
+  "audit": {
+    "date": "2026-08-03",
+    "method": "md5 byte-comparison of every pack file against upstream raw.githubusercontent.com content, plus frontmatter field survey",
+    "tooling": "curl + md5sum; GitHub trees API for upstream layout",
+    "auditedFileCount": 468,
+    "limitation": "Comparison is against each upstream's current default branch, not against the tree as it stood when this pack was vendored. Files recorded as `modified` may differ because of local edits, upstream drift since vendoring, or both; where the audit inspected the diff, the cause is stated."
+  },
+  "sources": [
+    {
+      "id": "open-design",
+      "repo": "https://github.com/nexu-io/open-design",
+      "license": "Apache-2.0",
+      "licenseCopyright": "Copyright 2026 Open Design contributors",
+      "licenseFile": "licenses/nexu-io-open-design-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, fetched 2026-08-03 and copied verbatim to licenses/nexu-io-open-design-Apache-2.0.txt",
+      "headAtAudit": "dceac12f70df2b9eb0fae9c90aff1fe75da309c0",
+      "headAtAuditDate": "2026-08-03T03:12:16Z",
+      "vendoredAtCommit": null,
+      "nullReason": "The vendoring commit was never recorded. The pack entered this repo in local commit fb93297 (later restructured by d458c02) with no upstream sha noted. Recovering it would require bisecting upstream history against our file hashes; it was not attempted.",
+      "notice": "Apache-2.0 section 4(b) requires modified files to carry a notice of modification. This manifest is that notice: see the `modifiedFiles` lists below for the exact set."
+    },
+    {
+      "id": "awesome-design-skills",
+      "repo": "https://github.com/bergside/awesome-design-skills",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 Bergside",
+      "licenseFile": "licenses/bergside-awesome-design-skills-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "Two independent confirmations: LICENSE at repo root (fetched 2026-08-03, copied verbatim), and `license: MIT` declared in the frontmatter of all 57 vendored SKILL.md files.",
+      "headAtAudit": "f631a09b4fcc0166f2e2c1a8c81906ef680c57e8",
+      "headAtAuditDate": "2026-06-28T10:05:21Z",
+      "vendoredAtCommit": null,
+      "nullReason": "Not recorded at vendoring time. The snapshot is datable only relatively: it contains 57 of the 67 skills upstream now publishes, including 7 slugs upstream has since dropped or renamed."
+    },
+    {
+      "id": "awesome-design-md",
+      "repo": "https://github.com/VoltAgent/awesome-design-md",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 VoltAgent",
+      "licenseFile": "licenses/voltagent-awesome-design-md-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, fetched 2026-08-03 and copied verbatim to licenses/voltagent-awesome-design-md-MIT.txt",
+      "headAtAudit": null,
+      "nullReason": "Only one file in this pack traces to this upstream, so the repo head was not pinned.",
+      "scopeNote": "runtime/agents/design-engineer.md names this repo as a source for the whole design pack. The audit found exactly one file that actually comes from it (design-systems/bmw-m/DESIGN.md). The agent frontmatter overstates this upstream's contribution."
+    },
+    {
+      "id": "guizang",
+      "repo": null,
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 op7418 (歸藏)",
+      "licenseFile": "workflow-skills/guizang-ppt/LICENSE",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE file shipped inside the skill directory, matching the file upstream ships at nexu-io/open-design design-templates/guizang-ppt/LICENSE. Preserved here byte-for-byte; do not edit or delete it.",
+      "nullReason": "No standalone upstream repository was identified for this author's template; it reaches us through nexu-io/open-design, which redistributes it under the author's own MIT terms rather than the repo-wide Apache-2.0."
+    }
+  ],
+  "subtrees": [
+    {
+      "path": "design-systems/",
+      "contents": "137 directories, one DESIGN.md each",
+      "provenance": "verified",
+      "nature": "vendored, with local modifications to 15 files",
+      "primarySource": "open-design",
+      "license": "Apache-2.0",
+      "detail": {
+        "fromOpenDesign": 136,
+        "fromAwesomeDesignMd": 1,
+        "byteIdenticalToOpenDesignHead": 121,
+        "modifiedOrDrifted": 15,
+        "modifiedFiles": [
+          "arc",
+          "cal",
+          "canva",
+          "dashboard",
+          "discord",
+          "duolingo",
+          "expo",
+          "framer",
+          "github",
+          "huggingface",
+          "kami",
+          "ollama",
+          "openai",
+          "replicate",
+          "voltagent"
+        ],
+        "modificationCause": "Two causes, both observed in sampled diffs. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. (2) Upstream drift since vendoring — e.g. design-systems/arc gained a '## 7. Usage Guardrails' section upstream that this copy predates.",
+        "exceptions": [
+          {
+            "slug": "bmw-m",
+            "source": "awesome-design-md",
+            "license": "MIT",
+            "provenance": "verified",
+            "note": "Byte-identical to VoltAgent/awesome-design-md design-md/bmw-m/DESIGN.md except for one line: upstream `name: BMW-M-design-analysis` was changed to `name: BMW M`. This is the only file in design-systems/ with YAML frontmatter, and the only one that does not come from open-design; open-design ships its own, different bmw-m."
+          }
+        ]
+      },
+      "copyrightNote": "The content is written as 'Design System Inspired by <brand>' — prose analysis of publicly observable visual language, not copied brand assets. That framing is upstream's, authored at nexu-io/open-design and VoltAgent/awesome-design-md; it was NOT clean-room reinterpretation performed in this repo. Everything here is a redistributed copy of upstream text. Brand names, wordmarks, and trademarks referenced in the prose remain the property of their respective owners and are used nominatively.",
+      "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 121 of 137 files are byte-identical to upstream. The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m)."
+    },
+    {
+      "path": "design-skills/",
+      "contents": "57 directories, SKILL.md + DESIGN.md each",
+      "provenance": "verified",
+      "nature": "vendored verbatim (directory renamed from upstream `skills/` to `design-skills/`)",
+      "primarySource": "awesome-design-skills",
+      "license": "MIT",
+      "detail": {
+        "byteIdenticalToUpstreamHead": {
+          "SKILL.md": 49,
+          "DESIGN.md": 49
+        },
+        "divergent": [
+          {
+            "slug": "enterprise",
+            "reason": "Upstream rewrote this skill after our snapshot (different description, palette, and typography). Ours is the older upstream text, not a local edit."
+          }
+        ],
+        "absentFromUpstreamHead": {
+          "slugs": [
+            "application",
+            "dashboard",
+            "elegant",
+            "energetic",
+            "luxury",
+            "publication",
+            "simple"
+          ],
+          "reason": "Present in this snapshot and in the snapshot-era upstream index, absent from bergside/awesome-design-skills at f631a09. Upstream appears to have dropped or renamed them. Their SKILL.md frontmatter carries the same `license: MIT` / `metadata.author: typeui.sh` declaration as the other 50, so the license is still established per-file even though the upstream path no longer resolves.",
+          "provenance": "verified"
+        },
+        "inFileAttribution": "All 57 SKILL.md files declare `license: MIT` and `metadata.author: typeui.sh` in frontmatter, and wrap their body in `<!-- TYPEUI_SH_MANAGED_START -->` markers. typeui.sh is the CLI that publishes the registry; Bergside is the copyright holder named in the upstream LICENSE.",
+        "upstreamSize": "67 skills at f631a09; this pack vendors 57 of them."
+      },
+      "removedFiles": [
+        {
+          "file": "design-skills/index.json",
+          "removedOn": "2026-08-03",
+          "wasUpstream": "bergside/awesome-design-skills skills/index.json",
+          "reason": "All 114 of its paths were broken: every entry declared `skills/<slug>/SKILL.md` and `skills/<slug>/DESIGN.md`, but this pack renamed the directory to `design-skills/` and never applied the rename. Nothing read it — scripts/generate-design-catalog.mjs explicitly filtered it out. Verified before removal that it carried no information the directory tree does not: `slug` equals the directory name for all 57 entries, `name` equals the `name` field in the corresponding DESIGN.md frontmatter for all 57 entries (zero mismatches), and both paths are derivable from the slug. Fixing the paths would have made it correct but still unread, and would have broken byte-comparison against upstream — the one thing the file was actually good for. Its snapshot value is preserved above under `absentFromUpstreamHead` and `upstreamSize`.",
+          "regenerate": "node -e \"const fs=require('fs'),p='design-skills';const o={};for(const s of fs.readdirSync(p).filter(n=>fs.statSync(p+'/'+n).isDirectory()).sort()){const m=fs.readFileSync(p+'/'+s+'/DESIGN.md','utf8').match(/^---\\n([\\s\\S]*?)\\n---/);o[s]={slug:s,name:m[1].match(/^name:\\s*(.+)$/m)[1].trim(),skillPath:p+'/'+s+'/SKILL.md',designPath:p+'/'+s+'/DESIGN.md'};}console.log(JSON.stringify(o,null,2))\""
+        }
+      ]
+    },
+    {
+      "path": "workflow-skills/",
+      "contents": "31 skill directories plus quality-gates.json",
+      "provenance": "verified",
+      "nature": "vendored, with local modifications to 25 of 31 SKILL.md files",
+      "primarySource": "open-design",
+      "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
+      "detail": {
+        "upstreamPath": "nexu-io/open-design design-templates/<slug>/",
+        "allSlugsPresentUpstream": true,
+        "byteIdenticalToUpstreamHead": [
+          "eng-runbook",
+          "invoice",
+          "meeting-notes",
+          "pm-spec",
+          "team-okrs",
+          "wireframe-sketch"
+        ],
+        "modifiedOrDrifted": 25,
+        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten.",
+        "inFileAttribution": "All 31 SKILL.md files retain upstream's `od:` frontmatter block — open-design's own metadata namespace — which is what identifies the subtree's origin from inside the files.",
+        "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick)."
+      },
+      "exceptions": [
+        {
+          "slug": "guizang-ppt",
+          "source": "guizang",
+          "license": "MIT",
+          "licenseFile": "workflow-skills/guizang-ppt/LICENSE",
+          "provenance": "verified",
+          "note": "Upstream open-design also ships a per-directory LICENSE for this template, confirming it is carved out of the repo-wide Apache-2.0. Our copy is preserved byte-for-byte. This is the only LICENSE file that existed anywhere in the design pack before this audit."
+        }
+      ],
+      "locallyAuthored": [
+        {
+          "file": "workflow-skills/quality-gates.json",
+          "provenance": "asserted",
+          "reason": "References xx-stack-relative paths (packs/design/workflow-skills/...) and this repo's gate vocabulary; no counterpart at the upstream path. Authored here, covered by the repo root MIT LICENSE."
+        }
+      ]
+    },
+    {
+      "path": "evals/",
+      "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures",
+      "provenance": "verified",
+      "nature": "authored in this repository",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE, Copyright (c) 2026 xx-stack contributors)",
+      "detail": {
+        "evidence": "tasks.json grades this repo's own agents by name (build, plan, execution-orchestrator, design-engineer, reviewer) against this repo's paths (runtime/skills/, packs/design/evals/golden-tasks/responses/) and encodes this repo's authoring conventions. No `evals` or `golden-tasks` tree exists in any of the three upstreams at their audited heads."
+      }
+    },
+    {
+      "path": "scripts/",
+      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs",
+      "provenance": "verified",
+      "nature": "authored in this repository",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE)",
+      "detail": {
+        "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream."
+      }
+    },
+    {
+      "path": "DESIGN-CATALOG.md",
+      "contents": "generated index of the three subtrees",
+      "provenance": "verified",
+      "nature": "generated here by scripts/generate-design-catalog.mjs",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE) for the generated structure; the descriptions it quotes are excerpted from the vendored files and carry those files' licenses.",
+      "detail": {
+        "regenerate": "npm run design:catalog"
+      }
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "vendoring-commits-unrecorded",
+      "severity": "documentary",
+      "question": "No subtree records the upstream commit it was vendored at. `packs/rules/manifest.json` pins ciembor/agent-rules-books at 9c87636; the design pack has no equivalent, so 'has this drifted?' can only be answered against upstream HEAD, which conflates local edits with upstream changes.",
+      "needsHuman": true
+    },
+    {
+      "id": "apache-notice-placement",
+      "severity": "documentary",
+      "question": "Apache-2.0 §4(b) requires modified files to carry a notice of modification. This manifest and packs/design/README.md record the modified set centrally rather than annotating each of the 40 modified files in place. Central notice is the common practice and keeps the vendored files byte-comparable against upstream, but a reviewer may prefer per-file headers. Not decided here.",
+      "needsHuman": true
+    },
+    {
+      "id": "trademark-use",
+      "severity": "documentary",
+      "question": "design-systems/ names ~100 real brands (Apple, Stripe, BMW, Nike, Discord, ...) in headings and prose. Nominative use of a trademark to describe a design language is normally permissible, and the risk is inherited from upstream rather than created here, but nobody in this repo has made an explicit decision about it.",
+      "needsHuman": true
+    }
+  ]
+}

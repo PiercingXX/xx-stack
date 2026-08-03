@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { LogEventResult, TelemetryHealth } from "./log_worker.js";
 import { diagnoseHosts, summarizePlatforms } from "./observability_runtime.js";
 import type { Host, Registry } from "./platform_types.js";
 import type { ModelRatesFile } from "./platform_runtime.js";
@@ -19,13 +20,43 @@ interface ObservabilityToolDeps {
     stream: "server" | { session: string },
     type: string,
     payload: Record<string, unknown>
-  ) => Promise<void>;
+  ) => Promise<LogEventResult | void>;
   loadModelRates: () => Promise<ModelRatesFile>;
+  /**
+   * Process-lifetime telemetry write health. Optional because it is the only
+   * dep a host can legitimately not provide; without it `record_telemetry`
+   * reports this call's outcome and nothing about earlier ones.
+   */
+  telemetryHealth?: () => TelemetryHealth;
 }
+
+/**
+ * Every category `search_tools` will filter on.
+ *
+ * `context` and `verification` were added after `build_repo_map` and
+ * `verify_edit` had been parked under `observability` purely to avoid touching
+ * this list (§11.1). Neither is observability — one returns a budgeted slice of
+ * a codebase, the other runs the linter and tests — and a wrong taxonomy on a
+ * *discovery* surface is worse than a schema edit. The edit is additive: the
+ * five original values still validate, the filter is optional, and every caller
+ * that passes no `category` is unaffected. It is a search facet, not a data
+ * contract, so nothing persisted anywhere carries these strings.
+ */
+export const TOOL_CATEGORIES = [
+  "routing",
+  "supervisor",
+  "observability",
+  "tasks",
+  "agents",
+  "context",
+  "verification",
+] as const;
+
+export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
 
 export interface ToolCatalogEntry {
   name: string;
-  category: "routing" | "supervisor" | "observability" | "tasks" | "agents";
+  category: ToolCategory;
   description: string;
   keywords: string[];
 }
@@ -43,6 +74,34 @@ export interface ToolCatalogEntry {
  * The only permitted omissions are the deliberately hidden lifecycle hooks
  * (`_Stop`, `_PostCompact`), which are named as an explicit exemption in that
  * test — they are called by a hook-aware harness, never discovered by an agent.
+ *
+ * ## Why this stays curated instead of being derived from `server.tool(...)`
+ *
+ * The obvious next step is to delete this list and read name + description
+ * straight off the registrations, since the drift test already drives every
+ * `register*` export against a recording server. It was measured against the
+ * real registrations (47 tools, 45 of them cataloged) and rejected on three
+ * counts:
+ *
+ * 1. **Keywords do not exist there.** 55 of the 183 catalog keywords (30%)
+ *    appear nowhere in the corresponding registration description — they are
+ *    the synonyms an agent actually searches with: `fanout`, `diversity`,
+ *    `second-opinion`, `backlog`, `todo`, `queue`, `lookup`, `compare`,
+ *    `takeover`, `availability`. Keyword hits score 3 against 1 for a body
+ *    match, so derivation would both lose the hit and demote what remains.
+ * 2. **Category does not exist there either.** Nothing in a registration names
+ *    one, and the fallback — infer it from the module — does not survive
+ *    contact: `agent_tools.ts` re-exports `agent_profile_tools` and
+ *    `agent_memory_tools`, `supervisor_tools.ts` aggregates three modules, and
+ *    several tools are therefore registered from two files at once.
+ * 3. **Registration prose is the wrong shape for a result list.** It is written
+ *    for a model about to *call* the tool: 2.64x the bytes of this catalog
+ *    (8,095 vs 3,070 across the same 45 tools), median 95 chars, and up to 762
+ *    for `route_competitive_task` — a paragraph of usage doctrine per search
+ *    hit, which is exactly what a discovery surface must not return.
+ *
+ * So the parallel list stays, and the MCP-13 drift tests are the guard that
+ * makes it safe. Do not re-litigate without new numbers.
  */
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
@@ -314,14 +373,14 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   },
   {
     name: "build_repo_map",
-    category: "observability",
+    category: "context",
     description:
       "Return the most relevant slice of a codebase for a token budget, ranked by git recency, path proximity, and reference counts",
     keywords: ["repo", "map", "context", "budget", "files", "codebase"],
   },
   {
     name: "verify_edit",
-    category: "observability",
+    category: "verification",
     description:
       "Run the project's linter and/or tests after an edit and return structured pass/fail with a bounded failure payload",
     keywords: ["verify", "lint", "test", "check", "edit", "gate"],
@@ -436,9 +495,11 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     "record_telemetry",
     "Record a telemetry event with token usage and cost. Appends to the JSONL telemetry stream " +
       "and awaits that append before returning, so the event is on its way to disk before the " +
-      "caller proceeds. Durability is best-effort: the telemetry writer treats I/O errors as " +
-      'non-fatal, so status "accepted" means the append call completed, not that bytes are ' +
-      'durable. A write that actively rejects is reported as status "error".',
+      'caller proceeds. A telemetry failure never fails this call — status stays "accepted" — ' +
+      'but it is never hidden either: "durability" is "best-effort" when the append completed, ' +
+      '"failed" (with a reason) when the writer reported an I/O error, and "none" when the ' +
+      'writer itself threw, which is reported as status "error". "writer" carries the ' +
+      "process-lifetime failure count when earlier writes have failed.",
     {
       skill: z.string().describe("Skill or operation name"),
       outcome: z
@@ -500,26 +561,60 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
       // unconditional "recorded". Nothing ordered the append against shutdown,
       // so a server that exited right after the call lost the event outright,
       // and a rejected write became an unhandled rejection. Awaiting costs
-      // nothing — logEvent is already Promise<void>.
-      let writeError: string | null = null;
+      // nothing — logEvent is already async.
+      //
+      // §11.1 asked whether a telemetry write failure should be able to fail a
+      // caller's operation. It should not: this is an observability sink, and a
+      // metrics failure taking down routing would be absurd. So the policy is
+      // "never fail the caller, never hide the failure" — the three outcomes
+      // below are distinguished in the payload instead of collapsed into one
+      // cheerful "accepted / best-effort".
+      let threwError: string | null = null;
+      let writeResult: LogEventResult | void = undefined;
       try {
-        await deps.logEvent(
+        writeResult = await deps.logEvent(
           sessionId ? { session: sessionId } : "server",
           "telemetry.record",
           payload
         );
       } catch (error) {
-        writeError = error instanceof Error ? error.message : String(error);
+        // The writer broke its own never-throw contract. Distinct from a
+        // reported failure, and worth saying so loudly.
+        threwError = error instanceof Error ? error.message : String(error);
       }
 
+      // A writer that reports nothing is honoring the old void contract; treat
+      // its silence as the best-effort claim it used to make implicitly.
+      const reported = writeResult ?? null;
+      const reportedFailure =
+        reported !== null && reported.ok === false
+          ? (reported.error ?? `telemetry write ${reported.outcome}`)
+          : null;
+
+      const failureReason = threwError ?? reportedFailure;
+      const health = deps.telemetryHealth?.();
+
       return jsonContent({
-        // "accepted", not "recorded": the append was awaited, but the telemetry
-        // writer swallows I/O errors by design, so this tool cannot honestly
-        // claim the bytes reached disk. `durability` says so out loud rather
+        // "accepted", not "recorded": the append was awaited, but a telemetry
+        // I/O error is non-fatal by design, so this tool cannot claim the bytes
+        // reached disk. `durability` says which of the three happened rather
         // than letting the status imply a guarantee nothing provides.
-        status: writeError === null ? "accepted" : "error",
-        durability: writeError === null ? "best-effort" : "none",
-        ...(writeError === null ? {} : { error: writeError }),
+        status: threwError === null ? "accepted" : "error",
+        durability:
+          threwError !== null ? "none" : reportedFailure !== null ? "failed" : "best-effort",
+        ...(failureReason === null ? {} : { error: failureReason }),
+        // Failures from every *other* logEvent call site are fire-and-forget
+        // (`void logEvent(...)`), so this counter is the only place they ever
+        // surface. Omitted while it is zero to keep the common payload small.
+        ...(health && health.failures > 0
+          ? {
+              writer: {
+                failures: health.failures,
+                lastError: health.lastError,
+                lastFailureAt: health.lastFailureAt,
+              },
+            }
+          : {}),
         fields: Object.keys(payload),
         costUsd: finalCostUsd,
         costSource:
@@ -537,10 +632,9 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     "Search xx-stack MCP tools by name, category, description, and keywords",
     {
       query: z.string().optional().describe("Optional natural language query"),
-      category: z
-        .enum(["routing", "supervisor", "observability", "tasks", "agents"])
-        .optional()
-        .describe("Optional category filter"),
+      // Derived from TOOL_CATEGORIES so the filter can never accept a value the
+      // catalog does not use, or reject one it does.
+      category: z.enum(TOOL_CATEGORIES).optional().describe("Optional category filter"),
       limit: z.number().int().min(1).max(50).optional().describe("Maximum results to return"),
     },
     async ({ query, category, limit }) => {

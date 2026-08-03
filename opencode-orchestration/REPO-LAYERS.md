@@ -57,6 +57,11 @@ The design pack includes:
 - generated catalogs derived from those libraries
 - design workflow assets and templates
 - design-specific eval fixtures and gates
+- `packs/design/manifest.json` recording per-subtree provenance and license,
+  with an explicit `verified` / `asserted` / `unknown` marker on each entry
+- `packs/design/licenses/` holding the verbatim upstream license texts covering
+  the vendored material, plus the per-skill
+  `packs/design/workflow-skills/guizang-ppt/LICENSE` that upstream carves out
 
 Canonical design content-pack paths:
 
