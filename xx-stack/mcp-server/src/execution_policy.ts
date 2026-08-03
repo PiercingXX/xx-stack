@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 import {
@@ -37,6 +38,128 @@ type ExecValidationContext = "internal" | "hook";
 interface ExecValidationResult {
   allowed: boolean;
   reason: string;
+  /** The denylist pattern that matched, when reason is "dangerous_command_blocked". */
+  pattern?: string;
+}
+
+// --- Catastrophic-command denylist -----------------------------------------
+//
+// Canonical source: xx-stack/runtime/dangerous-patterns.txt — one POSIX-ERE
+// per line, '#' comments. Evaluated AHEAD of the allowlist so a listed
+// pattern is rejected even for an otherwise-allowlisted command.
+//
+// This is a seatbelt against accidents, not a sandbox against a malicious
+// agent: it only stops the common catastrophic slips (rm -rf /, dd onto a
+// disk, fork bombs, curl|sh, git push --force, repo deletion).
+//
+// Fail-open contract: a missing or partially unparseable pattern file must
+// never brick the server. Unreadable file -> empty denylist; broken lines ->
+// skipped. Both are flagged via parseErrors/loaded and logged to stderr.
+
+export interface DangerousPattern {
+  source: string;
+  regex: RegExp;
+}
+
+export interface DangerousPatternsLoadResult {
+  patterns: DangerousPattern[];
+  parseErrors: string[];
+  sourcePath: string | null;
+  loaded: boolean;
+}
+
+// Resolved relative to this module (dist/ at runtime), mirroring the
+// runtime-constants.json candidate chain in runtime_constants.ts.
+const DANGEROUS_PATTERNS_CANDIDATES = [
+  "../dangerous-patterns.txt",
+  "../../runtime/dangerous-patterns.txt",
+  "../../opencode/dangerous-patterns.txt",
+] as const;
+
+export function parseDangerousPatterns(text: string): {
+  patterns: DangerousPattern[];
+  parseErrors: string[];
+} {
+  const patterns: DangerousPattern[] = [];
+  const parseErrors: string[] = [];
+  const lines = text.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (line.length === 0 || line.startsWith("#")) continue;
+    try {
+      patterns.push({ source: line, regex: new RegExp(line) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      parseErrors.push(`line ${index + 1}: ${message}`);
+    }
+  }
+  return { patterns, parseErrors };
+}
+
+export function loadDangerousPatternsFromFile(filePath: string): DangerousPatternsLoadResult {
+  try {
+    const text = readFileSync(filePath, "utf8");
+    const { patterns, parseErrors } = parseDangerousPatterns(text);
+    return { patterns, parseErrors, sourcePath: filePath, loaded: true };
+  } catch (error) {
+    // Fail-open: an unreadable pattern file yields an empty denylist, flagged.
+    const message = error instanceof Error ? error.message : String(error);
+    return { patterns: [], parseErrors: [message], sourcePath: filePath, loaded: false };
+  }
+}
+
+let cachedDenylist: DangerousPatternsLoadResult | null = null;
+
+function loadDenylist(): DangerousPatternsLoadResult {
+  const override = process.env.XX_STACK_DANGEROUS_PATTERNS_FILE;
+  if (override && override.trim().length > 0) {
+    return loadDangerousPatternsFromFile(override.trim());
+  }
+  for (const candidate of DANGEROUS_PATTERNS_CANDIDATES) {
+    const url = new URL(candidate, import.meta.url);
+    if (existsSync(url)) {
+      return loadDangerousPatternsFromFile(url.pathname);
+    }
+  }
+  // Fail-open: no pattern file found — deny layer inert, flagged as not loaded.
+  return {
+    patterns: [],
+    parseErrors: ["dangerous-patterns.txt not found next to runtime/ or opencode/"],
+    sourcePath: null,
+    loaded: false,
+  };
+}
+
+export function getDangerousPatternsStatus(): DangerousPatternsLoadResult {
+  if (cachedDenylist === null) {
+    cachedDenylist = loadDenylist();
+    if (!cachedDenylist.loaded || cachedDenylist.parseErrors.length > 0) {
+      // stderr only — stdout carries the MCP protocol.
+      console.error(
+        `xx-stack execution_policy: dangerous-pattern denylist degraded (fail-open). ` +
+          `loaded=${cachedDenylist.loaded} source=${cachedDenylist.sourcePath ?? "none"} ` +
+          `errors=${JSON.stringify(cachedDenylist.parseErrors)}`
+      );
+    }
+  }
+  return cachedDenylist;
+}
+
+/** Test-only: force the denylist to be re-read on next use. */
+export function resetDangerousPatternsCache(): void {
+  cachedDenylist = null;
+}
+
+export function findDangerousPattern(
+  commandLine: string,
+  patterns: DangerousPattern[] = getDangerousPatternsStatus().patterns
+): string | null {
+  for (const pattern of patterns) {
+    if (pattern.regex.test(commandLine)) {
+      return pattern.source;
+    }
+  }
+  return null;
 }
 
 function parseLifecycleHookSpecs(rawHooks: unknown): Record<string, LifecycleHookSpec[]> {
@@ -137,6 +260,18 @@ export function validateExecRequest(
     return { allowed: false, reason: "empty_command" };
   }
 
+  // Deny layer runs AHEAD of the allowlist: a catastrophic pattern is
+  // rejected even for an otherwise-allowlisted command.
+  const commandLine = [normalizedCommand, ...args].join(" ");
+  const dangerousPattern = findDangerousPattern(commandLine);
+  if (dangerousPattern !== null) {
+    return {
+      allowed: false,
+      reason: "dangerous_command_blocked",
+      pattern: dangerousPattern,
+    };
+  }
+
   if (args.length > MAX_EXEC_ARG_COUNT) {
     return { allowed: false, reason: "too_many_args" };
   }
@@ -189,7 +324,8 @@ export async function guardedExecFile(
     guard.allowedHookCommands ?? []
   );
   if (!validation.allowed) {
-    throw new Error(`execution_policy_denied:${validation.reason}`);
+    const detail = validation.pattern ? `:${validation.pattern}` : "";
+    throw new Error(`execution_policy_denied:${validation.reason}${detail}`);
   }
   return execFileAsync(command, args, options);
 }
@@ -230,12 +366,15 @@ export async function emitLifecycleHooks(
     const validation = validateExecRequest(hook.command, hook.args, "hook", config.allowedCommands);
     if (!validation.allowed) {
       blockedHookCount += 1;
-      const blocked = {
+      const blocked: Record<string, unknown> = {
         command: hook.command,
         args: hook.args,
         status: "blocked",
         reason: validation.reason,
       };
+      if (validation.pattern) {
+        blocked.pattern = validation.pattern;
+      }
       results.push(blocked);
       if (!hook.allowFailure) {
         throw new Error(`lifecycle_hook_blocked:${hook.command}:${validation.reason}`);
