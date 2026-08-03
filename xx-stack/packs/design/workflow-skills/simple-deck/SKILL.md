@@ -109,8 +109,33 @@ Read the resulting class list. If you see `light × 4 in a row`, swap one to `da
 
 One sentence before the artifact. Stop after `</artifact>`.
 
+## Content vs production controls
+
+Everything the deck renders is **audience-facing**. The brief also carries **production controls** — instructions about how the deck should be built: "make slide 4 a bar chart", "put this on a dark slide", "three columns", "16:9 image on the right".
+
+A production control is honored by **what you build**, never by **what you write**. It picks a layout, a theme class, a class name, a markup shape — and then it is spent. It never becomes a headline, an eyebrow, lead copy, a stat caption, a table cell, an image caption, an `alt` string, a `data-screen-label`, or a speaker note.
+
+The failure this prevents is literal: the user says "make slide 4 a bar chart" and slide 4 ships with the headline *Make slide 4 a bar chart*. Test every string you are about to render — if it describes the artifact rather than the subject, it is a control. Consume it and drop it.
+
+### Layout follows the shape of the content
+
+Pick the layout from what the source material actually is, not from what would look good:
+
+| What the source content is | Layout |
+|---|---|
+| One number that carries the slide | Layout 3 (big stat) — not a paragraph with the number inside it |
+| Three or more parallel figures or points | Layout 4 (three-point row) |
+| Ordered stages of a process | Layout 5 (pipeline) |
+| Two states being contrasted | Layout 7 (before / after) |
+| Words a named person actually said | Layout 6 (big quote) — only with a real attribution |
+
+If the source supplies no image, use no image: leave `.ph-img` out rather than reserving a frame for a picture that will never arrive.
+
+If speaker notes are ever added to a deck, they are **plain text**. No markdown — a notes pane does not render it, so `**bold**` and `- ` arrive as literal characters.
+
 ## Hard rules
 
+- **No production control is ever rendered.** Layout, chart, styling and positioning instructions from the brief select markup; they never appear as slide text. See "Content vs production controls".
 - **Theme class on every slide** (`light` | `dark` | `hero light` | `hero dark`). Bare `class="slide"` = regression.
 - **No 3+ same theme in a row.**
 - **Display = serif via `var(--font-display)`.** `.h-hero` / `.h-xl` / `.h-md` already enforce.

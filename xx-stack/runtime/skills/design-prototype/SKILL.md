@@ -81,6 +81,10 @@ Navigate to `packs/design/workflow-skills/<skill-name>/` and read:
 - Compose from `references/layouts.md` section skeletons
 - Never write CSS from scratch when a seed template exists
 
+**Content vs production controls.** Everything the artifact renders is audience-facing. The brief also carries production controls — instructions about how to build it: "make slide 4 a bar chart", "two columns", "dark theme", "photo on the right". A control is honored by what you build, never by what you write. It picks a layout, a component, a token, a markup shape, and is then spent. It never becomes a heading, a label, body copy, a table cell, an `alt` string, a caption, or a speaker note. Before rendering any string, ask whether it describes the artifact or the subject; if it describes the artifact, drop it.
+
+Layout follows the shape of the content, not preference: a numeric series gets a chart, a text table gets a table, a table-of-contents layout is used only when the content is a table of contents, and content with no supplied image gets no image frame. Speaker notes, where a skill has them, are plain text — a notes pane renders markdown literally.
+
 ### Step 5 — Self-critique gate
 
 Score 1–5 across:
@@ -101,6 +105,7 @@ Anything under 3/5: fix and rescore. Two passes is normal.
 - Inter as a display face
 - Invented metrics → use `—` or labelled grey placeholders
 - Guessing brand colors → always read DESIGN.md
+- Build instructions rendered as artifact content → see "Content vs production controls"
 
 ## Asset map
 

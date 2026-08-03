@@ -833,13 +833,17 @@ Landed. New pure task_graph_runtime.ts. Cycle detection returns the named path (
 
 The guardrail, encoded in code and enforced by test: xx-stack computes and returns a schedule, it never executes one. Their ExecutionList async loop and unblockedEvent are the half that would make this a workflow engine and are deliberately excluded. A test decompiles the built module and fails on async, Promise, spawn, child_process, fetch, and fs.
 
-38. Live residency and memory-pressure in watchdog lane ranking — DEFERRED
+38. Live residency and memory-pressure in watchdog lane ranking — LANDED
 
 Goal. Prefer a lane where the chosen model is already resident; demote a lane whose resident footprint plus context headroom exceeds usable VRAM.
 
 Why. Lane ranking is nameplate-only today — hostCapacityScore reads static registry fields. Meanwhile monitor-memory.ts already computes usableVramGb, per-model resident footprint from /api/ps, contextHeadroomGb and an overload boolean, and routing never sees any of it. On a small local fleet, routing to the box that already has the 30B model warm instead of one that must evict and cold-load it is worth seconds to tens of seconds per task.
 
-Deferred, honestly scoped: generate-registries sets supportsResidentModelInspection true for Ollama and false for every other runtime, so this improves one lane family. Worth doing, not worth overselling.
+Landed. The arithmetic moved out of monitor-memory.ts into a pure host_memory_runtime.ts before a second copy of it existed — MCP-DUP-3 records three cases where the second copy drifted — and a golden test drives the real CLI against a fixture registry and a stub Ollama to prove its output did not move. fetchResidentModels rides the watchdog's existing Promise.all fan-out, is never dialled for a host without supportsResidentModelInspection, and resolves to null rather than [] for every other family: "cannot be asked" and "holding nothing" are different facts, and collapsing them would make an uninspectable lane read as an idle one.
+
+hostCapacityScore stays pure and nameplate-only; the fold happens at the ranking site, so route_task remains offline and static. The live term is bounded — a warm bonus of 2 and an overload penalty of 2, so the total swing between any two lanes is 4, against a 9.1-point smallest cross-tier gap in the shipped registry. Lanes the static score separates by more than the ceiling keep today's order whatever the probes say; near-ties are what it settles. overload demotes and never bans. An absent or failed probe scores exactly zero and is logged residency: "unknown", never silently. check_health reports residentModels and memoryPressure through the shared diagnoseHosts, so `xx diagnose` gained them at the same instant.
+
+Honestly scoped: generate-registries sets supportsResidentModelInspection true for Ollama and false for every other runtime, so this improves one lane family — the local GPU box, which is the constrained-VRAM case it exists for. It is not fleet-wide and is not described as such anywhere in the code or the tool description.
 
 39. Terminal is terminal — LANDED
 
