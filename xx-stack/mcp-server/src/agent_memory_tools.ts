@@ -1,7 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
 
 import { loadMergedAgentRuntimeConfig } from "./config_runtime.js";
 import { atomicWriteTextFile } from "./io_runtime.js";
@@ -12,14 +10,13 @@ import {
   getAgentMemoryEntrypoint,
   getAgentMemorySnapshotMetaPath,
   getAgentMemorySnapshotPath,
-  getAgentMemorySnapshotsDir,
   hashMemoryContent,
   lineDiffSummary,
-  markMemoryEntriesSuperseded,
+  markAgentMemorySupersededOnDisk,
   readMemoryEntrypoint,
   readSnapshotMeta,
   selectMemoryForBudget,
-  writeSnapshotHistoryEntry,
+  syncAgentMemorySnapshot,
 } from "./memory_runtime.js";
 import { jsonContent, resolveAgentContext } from "./agent_tool_helpers.js";
 
@@ -162,7 +159,7 @@ export function registerAgentMemoryTools(server: McpServer): void {
 
   server.tool(
     "agent_memory_snapshot_sync",
-    "Sync memory snapshots by capturing current memory or applying snapshot back to live memory",
+    "Sync memory snapshots by capturing current memory or applying snapshot back to live memory. Pass expectedHash (from agent_memory_snapshot_status) for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
     {
       agentId: z.string().min(1).describe("Agent identifier"),
       scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
@@ -175,64 +172,52 @@ export function registerAgentMemoryTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe("When true, store timestamped copies under .snapshots/"),
+      expectedHash: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Optional precondition on the file this sync overwrites (memoryHash for direction 'apply', snapshotHash for 'capture', both from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
+        ),
     },
-    async ({ agentId, scope, cwd, direction, retainHistory }) => {
+    async ({ agentId, scope, cwd, direction, retainHistory, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
-      const resolvedDirection = direction ?? "capture";
-      const shouldRetainHistory = retainHistory === true;
-      const memoryPath = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
-      const snapshotPath = getAgentMemorySnapshotPath(agentId, resolvedScope, resolvedCwd);
-      const metaPath = getAgentMemorySnapshotMetaPath(agentId, resolvedScope, resolvedCwd);
-      const snapshotsDir = getAgentMemorySnapshotsDir(agentId, resolvedScope, resolvedCwd);
-
-      await ensureMemoryEntrypoint(memoryPath);
-      await mkdir(dirname(snapshotPath), { recursive: true });
-
-      const memoryContent = await readMemoryEntrypoint(memoryPath);
-      const snapshotContent = await readMemoryEntrypoint(snapshotPath);
-      const sourceContent = resolvedDirection === "capture" ? memoryContent : snapshotContent;
-      const targetPath = resolvedDirection === "capture" ? snapshotPath : memoryPath;
-      await atomicWriteTextFile(
-        targetPath,
-        sourceContent.length > 0 ? sourceContent : "# Agent Memory\n\n"
-      );
-
-      const updatedMemory = await readMemoryEntrypoint(memoryPath);
-      const updatedSnapshot = await readMemoryEntrypoint(snapshotPath);
-      const meta = {
+      const outcome = await syncAgentMemorySnapshot({
         agentId,
         scope: resolvedScope,
-        direction: resolvedDirection,
-        syncedAt: new Date().toISOString(),
-        lastSyncedMemoryHash: hashMemoryContent(updatedMemory),
-        lastSyncedSnapshotHash: hashMemoryContent(updatedSnapshot),
-        historyRetentionEnabled: shouldRetainHistory,
-      };
-      await atomicWriteTextFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
+        cwd: resolvedCwd,
+        direction,
+        retainHistory,
+        expectedHash,
+      });
 
-      let historyEntryId: string | null = null;
-      if (shouldRetainHistory) {
-        historyEntryId = await writeSnapshotHistoryEntry(
-          snapshotsDir,
-          resolvedDirection,
-          updatedMemory,
-          updatedSnapshot,
-          meta
-        );
+      if (outcome.status === "write_conflict") {
+        return jsonContent({
+          status: outcome.status,
+          agentId,
+          scope: resolvedScope,
+          direction: outcome.direction,
+          memoryPath: outcome.memoryPath,
+          snapshotPath: outcome.snapshotPath,
+          targetPath: outcome.targetPath,
+          currentHash: outcome.currentHash,
+          expectedHash: outcome.expectedHash,
+          hint: outcome.hint,
+        });
       }
 
       return jsonContent({
         status: "ok",
         agentId,
         scope: resolvedScope,
-        direction: resolvedDirection,
-        memoryPath,
-        snapshotPath,
-        metaPath,
-        snapshotsDir: shouldRetainHistory ? snapshotsDir : null,
-        historyEntryId,
-        meta,
+        direction: outcome.direction,
+        memoryPath: outcome.memoryPath,
+        snapshotPath: outcome.snapshotPath,
+        metaPath: outcome.metaPath,
+        snapshotsDir: outcome.snapshotsDir,
+        historyEntryId: outcome.historyEntryId,
+        meta: outcome.meta,
       });
     }
   );
@@ -275,7 +260,7 @@ export function registerAgentMemoryTools(server: McpServer): void {
 
   server.tool(
     "agent_memory_mark_superseded",
-    "Mark memory entries as superseded by abstracted rules. Entries are annotated in place — never deleted — and remain recoverable in MEMORY.md (and via agent_memory_get with includeSuperseded).",
+    "Mark memory entries as superseded by abstracted rules. Entries are annotated in place — never deleted — and remain recoverable in MEMORY.md (and via agent_memory_get with includeSuperseded). Pass expectedHash for a compare-and-swap write: on mismatch nothing is written and a write_conflict is returned.",
     {
       agentId: z.string().min(1).describe("Agent identifier"),
       entryIds: z
@@ -288,28 +273,48 @@ export function registerAgentMemoryTools(server: McpServer): void {
         .describe("Reference to what replaced the entries (e.g. the compactionId)"),
       scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
       cwd: z.string().optional().describe("Optional project root for project/local scope"),
+      expectedHash: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Optional precondition on MEMORY.md (memoryHash from agent_memory_snapshot_status). Mismatch returns write_conflict without writing."
+        ),
     },
-    async ({ agentId, entryIds, supersededBy, scope, cwd }) => {
+    async ({ agentId, entryIds, supersededBy, scope, cwd, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
-      const path = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
-      await ensureMemoryEntrypoint(path);
-      const content = await readMemoryEntrypoint(path);
+      const outcome = await markAgentMemorySupersededOnDisk({
+        agentId,
+        scope: resolvedScope,
+        cwd: resolvedCwd,
+        entryIds,
+        supersededBy,
+        expectedHash,
+      });
 
-      const result = markMemoryEntriesSuperseded(content, entryIds, supersededBy);
-      if (result.marked.length > 0) {
-        await atomicWriteTextFile(path, result.content);
+      if (outcome.status === "write_conflict") {
+        return jsonContent({
+          status: outcome.status,
+          agentId,
+          scope: resolvedScope,
+          path: outcome.path,
+          supersededBy: outcome.supersededBy,
+          currentHash: outcome.currentHash,
+          expectedHash: outcome.expectedHash,
+          hint: outcome.hint,
+        });
       }
 
       return jsonContent({
         status: "ok",
         agentId,
         scope: resolvedScope,
-        path,
-        supersededBy,
-        marked: result.marked,
-        alreadySuperseded: result.alreadySuperseded,
-        missing: result.missing,
+        path: outcome.path,
+        supersededBy: outcome.supersededBy,
+        marked: outcome.marked,
+        alreadySuperseded: outcome.alreadySuperseded,
+        missing: outcome.missing,
       });
     }
   );

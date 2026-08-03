@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,8 +9,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   buildMemoryCompactionPrompt,
   computeMemoryEntryId,
+  detectMemoryWriteConflict,
   getAgentMemoryEntrypoint,
+  getAgentMemorySnapshotPath,
+  hashMemoryContent,
   markMemoryEntriesSuperseded,
+  MEMORY_WRITE_CONFLICT_HINT,
   parseMemoryEntries,
   selectMemoryForBudget,
 } from "./memory_runtime.js";
@@ -401,6 +405,219 @@ test("compaction loop: prompt -> append rule -> mark superseded -> recoverable",
         (c: { text: string }) => !c.text.includes("lint step was skipped")
       )
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Compare-and-swap writes (task 29)
+// ---------------------------------------------------------------------------
+
+test("detectMemoryWriteConflict: no precondition, match, and mismatch", () => {
+  const content = "# Agent Memory\n\n- note\n";
+  assert.equal(detectMemoryWriteConflict(content, undefined), null, "omitted param = no guard");
+  assert.equal(
+    detectMemoryWriteConflict(content, hashMemoryContent(content)),
+    null,
+    "match writes"
+  );
+
+  const conflict = detectMemoryWriteConflict(content, "stale-hash");
+  assert.deepEqual(conflict, {
+    status: "write_conflict",
+    currentHash: hashMemoryContent(content),
+    expectedHash: "stale-hash",
+    hint: MEMORY_WRITE_CONFLICT_HINT,
+  });
+  assert.equal(MEMORY_WRITE_CONFLICT_HINT, "re-read and retry");
+});
+
+test("agent_memory_mark_superseded: stale expectedHash conflicts and writes nothing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-cas-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "cas-agent";
+    const base = { agentId, scope: "project", cwd: dir };
+
+    await callTool(handlers, "agent_memory_append", { ...base, note: "run A skipped lint" });
+    const path = getAgentMemoryEntrypoint(agentId, "project", dir);
+    const staleContent = await readFile(path, "utf-8");
+    const staleHash = hashMemoryContent(staleContent);
+
+    // A concurrent agent appends between our read and our write.
+    await callTool(handlers, "agent_memory_append", { ...base, note: "run B skipped lint" });
+    const currentContent = await readFile(path, "utf-8");
+    assert.notEqual(currentContent, staleContent);
+
+    const targetId = parseMemoryEntries(currentContent).entries[0].id;
+    const conflict = await callTool(handlers, "agent_memory_mark_superseded", {
+      ...base,
+      entryIds: [targetId],
+      supersededBy: "rule-1",
+      expectedHash: staleHash,
+    });
+
+    assert.equal(conflict.status, "write_conflict");
+    assert.equal(conflict.currentHash, hashMemoryContent(currentContent));
+    assert.equal(conflict.expectedHash, staleHash);
+    assert.equal(conflict.hint, "re-read and retry");
+    assert.equal(conflict.path, path);
+    assert.equal(conflict.marked, undefined, "a conflict reports no writes");
+
+    // The file on disk is genuinely untouched.
+    assert.equal(await readFile(path, "utf-8"), currentContent);
+
+    // Re-read and retry with the current hash: the write lands.
+    const ok = await callTool(handlers, "agent_memory_mark_superseded", {
+      ...base,
+      entryIds: [targetId],
+      supersededBy: "rule-1",
+      expectedHash: conflict.currentHash,
+    });
+    assert.equal(ok.status, "ok");
+    assert.deepEqual(ok.marked, [targetId]);
+    assert.ok((await readFile(path, "utf-8")).includes("[superseded:rule-1]"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("agent_memory_mark_superseded without expectedHash is unchanged", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-cas-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "cas-agent";
+    const base = { agentId, scope: "project", cwd: dir };
+
+    await callTool(handlers, "agent_memory_append", { ...base, note: "run A skipped lint" });
+    const path = getAgentMemoryEntrypoint(agentId, "project", dir);
+    const entryId = parseMemoryEntries(await readFile(path, "utf-8")).entries[0].id;
+
+    const result = await callTool(handlers, "agent_memory_mark_superseded", {
+      ...base,
+      entryIds: [entryId],
+      supersededBy: "rule-2",
+    });
+    assert.deepEqual(Object.keys(result), [
+      "status",
+      "agentId",
+      "scope",
+      "path",
+      "supersededBy",
+      "marked",
+      "alreadySuperseded",
+      "missing",
+    ]);
+    assert.equal(result.status, "ok");
+    assert.deepEqual(result.marked, [entryId]);
+    assert.ok((await readFile(path, "utf-8")).includes("[superseded:rule-2]"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("agent_memory_snapshot_sync apply: stale expectedHash conflicts and writes nothing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-cas-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "cas-agent";
+    const base = { agentId, scope: "project", cwd: dir };
+    const memoryPath = getAgentMemoryEntrypoint(agentId, "project", dir);
+    const snapshotPath = getAgentMemorySnapshotPath(agentId, "project", dir);
+
+    await callTool(handlers, "agent_memory_append", { ...base, note: "snapshot-worthy note" });
+    await callTool(handlers, "agent_memory_snapshot_sync", { ...base, direction: "capture" });
+    const snapshotContent = await readFile(snapshotPath, "utf-8");
+    const staleHash = hashMemoryContent(await readFile(memoryPath, "utf-8"));
+
+    // A concurrent agent appends to live memory after we read the hash.
+    await callTool(handlers, "agent_memory_append", { ...base, note: "landed after our read" });
+    const currentContent = await readFile(memoryPath, "utf-8");
+
+    const conflict = await callTool(handlers, "agent_memory_snapshot_sync", {
+      ...base,
+      direction: "apply",
+      expectedHash: staleHash,
+    });
+    assert.equal(conflict.status, "write_conflict");
+    assert.equal(conflict.direction, "apply");
+    assert.equal(conflict.targetPath, memoryPath);
+    assert.equal(conflict.currentHash, hashMemoryContent(currentContent));
+    assert.equal(conflict.expectedHash, staleHash);
+    assert.equal(conflict.hint, "re-read and retry");
+    assert.equal(conflict.meta, undefined, "a conflict reports no sync metadata");
+
+    // The concurrent append survived: apply did not clobber live memory.
+    assert.equal(await readFile(memoryPath, "utf-8"), currentContent);
+    assert.ok(currentContent.includes("landed after our read"));
+
+    // Re-read and retry: the apply lands and the snapshot wins.
+    const ok = await callTool(handlers, "agent_memory_snapshot_sync", {
+      ...base,
+      direction: "apply",
+      expectedHash: conflict.currentHash,
+    });
+    assert.equal(ok.status, "ok");
+    assert.equal(await readFile(memoryPath, "utf-8"), snapshotContent);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("agent_memory_snapshot_sync without expectedHash is unchanged", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-cas-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "cas-agent";
+    const base = { agentId, scope: "project", cwd: dir };
+    const memoryPath = getAgentMemoryEntrypoint(agentId, "project", dir);
+    const snapshotPath = getAgentMemorySnapshotPath(agentId, "project", dir);
+
+    await callTool(handlers, "agent_memory_append", { ...base, note: "captured note" });
+    const captured = await callTool(handlers, "agent_memory_snapshot_sync", {
+      ...base,
+      direction: "capture",
+    });
+
+    // Exact legacy payload shape and key order.
+    assert.deepEqual(Object.keys(captured), [
+      "status",
+      "agentId",
+      "scope",
+      "direction",
+      "memoryPath",
+      "snapshotPath",
+      "metaPath",
+      "snapshotsDir",
+      "historyEntryId",
+      "meta",
+    ]);
+    assert.equal(captured.status, "ok");
+    assert.equal(captured.snapshotsDir, null);
+    assert.equal(captured.historyEntryId, null);
+    assert.equal(captured.meta.lastSyncedMemoryHash, captured.meta.lastSyncedSnapshotHash);
+    assert.equal(await readFile(snapshotPath, "utf-8"), await readFile(memoryPath, "utf-8"));
+
+    // Unguarded apply still clobbers live memory wholesale, as before.
+    await callTool(handlers, "agent_memory_append", { ...base, note: "clobber me" });
+    const applied = await callTool(handlers, "agent_memory_snapshot_sync", {
+      ...base,
+      direction: "apply",
+    });
+    assert.equal(applied.status, "ok");
+    const after = await readFile(memoryPath, "utf-8");
+    assert.ok(!after.includes("clobber me"));
+    assert.ok(after.includes("captured note"));
+
+    // retainHistory still writes .snapshots/ history entries.
+    const withHistory = await callTool(handlers, "agent_memory_snapshot_sync", {
+      ...base,
+      direction: "capture",
+      retainHistory: true,
+    });
+    assert.ok(withHistory.snapshotsDir);
+    assert.ok(typeof withHistory.historyEntryId === "string");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -5,12 +5,12 @@
  *
  * PRESENTATION LAYER ONLY. Every command calls the exact same runtime
  * functions the MCP tools call (routing_runtime.js, platform_runtime.js,
- * task_runtime.js) — zero routing/task logic is forked into this file,
- * so the CLI can never drift from MCP tool behavior.
+ * task_runtime.js, memory_runtime.js) — zero routing/task/memory logic is
+ * forked into this file, so the CLI can never drift from MCP tool behavior.
  *
  * Conventions (unix-composable, agent-friendly):
  *   - stdout carries data; stderr carries diagnostics
- *   - exit codes: 0 ok / 1 user error / 2 server error
+ *   - exit codes: 0 ok / 1 user error / 2 server error / 5 write conflict
  *   - --json on every command (e.g. `xx platforms --json | jq`)
  *   - layered --help: top-level under 40 lines, per-command help beneath
  */
@@ -20,6 +20,14 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
+import type { AgentMemoryScope } from "./config_runtime.js";
+import { loadMergedAgentRuntimeConfig } from "./config_runtime.js";
+import { resolveAgentContext } from "./agent_tool_helpers.js";
+import {
+  getCompletionMemorySyncStatus,
+  syncAgentMemorySnapshot,
+  type CompletionMemorySyncStatus,
+} from "./memory_runtime.js";
 import type { Host, Registry, RouteRecommendation } from "./platform_types.js";
 import { loadRegistry } from "./platform_runtime.js";
 import { endpointFamilyForHost, pingHostEndpoint, routeTask } from "./routing_runtime.js";
@@ -38,9 +46,33 @@ import {
 export const EXIT_OK = 0;
 export const EXIT_USAGE = 1;
 export const EXIT_SERVER = 2;
+/**
+ * Optimistic-concurrency precondition failed: the target changed under us and
+ * nothing was written. Distinct from a server error because the caller's
+ * remedy is mechanical (re-read, merge, retry), not diagnostic. Borrowed from
+ * buzz-cli, where 5 is the write-conflict code.
+ */
+export const EXIT_CONFLICT = 5;
 
 /** Thrown for user/usage errors — mapped to exit code 1. */
 export class CliUsageError extends Error {}
+
+/**
+ * Thrown by any write command whose compare-and-swap precondition failed.
+ * runCli emits `conflict` as JSON on stderr and exits EXIT_CONFLICT, so every
+ * future write command inherits the convention for free.
+ */
+export class CliWriteConflictError extends Error {
+  readonly conflict: Record<string, unknown>;
+
+  constructor(conflict: Record<string, unknown>) {
+    super("write conflict");
+    this.name = "CliWriteConflictError";
+    this.conflict = conflict;
+  }
+}
+
+const MEMORY_SCOPES: readonly AgentMemoryScope[] = ["user", "project", "local"];
 
 // --- Parsed command shapes ---
 
@@ -57,9 +89,24 @@ export type ParsedCommand =
       owner?: string;
       includeCompleted: boolean;
       limit?: number;
+    }
+  | {
+      kind: "memory-status";
+      agentId: string;
+      scope?: AgentMemoryScope;
+      cwd?: string;
+      json: boolean;
+    }
+  | {
+      kind: "memory-apply";
+      agentId: string;
+      scope?: AgentMemoryScope;
+      cwd?: string;
+      expectHash?: string;
+      json: boolean;
     };
 
-const COMMANDS = ["route", "platforms", "diagnose", "tasks", "help"] as const;
+const COMMANDS = ["route", "platforms", "diagnose", "tasks", "memory", "help"] as const;
 
 const BASE_OPTIONS = {
   json: { type: "boolean" as const, default: false },
@@ -73,6 +120,14 @@ const TASKS_LIST_OPTIONS = {
   owner: { type: "string" as const },
   "include-completed": { type: "boolean" as const, default: false },
   limit: { type: "string" as const },
+};
+
+const MEMORY_OPTIONS = {
+  ...BASE_OPTIONS,
+  agent: { type: "string" as const },
+  scope: { type: "string" as const },
+  cwd: { type: "string" as const },
+  "expect-hash": { type: "string" as const },
 };
 
 function parseWith<T extends Record<string, unknown>>(
@@ -193,6 +248,55 @@ export function parseCliArgs(argv: string[]): ParsedCommand {
       };
     }
 
+    case "memory": {
+      const { values, positionals } = parseWith(rest, MEMORY_OPTIONS);
+      if (values.help === true) return { kind: "help", topic: "memory" };
+      const sub = positionals[0];
+      if (sub === undefined) {
+        throw new CliUsageError("memory requires a subcommand (available: status, apply)");
+      }
+      if (sub !== "status" && sub !== "apply") {
+        throw new CliUsageError(`unknown memory subcommand: "${sub}" (available: status, apply)`);
+      }
+      if (positionals.length > 1) {
+        throw new CliUsageError(
+          `memory ${sub} takes no positional arguments (got: ${positionals.slice(1).join(" ")})`
+        );
+      }
+
+      const agentId = typeof values.agent === "string" ? values.agent.trim() : "";
+      if (agentId.length === 0) {
+        throw new CliUsageError(`memory ${sub} requires --agent <id>`);
+      }
+
+      let scope: AgentMemoryScope | undefined;
+      if (typeof values.scope === "string") {
+        if (!(MEMORY_SCOPES as readonly string[]).includes(values.scope)) {
+          throw new CliUsageError(
+            `invalid --scope "${values.scope}" (valid: ${MEMORY_SCOPES.join(", ")})`
+          );
+        }
+        scope = values.scope as AgentMemoryScope;
+      }
+
+      const cwd = typeof values.cwd === "string" ? values.cwd : undefined;
+      const json = values.json === true;
+
+      if (sub === "status") {
+        if (typeof values["expect-hash"] === "string") {
+          throw new CliUsageError("--expect-hash applies to write commands (try: memory apply)");
+        }
+        return { kind: "memory-status", agentId, scope, cwd, json };
+      }
+
+      const expectHash =
+        typeof values["expect-hash"] === "string" ? values["expect-hash"].trim() : undefined;
+      if (expectHash !== undefined && expectHash.length === 0) {
+        throw new CliUsageError("--expect-hash requires a non-empty hash");
+      }
+      return { kind: "memory-apply", agentId, scope, cwd, expectHash, json };
+    }
+
     default:
       throw new CliUsageError(`unknown command: "${command}" (commands: ${COMMANDS.join(", ")})`);
   }
@@ -212,6 +316,8 @@ export function helpText(): string {
     "  platforms             List tiers, hosts, and selection policy from the registry",
     "  diagnose              Ping configured model endpoints and report health",
     "  tasks list            List persistent tasks (filters: --status --tag --owner)",
+    "  memory status         Show agent memory/snapshot hashes and drift",
+    "  memory apply          Apply SNAPSHOT.md over MEMORY.md (--expect-hash for CAS)",
     "",
     "Global options:",
     "  --json                Emit JSON on stdout (pipe-friendly: xx platforms --json | jq)",
@@ -219,7 +325,8 @@ export function helpText(): string {
     "",
     "Conventions:",
     "  stdout carries data; stderr carries diagnostics",
-    "  exit codes: 0 ok / 1 user error / 2 server error",
+    "  exit codes: 0 ok / 1 user error / 2 server error / 5 write conflict",
+    "  write conflicts print the conflict as JSON on stderr and write nothing",
   ].join("\n");
 }
 
@@ -274,6 +381,30 @@ const COMMAND_HELP: Record<string, string> = {
     "  --include-completed    Include done and canceled tasks",
     "  --limit <n>            Maximum tasks to return (1-500, default 100)",
     "  --json                 Emit { total, returned, tasks } as JSON",
+  ].join("\n"),
+  memory: [
+    "xx memory status --agent <id> [options]",
+    "xx memory apply  --agent <id> [--expect-hash <hash>] [options]",
+    "",
+    "status: report MEMORY.md / SNAPSHOT.md hashes and drift (same",
+    "getCompletionMemorySyncStatus() the supervisor completion gate uses).",
+    "",
+    "apply: overwrite live MEMORY.md with SNAPSHOT.md via the same",
+    "syncAgentMemorySnapshot() the agent_memory_snapshot_sync MCP tool calls.",
+    "",
+    "Options:",
+    "  --agent <id>           Agent identifier (required)",
+    `  --scope <s>            Memory scope (${MEMORY_SCOPES.join("|")}; default from agent config)`,
+    "  --cwd <path>           Project root for project/local scope",
+    "  --expect-hash <hash>   apply only: compare-and-swap on memoryHash from",
+    "                         `xx memory status`. If MEMORY.md changed since,",
+    "                         nothing is written, the conflict is printed as",
+    "                         JSON on stderr, and xx exits 5.",
+    "  --json                 Emit the runtime result as JSON",
+    "",
+    "Example (read, then conditionally write):",
+    "  h=$(xx memory status --agent skippy --json | jq -r .memoryHash)",
+    '  xx memory apply --agent skippy --expect-hash "$h" || test $? -eq 5',
   ].join("\n"),
   help: helpText(),
 };
@@ -440,6 +571,17 @@ export function formatDiagnoseText(results: DiagnoseResult[]): string {
     .join("\n");
 }
 
+export function formatMemoryStatusText(status: CompletionMemorySyncStatus): string {
+  return [
+    `memory:   ${status.memoryPath}`,
+    `snapshot: ${status.snapshotPath}`,
+    `memoryHash:   ${status.memoryHash}`,
+    `snapshotHash: ${status.snapshotHash}`,
+    `drift:    ${status.driftDetected ? "yes" : "no"}`,
+    `diff:     +${status.diff.added} -${status.diff.removed} ~${status.diff.changed}`,
+  ].join("\n");
+}
+
 export function formatTasksText(result: TaskListResult): string {
   return result.tasks
     .map((task) => {
@@ -534,8 +676,64 @@ export async function runCli(
         }
         return EXIT_OK;
       }
+
+      case "memory-status": {
+        const runtime = await loadMergedAgentRuntimeConfig();
+        const { resolvedScope, resolvedCwd } = resolveAgentContext(
+          parsed.agentId,
+          parsed.scope,
+          parsed.cwd,
+          runtime
+        );
+        // Same status helper the supervisor completion gate calls.
+        const status = await getCompletionMemorySyncStatus({
+          agentId: parsed.agentId,
+          scope: resolvedScope,
+          cwd: resolvedCwd,
+        });
+        if (parsed.json)
+          emitJson(out, { agentId: parsed.agentId, scope: resolvedScope, ...status });
+        else out.write(formatMemoryStatusText(status) + "\n");
+        return EXIT_OK;
+      }
+
+      case "memory-apply": {
+        const runtime = await loadMergedAgentRuntimeConfig();
+        const { resolvedScope, resolvedCwd } = resolveAgentContext(
+          parsed.agentId,
+          parsed.scope,
+          parsed.cwd,
+          runtime
+        );
+        // Same runtime call the agent_memory_snapshot_sync MCP tool makes.
+        const outcome = await syncAgentMemorySnapshot({
+          agentId: parsed.agentId,
+          scope: resolvedScope,
+          cwd: resolvedCwd,
+          direction: "apply",
+          expectedHash: parsed.expectHash,
+        });
+        if (outcome.status === "write_conflict") {
+          throw new CliWriteConflictError({
+            agentId: parsed.agentId,
+            scope: resolvedScope,
+            ...outcome,
+          });
+        }
+        if (parsed.json)
+          emitJson(out, { agentId: parsed.agentId, scope: resolvedScope, ...outcome });
+        else err.write(`xx: applied snapshot over ${outcome.memoryPath}\n`);
+        return EXIT_OK;
+      }
     }
   } catch (error) {
+    // Compare-and-swap precondition failed: nothing was written. The conflict
+    // goes to stderr as JSON (stdout stays clean for the caller's pipeline)
+    // and the distinct exit code lets scripts branch on "re-read and retry".
+    if (error instanceof CliWriteConflictError) {
+      err.write(JSON.stringify(error.conflict, null, 2) + "\n");
+      return EXIT_CONFLICT;
+    }
     const message = error instanceof Error ? error.message : String(error);
     err.write(`xx: server error: ${message}\n`);
     return EXIT_SERVER;
