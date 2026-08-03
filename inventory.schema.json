@@ -191,6 +191,22 @@
       }
     },
 
+    "service": {
+      "type": "object",
+      "required": ["id", "kind", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "kind": {
+          "enum": ["reader"],
+          "description": "What the service does. `reader` is a stateless URL -> LLM-friendly-markdown converter (e.g. the self-hosted ghcr.io/jina-ai/reader:oss image) that research skills prefer for webpage visits when enabled."
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "enabled": { "type": "boolean", "default": false },
+        "notes": { "type": "string" }
+      }
+    },
+
     "machine": {
       "type": "object",
       "required": ["id", "label", "network", "runtimes"],
@@ -202,7 +218,12 @@
         "hardware": { "$ref": "#/definitions/hardware" },
         "execution": { "$ref": "#/definitions/execution" },
         "delegation": { "$ref": "#/definitions/delegation" },
-        "runtimes": { "type": "array", "items": { "$ref": "#/definitions/runtime" }, "minItems": 1 }
+        "runtimes": { "type": "array", "items": { "$ref": "#/definitions/runtime" }, "minItems": 1 },
+        "services": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/service" },
+          "description": "Optional auxiliary services installed on this machine (not inference runtimes — they never become lanes). Declared for agents to discover; the MCP server never dials them. Disabled by default, like everything a scan finds. Reached at http://<network.address>:<port>."
+        }
       }
     },
 
