@@ -9,6 +9,7 @@ import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import {
   applyForceSynthesisOutcome,
   evaluateGoalContractCompletion,
+  LEASE_SELF_FENCING_CLAUSE,
   readTaskStore,
   TASK_TERMINAL_STATUSES,
   withTaskStoreLock,
@@ -152,6 +153,71 @@ export function buildContinuationPrompt(
   return lines.join("\n");
 }
 
+// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ---
+
+export interface LeasedTaskFence {
+  taskId: string;
+  expiresAt: string;
+  revoked?: boolean;
+}
+
+/**
+ * Lease section for continuation prompts. Enforcement is the agent's: the
+ * control plane holds no kill channel, so the prompt states the deadline and
+ * the self-fencing rule. Empty in, empty out — a session with no leased tasks
+ * produces a byte-identical continuation prompt to the pre-lease formatter.
+ */
+export function buildLeaseFenceSections(leases: LeasedTaskFence[]): string[] {
+  if (leases.length === 0) return [];
+  const lines: string[] = ["- task leases (self-enforced; the control plane has no kill channel):"];
+  for (const lease of leases) {
+    lines.push(
+      `  - ${lease.taskId}: expires-at ${lease.expiresAt}${lease.revoked === true ? " (REVOKED)" : ""}`
+    );
+  }
+  lines.push(`  - self-fencing rule: ${LEASE_SELF_FENCING_CLAUSE}`);
+  lines.push(
+    "  - a task-result write-back against a revoked or expired lease is rejected by the server"
+  );
+  return lines;
+}
+
+/**
+ * Handoff statement of at-most-one-live-instance: the prior lane's claim on
+ * these tasks is revoked, so only the receiving lane may write results.
+ */
+export function buildRevokedClaimSections(revoked: LeasedTaskFence[]): string[] {
+  if (revoked.length === 0) return [];
+  const lines: string[] = ["- Prior Lane's Claim (revoked — at most one live instance per task):"];
+  for (const lease of revoked) {
+    lines.push(
+      `  - ${lease.taskId}: the prior lane's lease is revoked (was expiring ${lease.expiresAt}); only this lane may write results for it`
+    );
+  }
+  lines.push(
+    "  - if the prior lane wakes up, its write-back is rejected by the server; treat its silence as terminal, not as work in flight"
+  );
+  return lines;
+}
+
+/** Collect the live lease fences for a session's open tasks, sorted by task id. */
+export async function collectSessionLeaseFences(sessionId: string): Promise<LeasedTaskFence[]> {
+  const store = await readTaskStore();
+  return Object.values(store.tasks)
+    .filter(
+      (task) =>
+        task.sessionId === sessionId &&
+        task.lease !== undefined &&
+        !TASK_TERMINAL_STATUSES.has(task.status)
+    )
+    .map((task) => ({
+      taskId: task.taskId,
+      expiresAt: task.lease!.expiresAt,
+      revoked: task.lease!.revoked === true ? true : undefined,
+    }))
+    .sort((left, right) => left.taskId.localeCompare(right.taskId));
+}
+
 // --- Failover handoff variant (UPSTREAM-BORROW task 22) ---
 
 export interface HandoffStateItem {
@@ -208,7 +274,10 @@ function formatOpenWorkItem(work: HandoffOpenWork): string {
  * line passes through secret redaction; credentials are referenced by
  * location, never by value.
  */
-export function buildHandoffSections(input: HandoffInput): string[] {
+export function buildHandoffSections(
+  input: HandoffInput,
+  revokedLeases: LeasedTaskFence[] = []
+): string[] {
   const lines: string[] = [];
 
   lines.push("- Goal:");
@@ -252,6 +321,8 @@ export function buildHandoffSections(input: HandoffInput): string[] {
     lines.push(`  ${input.credentialsNote}`);
   }
 
+  lines.push(...buildRevokedClaimSections(revokedLeases));
+
   lines.push(`- ${VERIFY_DONT_TRUST_PREAMBLE}`);
 
   return lines.map(redactSecrets);
@@ -261,7 +332,8 @@ export function buildHandoffPrompt(
   sessionId: string,
   continuationCount: number,
   currentRoute: SupervisorSessionState["currentRoute"],
-  input: HandoffInput
+  input: HandoffInput,
+  revokedLeases: LeasedTaskFence[] = []
 ): string {
   const openWork = input.openWork.map((work) => redactSecrets(formatOpenWorkItem(work)));
   return buildContinuationPrompt(
@@ -273,7 +345,7 @@ export function buildHandoffPrompt(
     "failover_handoff",
     [],
     openWork.length > 0 ? openWork : ["(none recorded)"],
-    buildHandoffSections(input),
+    buildHandoffSections(input, revokedLeases),
     "handoff"
   );
 }
@@ -657,6 +729,13 @@ export function registerSupervisorCompletionTools(
         }
         const remediationChecklist = deps.buildCompletionRepairChecklist(completionRecoveryReason);
 
+        // Leased tasks carry the self-fencing clause (UPSTREAM-BORROW task 27).
+        // With no leased tasks the extra sections stay undefined, so the prompt
+        // is byte-identical to the pre-lease continuation directive.
+        const leaseFences = await collectSessionLeaseFences(sessionId);
+        const leaseSections =
+          leaseFences.length > 0 ? buildLeaseFenceSections(leaseFences) : undefined;
+
         const prompt = buildContinuationPrompt(
           sessionId,
           state.continuationCount,
@@ -665,7 +744,8 @@ export function registerSupervisorCompletionTools(
           memorySyncStatus,
           completionRecoveryReason,
           remediationChecklist,
-          pendingTasks
+          pendingTasks,
+          leaseSections
         );
 
         return jsonContent({
@@ -677,6 +757,7 @@ export function registerSupervisorCompletionTools(
           remediationChecklist,
           memorySyncGuard: state.completionMemorySync ?? null,
           memorySyncStatus,
+          leases: leaseFences,
           prompt,
         });
       })
@@ -778,15 +859,28 @@ export function registerSupervisorCompletionTools(
         );
         await deps.writeSupervisorStore(store);
 
-        const prompt = buildHandoffPrompt(sessionId, state.continuationCount, state.currentRoute, {
-          goal,
-          currentState: currentState ?? [],
-          keyDecisions: keyDecisions ?? [],
-          trapsAndDeadEnds: trapsAndDeadEnds ?? [],
-          relevantFiles: relevantFiles ?? [],
-          openWork: openWork ?? [],
-          credentialsNote,
-        });
+        // At-most-one-live-instance: the failover flow already revoked the prior
+        // lane's claim; the handoff states it so the receiving lane knows it is
+        // the only writer (UPSTREAM-BORROW task 27).
+        const revokedLeases = (await collectSessionLeaseFences(sessionId)).filter(
+          (lease) => lease.revoked === true
+        );
+
+        const prompt = buildHandoffPrompt(
+          sessionId,
+          state.continuationCount,
+          state.currentRoute,
+          {
+            goal,
+            currentState: currentState ?? [],
+            keyDecisions: keyDecisions ?? [],
+            trapsAndDeadEnds: trapsAndDeadEnds ?? [],
+            relevantFiles: relevantFiles ?? [],
+            openWork: openWork ?? [],
+            credentialsNote,
+          },
+          revokedLeases
+        );
 
         return jsonContent({
           status: "ready",
@@ -794,6 +888,7 @@ export function registerSupervisorCompletionTools(
           sessionId,
           continuationCount: state.continuationCount,
           currentRoute: state.currentRoute,
+          revokedLeases,
           prompt,
         });
       })

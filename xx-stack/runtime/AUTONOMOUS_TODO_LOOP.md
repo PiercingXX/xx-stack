@@ -74,6 +74,33 @@ Meta-prompting rule: before writing the contract, inspect the repo and surface h
 
 When a linked task carries a contract, `supervisor_complete_session` refuses `completed` until the completion evidence references the contract's `validationCmd` (reason code `goal_contract_validation_evidence_missing`), and the finalized result cites each contract's stop condition.
 
+## Stop Gating: Hook-Aware Harnesses vs. the Prompt Contract
+
+The contract above is enforced at the prompt layer for every harness. A *hook-aware* harness — one that adopts the underscore-prefixed MCP lifecycle-hook convention — gets the same gating enforced structurally, for free:
+
+- `_Stop` — called by the harness when the model signals `end_turn`. It returns an empty string when there is no objection to stopping, or a bounded objection naming the concrete open supervised work (task id + unmet stop condition) otherwise. A non-empty result means the agent keeps working.
+- `_PostCompact` — called by the harness after context compaction. It returns the supervised state to re-inject into the fresh context: open tasks, their goal contracts and stop conditions, worktree resume notes, leases, live sessions, and the memory entrypoint pointer.
+
+Both hooks are ordinary MCP tools, so no protocol change is involved, and both re-derive everything from existing stores — they create no new state.
+
+Registration is **off by default**: a harness that is not hook-aware would see `_Stop` and `_PostCompact` as ordinary callable tools. Opt in with:
+
+```bash
+XX_STACK_HOOK_TOOLS=1
+```
+
+Without the flag they are absent from `tools/list` entirely, and the loop keeps the prompt-level contract described above — the behavior is unchanged.
+
+Provider-side contract these hooks honor (mirroring the convention's expectations):
+
+- fast — no filesystem walks or expensive scans; callers time out at ~2.5s and treat a timeout as "no objection".
+- deterministic — identical store state produces byte-identical output.
+- empty string from `_Stop` means "no objection".
+- bounded objections — the caller enforces a rejection budget, so each objection names one concrete unmet condition the agent can close in a single round, rather than restating the whole goal contract.
+- observed state, never instructions — the caller injects this text at tool-result trust, not system trust, so the hooks report state and let the agent decide.
+
+Scoping is optional: both hooks accept `{ agentId?, sessionId? }` and degrade to a fleet-wide open-work summary when neither is supplied.
+
 ## Generated State
 
 The runner creates state under `.xx-stack/loops/<todo-name>/` by default:
