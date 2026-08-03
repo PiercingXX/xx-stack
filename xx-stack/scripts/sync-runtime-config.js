@@ -410,7 +410,13 @@ const inventory = buildInventorySnapshot();
 const required = buildRequiredModelSets(inventory);
 const modelSets = buildModelSets(inventory, required);
 const cloudProviders = buildCloudProviders();
-const availableModelsByProvider = syncProviders(modelSets, inventory, cloudProviders);
+// Called for its side effect: registering/updating providers on `config`. Its
+// return value maps providers to their RAW model names and is deliberately
+// discarded — every downstream assignment uses `assignableModelsByProvider`
+// below, which is built from the *usable* name sets (the ones that have already
+// been filtered for cloud opt-in). Binding the raw map here invited using it by
+// mistake and bypassing that filter.
+syncProviders(modelSets, inventory, cloudProviders);
 const assignableModelsByProvider = buildAvailableModelsByProvider([
   [LLAMA_CPP_LOCAL_PROVIDER, modelSets.openAiLocalUsableNames],
   [SGLANG_REMOTE_PROVIDER, modelSets.openAiRemoteUsableNames],

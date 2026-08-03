@@ -1,6 +1,6 @@
 ---
 name: execution-orchestrator
-description: Nano tier — decision rules and gates only. Canonical: runtime/agents/execution-orchestrator.md.
+description: "Nano tier — decision rules and gates only. Canonical: runtime/agents/execution-orchestrator.md."
 ---
 
 # Execution Orchestrator (nano)

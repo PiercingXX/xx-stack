@@ -2,7 +2,6 @@
 name: debug-investigate
 description: Systematic root-cause debugging. Trace data flow, test hypotheses, stop after 3 failed fixes. No code changes without investigation.
 mode: agent
-model: sglang-remote/qwen3-coder-next
 tools:
   - codebase
   - editFiles

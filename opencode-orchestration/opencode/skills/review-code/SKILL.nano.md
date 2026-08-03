@@ -1,6 +1,6 @@
 ---
 name: review-code
-description: Nano tier of review-code — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/review-code/SKILL.md.
+description: "Nano tier of review-code — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/review-code/SKILL.md."
 ---
 
 # Code Review (nano)

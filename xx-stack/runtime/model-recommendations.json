@@ -1,59 +1,68 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Setup-time model suggestions. Profiles match on host hardware, not on provider ids, because provider ids in platforms.json are runtime-specific (ollama-local, llama-cpp-local, hermes-proxy, sglang-remote, ollama, openai-compatible) while the useful question at setup time is how much VRAM the box has. gpuVramGbMin is compared against a host's hardware.detected.totalGpuVramGb; the highest threshold a host satisfies wins. Model names here are suggestions to pull, not a registry — platforms.json remains the source of truth for what is actually served.",
   "profiles": [
     {
       "match": {
-        "provider": "self-hosted-api"
+        "gpuVramGbMin": 48
       },
       "recommendedModels": [
         {
-          "name": "coder-main",
-          "reason": "Default implementation alias for coding, review, planning, and release work."
+          "name": "qwen3-coder:30b-a3b-tq2_0",
+          "reason": "Strong local coding lane for high-VRAM multi-GPU workstations."
         },
         {
-          "name": "coder-deep",
-          "reason": "Reasoning-oriented alias for architecture, synthesis, and heavier delegated analysis."
+          "name": "qwq:32b-tq2_0",
+          "reason": "Useful local reasoning lane when you want to avoid cloud or remote dependency."
         },
         {
-          "name": "coder-fast",
-          "reason": "Lower-latency alias for quick fixes and lightweight verification."
+          "name": "gpt-oss:20b-tq2_0",
+          "reason": "Good general-purpose local reasoning and research model with lower overhead."
         }
       ]
     },
     {
       "match": {
-        "provider": "local-catalog-api"
+        "gpuVramGbMin": 20
       },
       "recommendedModels": [
         {
-          "name": "coder-fast",
-          "reason": "Local fallback alias for short verification loops and offline work."
+          "name": "qwen2.5-coder:14b-tq2_0",
+          "reason": "Safer default coding model for midrange GPUs."
         },
         {
-          "name": "coder-main",
-          "reason": "General-purpose local fallback alias when the primary remote lane is unavailable."
+          "name": "ministral-3:14b-tq2_0",
+          "reason": "Fast lower-memory reasoning lane."
         }
       ]
     },
     {
       "match": {
-        "provider": "compatibility-api"
+        "gpuVramGbMin": 10
       },
       "recommendedModels": [
         {
-          "name": "compat-main",
-          "reason": "Compatibility bridge alias for legacy clients, migrations, and overflow fallback."
+          "name": "qwen2.5-coder:7b-tq2_0",
+          "reason": "Light local coding option when VRAM is limited."
+        },
+        {
+          "name": "phi4:14b-tq2_0",
+          "reason": "Compact general-purpose reasoning option if it fits your card."
         }
       ]
     },
     {
       "match": {
-        "provider": "cloud-api"
+        "gpuVramGbMin": 0
       },
       "recommendedModels": [
         {
-          "name": "cloud-main",
-          "reason": "External fallback alias for capability gaps, burst demand, or temporary self-hosted outage."
+          "name": "qwen2.5-coder:3b-tq2_0",
+          "reason": "Fallback coding model for CPU-only or very constrained systems."
+        },
+        {
+          "name": "llama3.2:3b-tq2_0",
+          "reason": "Low-overhead fallback for general local chat and routing tests."
         }
       ]
     }

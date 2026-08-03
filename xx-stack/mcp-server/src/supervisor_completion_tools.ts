@@ -5,12 +5,14 @@ import { resolve } from "node:path";
 import { CompletionMemorySyncGuard, getCompletionMemorySyncStatus } from "./memory_runtime.js";
 import type { SupervisorSessionState } from "./supervisor_runtime.js";
 import { evaluateForceSynthesisTrigger } from "./supervisor_runtime.js";
+import { guardStoreAccess } from "./supervisor_store_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import {
   applyForceSynthesisOutcome,
   evaluateGoalContractCompletion,
   LEASE_SELF_FENCING_CLAUSE,
   readTaskStore,
+  revokeSessionTaskLeases,
   TASK_TERMINAL_STATUSES,
   withTaskStoreLock,
   writeTaskStore,
@@ -432,53 +434,57 @@ export function registerSupervisorCompletionTools(
       verdict: z.enum(["pass", "fail"]).optional().describe("Required when checkType='judge'"),
     },
     async ({ sessionId, checkType, summary, verdict }) =>
-      deps.withSupervisorStoreLock(async () => {
-        const reliability = await deps.loadReliabilityConfig();
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const state = store.sessions[sessionId];
-        if (!state) {
-          return jsonContent({ status: "missing", sessionId });
-        }
-
-        const now = Date.now();
-
-        if (checkType === "evidence") {
-          state.completionEvidenceAt = now;
-          state.completionEvidenceSummary = summary;
-          state.pendingCompletionValidationAt = undefined;
-          deps.pushSessionEvent(state, "completion.evidence_recorded", summary);
-        } else {
-          if (!verdict) {
-            return jsonContent({
-              status: "invalid",
-              reasonCode: "judge_verdict_required",
-              sessionId,
-            });
+      guardStoreAccess(() =>
+        deps.withSupervisorStoreLock(async () => {
+          const reliability = await deps.loadReliabilityConfig();
+          const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+          const state = store.sessions[sessionId];
+          if (!state) {
+            return jsonContent({ status: "missing", sessionId });
           }
-          state.completionJudgeAt = now;
-          state.completionJudgeVerdict = verdict;
-          state.completionJudgeSummary = summary;
-          state.pendingCompletionValidationAt = verdict === "pass" ? undefined : now;
-          deps.pushSessionEvent(
-            state,
-            verdict === "pass" ? "completion.judge_pass" : "completion.judge_fail",
-            summary
-          );
-        }
 
-        await deps.writeSupervisorStore(store);
+          const now = Date.now();
 
-        return jsonContent({
-          status: "recorded",
-          reasonCode:
-            checkType === "evidence" ? "completion_evidence_recorded" : "completion_judge_recorded",
-          sessionId,
-          checkType,
-          completionEvidenceAt: state.completionEvidenceAt ?? null,
-          completionJudgeAt: state.completionJudgeAt ?? null,
-          completionJudgeVerdict: state.completionJudgeVerdict ?? null,
-        });
-      })
+          if (checkType === "evidence") {
+            state.completionEvidenceAt = now;
+            state.completionEvidenceSummary = summary;
+            state.pendingCompletionValidationAt = undefined;
+            deps.pushSessionEvent(state, "completion.evidence_recorded", summary);
+          } else {
+            if (!verdict) {
+              return jsonContent({
+                status: "invalid",
+                reasonCode: "judge_verdict_required",
+                sessionId,
+              });
+            }
+            state.completionJudgeAt = now;
+            state.completionJudgeVerdict = verdict;
+            state.completionJudgeSummary = summary;
+            state.pendingCompletionValidationAt = verdict === "pass" ? undefined : now;
+            deps.pushSessionEvent(
+              state,
+              verdict === "pass" ? "completion.judge_pass" : "completion.judge_fail",
+              summary
+            );
+          }
+
+          await deps.writeSupervisorStore(store);
+
+          return jsonContent({
+            status: "recorded",
+            reasonCode:
+              checkType === "evidence"
+                ? "completion_evidence_recorded"
+                : "completion_judge_recorded",
+            sessionId,
+            checkType,
+            completionEvidenceAt: state.completionEvidenceAt ?? null,
+            completionJudgeAt: state.completionJudgeAt ?? null,
+            completionJudgeVerdict: state.completionJudgeVerdict ?? null,
+          });
+        })
+      )
   );
 
   server.tool(
@@ -514,138 +520,154 @@ export function registerSupervisorCompletionTools(
         .describe("Optional completion-time override for memory sync guard"),
     },
     async ({ sessionId, outcome, note, forceComplete, memorySync }) =>
-      deps.withSupervisorStoreLock(async () => {
-        const reliability = await deps.loadReliabilityConfig();
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const state = store.sessions[sessionId];
-        if (!state) {
-          return jsonContent({ status: "missing", sessionId });
-        }
+      guardStoreAccess(() =>
+        deps.withSupervisorStoreLock(async () => {
+          const reliability = await deps.loadReliabilityConfig();
+          const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+          const state = store.sessions[sessionId];
+          if (!state) {
+            return jsonContent({ status: "missing", sessionId });
+          }
 
-        const now = Date.now();
-        const requestedOutcome = outcome ?? "completed";
-        let goalContractCitations: Array<{ taskId: string; stopConditionCitation: string }> = [];
-        if (requestedOutcome === "completed" && forceComplete !== true) {
-          const memoryGuard: CompletionMemorySyncGuard | undefined = memorySync
-            ? {
-                agentId: memorySync.agentId.trim(),
-                scope: memorySync.scope ?? "project",
-                cwd: resolve(memorySync.cwd ?? process.cwd()),
+          const now = Date.now();
+          const requestedOutcome = outcome ?? "completed";
+          let goalContractCitations: Array<{ taskId: string; stopConditionCitation: string }> = [];
+          if (requestedOutcome === "completed" && forceComplete !== true) {
+            const memoryGuard: CompletionMemorySyncGuard | undefined = memorySync
+              ? {
+                  agentId: memorySync.agentId.trim(),
+                  scope: memorySync.scope ?? "project",
+                  cwd: resolve(memorySync.cwd ?? process.cwd()),
+                }
+              : state.completionMemorySync;
+
+            if (memoryGuard) {
+              const memorySyncStatus = await getCompletionMemorySyncStatus(memoryGuard);
+              if (memorySyncStatus.driftDetected) {
+                const remediationChecklist = deps.buildCompletionRepairChecklist(
+                  "completion_memory_drift_detected"
+                );
+                state.pendingCompletionValidationAt = now;
+                deps.pushSessionEvent(
+                  state,
+                  "completion.validation_failed",
+                  "completion_memory_drift_detected; refusing early completion"
+                );
+                await deps.writeSupervisorStore(store);
+                return jsonContent({
+                  status: "running",
+                  reasonCode: "completion_memory_drift_detected",
+                  sessionId,
+                  completionValidationWindowMs: reliability.completionValidationWindowMs,
+                  memorySyncGuard: memoryGuard,
+                  memorySyncStatus,
+                  remediationChecklist,
+                  continuationDirective:
+                    "Resync memory snapshot first, then continue repair loop and retry completion.",
+                });
               }
-            : state.completionMemorySync;
+            }
 
-          if (memoryGuard) {
-            const memorySyncStatus = await getCompletionMemorySyncStatus(memoryGuard);
-            if (memorySyncStatus.driftDetected) {
+            const readiness = deps.evaluateCompletionReadiness(state, now, reliability);
+            if (!readiness.ok) {
               const remediationChecklist = deps.buildCompletionRepairChecklist(
-                "completion_memory_drift_detected"
+                readiness.reasonCode
               );
               state.pendingCompletionValidationAt = now;
               deps.pushSessionEvent(
                 state,
                 "completion.validation_failed",
-                "completion_memory_drift_detected; refusing early completion"
+                `${readiness.reasonCode}; refusing early completion`
               );
               await deps.writeSupervisorStore(store);
               return jsonContent({
                 status: "running",
-                reasonCode: "completion_memory_drift_detected",
+                reasonCode: readiness.reasonCode,
                 sessionId,
                 completionValidationWindowMs: reliability.completionValidationWindowMs,
-                memorySyncGuard: memoryGuard,
-                memorySyncStatus,
+                lastOutputAt: state.lastOutputAt ?? null,
+                completionEvidenceAt: state.completionEvidenceAt ?? null,
+                completionJudgeAt: state.completionJudgeAt ?? null,
+                completionJudgeVerdict: state.completionJudgeVerdict ?? null,
                 remediationChecklist,
                 continuationDirective:
-                  "Resync memory snapshot first, then continue repair loop and retry completion.",
+                  "Continue repair loop: implement -> verify -> record evidence -> judge -> retry completion.",
               });
             }
-          }
 
-          const readiness = deps.evaluateCompletionReadiness(state, now, reliability);
-          if (!readiness.ok) {
-            const remediationChecklist = deps.buildCompletionRepairChecklist(readiness.reasonCode);
-            state.pendingCompletionValidationAt = now;
-            deps.pushSessionEvent(
-              state,
-              "completion.validation_failed",
-              `${readiness.reasonCode}; refusing early completion`
+            // Goal-contract gate (UPSTREAM-BORROW task 21): when a linked task
+            // carries a goal contract, completion evaluation cites its stop
+            // condition and — if validationCmd is set — expects a verify_edit
+            // result for that exact command in the completion evidence.
+            const taskStore = await readTaskStore();
+            const contractTasks = Object.values(taskStore.tasks).filter(
+              (task) =>
+                task.sessionId === sessionId &&
+                task.goalContract !== undefined &&
+                !TASK_TERMINAL_STATUSES.has(task.status)
             );
-            await deps.writeSupervisorStore(store);
-            return jsonContent({
-              status: "running",
-              reasonCode: readiness.reasonCode,
-              sessionId,
-              completionValidationWindowMs: reliability.completionValidationWindowMs,
-              lastOutputAt: state.lastOutputAt ?? null,
-              completionEvidenceAt: state.completionEvidenceAt ?? null,
-              completionJudgeAt: state.completionJudgeAt ?? null,
-              completionJudgeVerdict: state.completionJudgeVerdict ?? null,
-              remediationChecklist,
-              continuationDirective:
-                "Continue repair loop: implement -> verify -> record evidence -> judge -> retry completion.",
-            });
+            const goalContractChecks = contractTasks.map((task) => ({
+              taskId: task.taskId,
+              ...evaluateGoalContractCompletion(
+                task.goalContract!,
+                state.completionEvidenceSummary
+              ),
+            }));
+            const failedContracts = goalContractChecks.filter((check) => !check.ok);
+            if (failedContracts.length > 0) {
+              const remediationChecklist = deps.buildCompletionRepairChecklist(
+                "goal_contract_validation_evidence_missing"
+              );
+              state.pendingCompletionValidationAt = now;
+              deps.pushSessionEvent(
+                state,
+                "completion.validation_failed",
+                "goal_contract_validation_evidence_missing; refusing early completion"
+              );
+              await deps.writeSupervisorStore(store);
+              return jsonContent({
+                status: "running",
+                reasonCode: "goal_contract_validation_evidence_missing",
+                sessionId,
+                goalContractChecks,
+                remediationChecklist,
+                continuationDirective:
+                  "Run each goal contract's validationCmd through verify_edit, record the result as completion evidence citing the stop condition, then retry completion.",
+              });
+            }
+            goalContractCitations = goalContractChecks.map((check) => ({
+              taskId: check.taskId,
+              stopConditionCitation: check.stopConditionCitation,
+            }));
           }
 
-          // Goal-contract gate (UPSTREAM-BORROW task 21): when a linked task
-          // carries a goal contract, completion evaluation cites its stop
-          // condition and — if validationCmd is set — expects a verify_edit
-          // result for that exact command in the completion evidence.
-          const taskStore = await readTaskStore();
-          const contractTasks = Object.values(taskStore.tasks).filter(
-            (task) =>
-              task.sessionId === sessionId &&
-              task.goalContract !== undefined &&
-              !TASK_TERMINAL_STATUSES.has(task.status)
+          state.status = requestedOutcome;
+          state.lastProgressAt = now;
+          state.pendingCompletionValidationAt = undefined;
+          state.abortDetectedAt = undefined;
+          state.recoveryInFlight = false;
+          deps.pushSessionEvent(state, "session.completed", note ?? state.status);
+          await deps.writeSupervisorStore(store);
+
+          // At-most-one-live-instance (MCP-4): every terminal transition revokes
+          // the session's task claims, so an orphaned lane cannot hold a live
+          // lease after the session ended. Unleased tasks are a pure no-op.
+          const revokedLeases = await revokeSessionTaskLeases(
+            sessionId,
+            new Date(now).toISOString()
           );
-          const goalContractChecks = contractTasks.map((task) => ({
-            taskId: task.taskId,
-            ...evaluateGoalContractCompletion(task.goalContract!, state.completionEvidenceSummary),
-          }));
-          const failedContracts = goalContractChecks.filter((check) => !check.ok);
-          if (failedContracts.length > 0) {
-            const remediationChecklist = deps.buildCompletionRepairChecklist(
-              "goal_contract_validation_evidence_missing"
-            );
-            state.pendingCompletionValidationAt = now;
-            deps.pushSessionEvent(
-              state,
-              "completion.validation_failed",
-              "goal_contract_validation_evidence_missing; refusing early completion"
-            );
-            await deps.writeSupervisorStore(store);
-            return jsonContent({
-              status: "running",
-              reasonCode: "goal_contract_validation_evidence_missing",
-              sessionId,
-              goalContractChecks,
-              remediationChecklist,
-              continuationDirective:
-                "Run each goal contract's validationCmd through verify_edit, record the result as completion evidence citing the stop condition, then retry completion.",
-            });
-          }
-          goalContractCitations = goalContractChecks.map((check) => ({
-            taskId: check.taskId,
-            stopConditionCitation: check.stopConditionCitation,
-          }));
-        }
 
-        state.status = requestedOutcome;
-        state.lastProgressAt = now;
-        state.pendingCompletionValidationAt = undefined;
-        state.abortDetectedAt = undefined;
-        state.recoveryInFlight = false;
-        deps.pushSessionEvent(state, "session.completed", note ?? state.status);
-        await deps.writeSupervisorStore(store);
-
-        return jsonContent({
-          status: state.status,
-          reasonCode: "session_finalized",
-          sessionId,
-          goalContractCitations,
-          currentAttemptId: state.currentAttemptId,
-          state,
-        });
-      })
+          return jsonContent({
+            status: state.status,
+            reasonCode: "session_finalized",
+            sessionId,
+            goalContractCitations,
+            currentAttemptId: state.currentAttemptId,
+            revokedLeases,
+            state,
+          });
+        })
+      )
   );
 
   server.tool(
@@ -656,111 +678,118 @@ export function registerSupervisorCompletionTools(
       remainingTasks: z.array(z.string()).optional().describe("Optional remaining task checklist"),
     },
     async ({ sessionId, remainingTasks }) =>
-      deps.withSupervisorStoreLock(async () => {
-        const reliability = await deps.loadReliabilityConfig();
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const state = store.sessions[sessionId];
-        if (!state) {
-          return jsonContent({ status: "missing", sessionId });
-        }
-
-        const pendingTasks = remainingTasks ?? [];
-        const now = Date.now();
-
-        if (deps.isAbortWindowActive(state.abortDetectedAt, now, reliability.abortWindowMs)) {
-          return jsonContent({
-            status: "cooldown",
-            reasonCode: "abort_window_active",
-            sessionId,
-            continuationCount: state.continuationCount,
-            waitMs: reliability.abortWindowMs - (now - (state.abortDetectedAt ?? now)),
-          });
-        }
-
-        if (state.recoveryInFlight) {
-          return jsonContent({
-            status: "recovering",
-            reasonCode: "retry_in_flight",
-            sessionId,
-            continuationCount: state.continuationCount,
-          });
-        }
-
-        const continuationFingerprint = JSON.stringify(pendingTasks);
-        const dedupeWindowMs = Math.max(5_000, Math.floor(reliability.retryDedupeWindowMs));
-
-        if (
-          deps.shouldDedupeContinuation(
-            state.lastContinuationFingerprint,
-            state.lastContinuationAt,
-            continuationFingerprint,
-            now,
-            dedupeWindowMs
-          )
-        ) {
-          return jsonContent({
-            status: "deduped",
-            reasonCode: "continuation_deduped",
-            sessionId,
-            continuationCount: state.continuationCount,
-            dedupeWindowMs,
-          });
-        }
-
-        state.continuationCount += 1;
-        state.lastContinuationFingerprint = continuationFingerprint;
-        state.lastContinuationAt = now;
-        deps.pushSessionEvent(state, "continuation.injected", `attempt ${state.continuationCount}`);
-        await deps.writeSupervisorStore(store);
-
-        const lastCompletionFailure = [...state.events]
-          .reverse()
-          .find((event) => event.type === "completion.validation_failed");
-        let completionRecoveryReason = deps.parseCompletionValidationReason(
-          lastCompletionFailure?.detail
-        );
-        let memorySyncStatus: Awaited<ReturnType<typeof getCompletionMemorySyncStatus>> | null =
-          null;
-        if (state.completionMemorySync) {
-          memorySyncStatus = await getCompletionMemorySyncStatus(state.completionMemorySync);
-          if (memorySyncStatus.driftDetected) {
-            completionRecoveryReason = "completion_memory_drift_detected";
+      guardStoreAccess(() =>
+        deps.withSupervisorStoreLock(async () => {
+          const reliability = await deps.loadReliabilityConfig();
+          const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+          const state = store.sessions[sessionId];
+          if (!state) {
+            return jsonContent({ status: "missing", sessionId });
           }
-        }
-        const remediationChecklist = deps.buildCompletionRepairChecklist(completionRecoveryReason);
 
-        // Leased tasks carry the self-fencing clause (UPSTREAM-BORROW task 27).
-        // With no leased tasks the extra sections stay undefined, so the prompt
-        // is byte-identical to the pre-lease continuation directive.
-        const leaseFences = await collectSessionLeaseFences(sessionId);
-        const leaseSections =
-          leaseFences.length > 0 ? buildLeaseFenceSections(leaseFences) : undefined;
+          const pendingTasks = remainingTasks ?? [];
+          const now = Date.now();
 
-        const prompt = buildContinuationPrompt(
-          sessionId,
-          state.continuationCount,
-          state.currentRoute,
-          state.completionMemorySync,
-          memorySyncStatus,
-          completionRecoveryReason,
-          remediationChecklist,
-          pendingTasks,
-          leaseSections
-        );
+          if (deps.isAbortWindowActive(state.abortDetectedAt, now, reliability.abortWindowMs)) {
+            return jsonContent({
+              status: "cooldown",
+              reasonCode: "abort_window_active",
+              sessionId,
+              continuationCount: state.continuationCount,
+              waitMs: reliability.abortWindowMs - (now - (state.abortDetectedAt ?? now)),
+            });
+          }
 
-        return jsonContent({
-          status: "ready",
-          reasonCode: "continuation_emitted",
-          sessionId,
-          continuationCount: state.continuationCount,
-          completionRecoveryReason,
-          remediationChecklist,
-          memorySyncGuard: state.completionMemorySync ?? null,
-          memorySyncStatus,
-          leases: leaseFences,
-          prompt,
-        });
-      })
+          if (state.recoveryInFlight) {
+            return jsonContent({
+              status: "recovering",
+              reasonCode: "retry_in_flight",
+              sessionId,
+              continuationCount: state.continuationCount,
+            });
+          }
+
+          const continuationFingerprint = JSON.stringify(pendingTasks);
+          const dedupeWindowMs = Math.max(5_000, Math.floor(reliability.retryDedupeWindowMs));
+
+          if (
+            deps.shouldDedupeContinuation(
+              state.lastContinuationFingerprint,
+              state.lastContinuationAt,
+              continuationFingerprint,
+              now,
+              dedupeWindowMs
+            )
+          ) {
+            return jsonContent({
+              status: "deduped",
+              reasonCode: "continuation_deduped",
+              sessionId,
+              continuationCount: state.continuationCount,
+              dedupeWindowMs,
+            });
+          }
+
+          state.continuationCount += 1;
+          state.lastContinuationFingerprint = continuationFingerprint;
+          state.lastContinuationAt = now;
+          deps.pushSessionEvent(
+            state,
+            "continuation.injected",
+            `attempt ${state.continuationCount}`
+          );
+          await deps.writeSupervisorStore(store);
+
+          const lastCompletionFailure = [...state.events]
+            .reverse()
+            .find((event) => event.type === "completion.validation_failed");
+          let completionRecoveryReason = deps.parseCompletionValidationReason(
+            lastCompletionFailure?.detail
+          );
+          let memorySyncStatus: Awaited<ReturnType<typeof getCompletionMemorySyncStatus>> | null =
+            null;
+          if (state.completionMemorySync) {
+            memorySyncStatus = await getCompletionMemorySyncStatus(state.completionMemorySync);
+            if (memorySyncStatus.driftDetected) {
+              completionRecoveryReason = "completion_memory_drift_detected";
+            }
+          }
+          const remediationChecklist =
+            deps.buildCompletionRepairChecklist(completionRecoveryReason);
+
+          // Leased tasks carry the self-fencing clause (UPSTREAM-BORROW task 27).
+          // With no leased tasks the extra sections stay undefined, so the prompt
+          // is byte-identical to the pre-lease continuation directive.
+          const leaseFences = await collectSessionLeaseFences(sessionId);
+          const leaseSections =
+            leaseFences.length > 0 ? buildLeaseFenceSections(leaseFences) : undefined;
+
+          const prompt = buildContinuationPrompt(
+            sessionId,
+            state.continuationCount,
+            state.currentRoute,
+            state.completionMemorySync,
+            memorySyncStatus,
+            completionRecoveryReason,
+            remediationChecklist,
+            pendingTasks,
+            leaseSections
+          );
+
+          return jsonContent({
+            status: "ready",
+            reasonCode: "continuation_emitted",
+            sessionId,
+            continuationCount: state.continuationCount,
+            completionRecoveryReason,
+            remediationChecklist,
+            memorySyncGuard: state.completionMemorySync ?? null,
+            memorySyncStatus,
+            leases: leaseFences,
+            prompt,
+          });
+        })
+      )
   );
 
   server.tool(
@@ -841,57 +870,59 @@ export function registerSupervisorCompletionTools(
       openWork,
       credentialsNote,
     }) =>
-      deps.withSupervisorStoreLock(async () => {
-        const reliability = await deps.loadReliabilityConfig();
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const state = store.sessions[sessionId];
-        if (!state) {
-          return jsonContent({ status: "missing", sessionId });
-        }
+      guardStoreAccess(() =>
+        deps.withSupervisorStoreLock(async () => {
+          const reliability = await deps.loadReliabilityConfig();
+          const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+          const state = store.sessions[sessionId];
+          if (!state) {
+            return jsonContent({ status: "missing", sessionId });
+          }
 
-        const now = Date.now();
-        state.continuationCount += 1;
-        state.lastContinuationAt = now;
-        deps.pushSessionEvent(
-          state,
-          "handoff.injected",
-          `failover handoff attempt ${state.continuationCount}`
-        );
-        await deps.writeSupervisorStore(store);
+          const now = Date.now();
+          state.continuationCount += 1;
+          state.lastContinuationAt = now;
+          deps.pushSessionEvent(
+            state,
+            "handoff.injected",
+            `failover handoff attempt ${state.continuationCount}`
+          );
+          await deps.writeSupervisorStore(store);
 
-        // At-most-one-live-instance: the failover flow already revoked the prior
-        // lane's claim; the handoff states it so the receiving lane knows it is
-        // the only writer (UPSTREAM-BORROW task 27).
-        const revokedLeases = (await collectSessionLeaseFences(sessionId)).filter(
-          (lease) => lease.revoked === true
-        );
+          // At-most-one-live-instance: the failover flow already revoked the prior
+          // lane's claim; the handoff states it so the receiving lane knows it is
+          // the only writer (UPSTREAM-BORROW task 27).
+          const revokedLeases = (await collectSessionLeaseFences(sessionId)).filter(
+            (lease) => lease.revoked === true
+          );
 
-        const prompt = buildHandoffPrompt(
-          sessionId,
-          state.continuationCount,
-          state.currentRoute,
-          {
-            goal,
-            currentState: currentState ?? [],
-            keyDecisions: keyDecisions ?? [],
-            trapsAndDeadEnds: trapsAndDeadEnds ?? [],
-            relevantFiles: relevantFiles ?? [],
-            openWork: openWork ?? [],
-            credentialsNote,
-          },
-          revokedLeases
-        );
+          const prompt = buildHandoffPrompt(
+            sessionId,
+            state.continuationCount,
+            state.currentRoute,
+            {
+              goal,
+              currentState: currentState ?? [],
+              keyDecisions: keyDecisions ?? [],
+              trapsAndDeadEnds: trapsAndDeadEnds ?? [],
+              relevantFiles: relevantFiles ?? [],
+              openWork: openWork ?? [],
+              credentialsNote,
+            },
+            revokedLeases
+          );
 
-        return jsonContent({
-          status: "ready",
-          reasonCode: "handoff_emitted",
-          sessionId,
-          continuationCount: state.continuationCount,
-          currentRoute: state.currentRoute,
-          revokedLeases,
-          prompt,
-        });
-      })
+          return jsonContent({
+            status: "ready",
+            reasonCode: "handoff_emitted",
+            sessionId,
+            continuationCount: state.continuationCount,
+            currentRoute: state.currentRoute,
+            revokedLeases,
+            prompt,
+          });
+        })
+      )
   );
 
   server.tool(
@@ -912,91 +943,93 @@ export function registerSupervisorCompletionTools(
       note: z.string().max(2000).optional().describe("Optional operator note"),
     },
     async ({ sessionId, evidence, unresolvedGaps, note }) =>
-      deps.withSupervisorStoreLock(async () => {
-        const reliability = await deps.loadReliabilityConfig();
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const state = store.sessions[sessionId];
-        if (!state) {
-          return jsonContent({ status: "missing", sessionId });
-        }
-
-        if (
-          state.status === "completed" ||
-          state.status === "interrupted" ||
-          state.status === "force_synthesized"
-        ) {
-          return jsonContent({
-            status: state.status,
-            reasonCode: "already_terminal",
-            sessionId,
-          });
-        }
-
-        const now = Date.now();
-        const trigger = evaluateForceSynthesisTrigger(state, now, reliability);
-        if (!trigger.triggered) {
-          return jsonContent({
-            status: state.status,
-            reasonCode: trigger.reasonCode,
-            sessionId,
-            message:
-              "No budget, step, or stall threshold has tripped; continue the normal completion loop instead of forcing synthesis.",
-          });
-        }
-
-        state.status = "force_synthesized";
-        state.forceSynthesisAt = now;
-        state.forceSynthesisTrigger = trigger.reasonCode;
-        state.recoveryInFlight = false;
-        state.pendingCompletionValidationAt = undefined;
-        state.continuationCount += 1;
-        deps.pushSessionEvent(
-          state,
-          "session.force_synthesized",
-          `trigger: ${trigger.reasonCode}${note ? `; ${note}` : ""}`
-        );
-        await deps.writeSupervisorStore(store);
-
-        // Mark linked tasks so the task record distinguishes
-        // completed | failed | force_synthesized.
-        const nowIso = new Date(now).toISOString();
-        const linkedTasksMarked = await withTaskStoreLock(async () => {
-          const taskStore = await readTaskStore();
-          const marked: string[] = [];
-          for (const task of Object.values(taskStore.tasks)) {
-            if (task.sessionId !== sessionId) continue;
-            if (TASK_TERMINAL_STATUSES.has(task.status)) continue;
-            applyForceSynthesisOutcome(
-              task,
-              `forced synthesis (${trigger.reasonCode}); best-effort answer produced from partial evidence — not a normal completion`,
-              nowIso
-            );
-            marked.push(task.taskId);
+      guardStoreAccess(() =>
+        deps.withSupervisorStoreLock(async () => {
+          const reliability = await deps.loadReliabilityConfig();
+          const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
+          const state = store.sessions[sessionId];
+          if (!state) {
+            return jsonContent({ status: "missing", sessionId });
           }
-          if (marked.length > 0) {
-            await writeTaskStore(taskStore);
+
+          if (
+            state.status === "completed" ||
+            state.status === "interrupted" ||
+            state.status === "force_synthesized"
+          ) {
+            return jsonContent({
+              status: state.status,
+              reasonCode: "already_terminal",
+              sessionId,
+            });
           }
-          return marked;
-        });
 
-        const prompt = buildForceSynthesisPrompt(
-          sessionId,
-          state.continuationCount,
-          state.currentRoute,
-          trigger.reasonCode,
-          evidence ?? [],
-          unresolvedGaps ?? []
-        );
+          const now = Date.now();
+          const trigger = evaluateForceSynthesisTrigger(state, now, reliability);
+          if (!trigger.triggered) {
+            return jsonContent({
+              status: state.status,
+              reasonCode: trigger.reasonCode,
+              sessionId,
+              message:
+                "No budget, step, or stall threshold has tripped; continue the normal completion loop instead of forcing synthesis.",
+            });
+          }
 
-        return jsonContent({
-          status: "force_synthesized",
-          reasonCode: "force_synthesis_emitted",
-          sessionId,
-          trigger: trigger.reasonCode,
-          continuationCount: state.continuationCount,
-          linkedTasksMarked,
-          prompt,
-        });
-      })
+          state.status = "force_synthesized";
+          state.forceSynthesisAt = now;
+          state.forceSynthesisTrigger = trigger.reasonCode;
+          state.recoveryInFlight = false;
+          state.pendingCompletionValidationAt = undefined;
+          state.continuationCount += 1;
+          deps.pushSessionEvent(
+            state,
+            "session.force_synthesized",
+            `trigger: ${trigger.reasonCode}${note ? `; ${note}` : ""}`
+          );
+          await deps.writeSupervisorStore(store);
+
+          // Mark linked tasks so the task record distinguishes
+          // completed | failed | force_synthesized.
+          const nowIso = new Date(now).toISOString();
+          const linkedTasksMarked = await withTaskStoreLock(async () => {
+            const taskStore = await readTaskStore();
+            const marked: string[] = [];
+            for (const task of Object.values(taskStore.tasks)) {
+              if (task.sessionId !== sessionId) continue;
+              if (TASK_TERMINAL_STATUSES.has(task.status)) continue;
+              applyForceSynthesisOutcome(
+                task,
+                `forced synthesis (${trigger.reasonCode}); best-effort answer produced from partial evidence — not a normal completion`,
+                nowIso
+              );
+              marked.push(task.taskId);
+            }
+            if (marked.length > 0) {
+              await writeTaskStore(taskStore);
+            }
+            return marked;
+          });
+
+          const prompt = buildForceSynthesisPrompt(
+            sessionId,
+            state.continuationCount,
+            state.currentRoute,
+            trigger.reasonCode,
+            evidence ?? [],
+            unresolvedGaps ?? []
+          );
+
+          return jsonContent({
+            status: "force_synthesized",
+            reasonCode: "force_synthesis_emitted",
+            sessionId,
+            trigger: trigger.reasonCode,
+            continuationCount: state.continuationCount,
+            linkedTasksMarked,
+            prompt,
+          });
+        })
+      )
   );
 }

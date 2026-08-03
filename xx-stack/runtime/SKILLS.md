@@ -62,8 +62,18 @@ Shadowing rules:
 
 - same-name skills do not merge across sources
 - highest-precedence source wins
-- if the canonical repo skill is missing but a mirror remains, treat it as broken wiring
+- if a prompt in `adapters/skills/` is a *mirror* — it adapts a same-named canonical skill to a host surface — and that canonical skill is missing, treat it as broken wiring
 - diagnostics should report shadowed or missing canonical skills explicitly
+
+Adapter prompts are not all mirrors. A prompt may instead be a *native adapter
+surface*: a host-only entry point whose canonical source is content, not a
+same-named skill. Such a prompt must name its real source of truth in its own
+body. There is exactly one today —
+`adapters/skills/design-system-pick.prompt.md`, a narrow entry point into the
+design content pack (`packs/design/design-systems/<brand>/DESIGN.md` and
+`packs/design/design-skills/<style>/SKILL.md`). It has no
+`runtime/skills/design-system-pick/` and is not expected to grow one; the full
+workflow that consumes the same pack is the `design-prototype` skill.
 
 ## Graceful Degradation
 
@@ -97,32 +107,31 @@ Additional routing pattern:
 
 ## Core Workflows (5)
 
+Canonical skills declare no model. Per `shared_instructions.md` §1.5 the host or
+caller model runs the skill unless a routing tool or an explicit override says
+otherwise, so this inventory records what each skill is for, not what it runs on.
+
 1. ideate-product
 
 - Purpose: Product validation through forcing questions
-- Model: self-hosted-api/coder-deep
 
 2. plan-feature
 
 - Purpose: Scope feature into testable spec
-- Model: self-hosted-api/coder-main
 
 3. plan-architecture
 
 - Purpose: Architecture decisions, risks, verification plan
-- Model: self-hosted-api/coder-deep
 
 4. review-code
 
 - Purpose: Production-grade pre-merge review
-- Model: self-hosted-api/coder-main
 
 5. deploy-ship
 
 - Purpose: Release gates and deployment verification
-- Model: self-hosted-api/coder-main
 
-## Advanced Workflows (13)
+## Advanced Workflows (14)
 
 6. debug-investigate
 
@@ -176,37 +185,41 @@ Additional routing pattern:
 
 - Budget-bounded iterative research loop (search → read → reason → reflect) with an explicit knowledge-gaps queue and completion-judge-gated termination
 
+19. design-prototype
+
+- Ships HTML design artifacts — web prototypes, mobile screens, decks, dashboards, office docs — by reading the design content pack (`packs/design/design-systems/`, `packs/design/design-skills/`, `packs/design/workflow-skills/`) rather than inventing visual language
+
 ## Utility Workflows (8)
 
-19. diagnose-stack
+20. diagnose-stack
 
 - Stack health check: verifies MCP server, agent definitions, skill structure, environment variables, and config wiring
 
-20. write-docs
+21. write-docs
 
 - README/API/deployment doc generation
 
-21. setup-observability
+22. setup-observability
 
 - Metrics, logs, alerts, traces
 
-22. test-qa
+23. test-qa
 
 - Journey QA with regression checks
 
-23. release-doc-sync
+24. release-doc-sync
 
 - Post-release documentation synchronization
 
-24. safety-guardrails
+25. safety-guardrails
 
 - Destructive-command and edit-scope safety mode
 
-25. orchestrate-platform-routing
+26. orchestrate-platform-routing
 
-- Delegation planning across local, remote, and cloud model tiers
+- Delegation planning across the four registry tiers: `local`, `tailscale-openai-compatible`, `tailscale-ollama`, `cloud`
 
-26. ensemble-consensus
+27. ensemble-consensus
 
 - Ask at least three models the same question in parallel — across machines, or
   three local models when nothing can be delegated — then merge the answers and
@@ -222,14 +235,14 @@ debug-investigate -> review-code -> deploy-ship -> ops-canary -> reflect-retrosp
 
 ## Directory Layout
 
-.xx-stack/skills/
+runtime/skills/
 
 - <skill-name>/SKILL.md (canonical repo skill content)
 
 Installed runtime discovery:
 
-- ~/.config/xx-stack/skills/<skill-name>/SKILL.md (top-level shim created by setup.sh)
-- ~/.config/xx-stack/skills/xx-stack/.xx-stack/skills/<skill-name>/SKILL.md (installed canonical copy)
+- ~/.config/opencode/skills/<skill-name>/SKILL.md (top-level shim created by opencode-orchestration/setup.sh)
+- ~/.config/opencode/skills/xx-stack/ (installed canonical copy)
 
 Migration status:
 
@@ -238,7 +251,7 @@ Migration status:
 
 Telemetry:
 
-- Optional and disabled by default via `.xx-stack/telemetry.json`.
+- Optional and disabled by default via `runtime/telemetry.json`.
 - Recommended only for ops/eval workflows where trend data is actionable.
 - Extended to selected orchestration workflows when run metrics improve planning or delivery automation.
 
@@ -255,15 +268,18 @@ Telemetry:
 
 ## Delegation Source Of Truth
 
-Use `~/.config/xx-stack/xx-stack-platforms.json` as the live registry for:
+Use `~/.config/opencode/xx-stack-platforms.json` as the live registry for:
 
-- self-hosted hosts, model aliases, and hardware limits
-- local fallback hosts and model inventory
-- overflow fallback hosts and hardware limits
-- cloud providers and escalation policy
+- `local` hosts and their model inventory
+- `tailscale-openai-compatible` hosts, endpoints, and hardware limits
+- `tailscale-ollama` hosts, endpoints, and hardware limits
+- `cloud` providers and escalation policy
 
-Use `.xx-stack/platforms.json` for shipped defaults in the repo.
-The agent definitions in `.xx-stack/config.json` are defaults, but installed orchestration should follow the synced runtime registry when deciding where work should run.
+Those four ids are the entire tier vocabulary; they are defined in
+`runtime/runtime-constants.json` and are the only values that can match.
+
+Use `runtime/platforms.json` for shipped defaults in the repo.
+The agent definitions in `runtime/config.json` are defaults, but installed orchestration should follow the synced runtime registry when deciding where work should run.
 
 ## Verification States
 

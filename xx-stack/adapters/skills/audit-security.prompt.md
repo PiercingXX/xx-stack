@@ -2,7 +2,6 @@
 name: audit-security
 description: Security audit (OWASP Top 10 + STRIDE). Identify threats, vulnerabilities, authentication issues, data leaks, injection, crypto, and access control.
 mode: agent
-model: self-hosted-api/coder-main
 tools:
   - codebase
   - readFile

@@ -21,7 +21,7 @@
     "stack:html-gate": "npm run design-pack:html-gate",
     "reliability:harness": "npm run build && node dist/reliability-harness.js",
     "harness:ci": "npm run build && node dist/reliability-harness.js && node dist/check-regression.js",
-    "harness:watch": "while true; do npm run harness:ci; sleep 30; done",
+    "harness:watch": "node ../scripts/harness-watch.mjs",
     "harness:fork-governance": "npm run build && node dist/fork-governance.js check-drift",
     "artifact:record": "npm run build && node dist/fork-governance.js log-artifact",
     "logs:tail": "tail -f ~/.config/opencode/xx-stack-logs/mcp-server.jsonl | jq .",

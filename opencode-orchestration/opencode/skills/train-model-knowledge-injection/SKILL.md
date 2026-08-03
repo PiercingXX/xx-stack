@@ -1,6 +1,6 @@
 ---
 name: train-model-knowledge-injection
-description: End-to-end model training and knowledge injection workflow using GitHub repositories, PDFs, Markdown docs, and software stacks with evaluation and safety gates.
+description: End-to-end model training and knowledge injection workflow using source repositories, PDFs, Markdown docs, and software stacks with evaluation and safety gates.
 compatibility: opencode
 metadata:
   source: legacy-flat-markdown
@@ -22,7 +22,7 @@ Default to hybrid unless constraints clearly require one method.
 
 ## Accepted Knowledge Sources
 
-- GitHub repository links
+- Source repository links
 - PDF documents
 - Markdown files
 - Software stacks (source trees, architecture docs, API specs)
@@ -42,7 +42,7 @@ Default to hybrid unless constraints clearly require one method.
 - Define whether the goal is chat QA, code assistance, extraction, classification, or agent behavior.
 
 2. Source ingestion
-- Clone/fetch GitHub sources.
+- Clone/fetch source repositories.
 - Parse PDFs into structured text with page anchors.
 - Normalize Markdown and code docs.
 - Build a source manifest with checksums and license metadata.

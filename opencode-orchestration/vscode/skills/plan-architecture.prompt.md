@@ -2,7 +2,6 @@
 name: plan-architecture
 description: Architecture planning with explicit decisions, failure modes, and verification plans before implementation.
 mode: agent
-model: sglang-remote/qwen3-coder-next
 tools:
   - codebase
   - readFile

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -200,4 +201,66 @@ test("acceptance: focusPaths measurably reorders results on real repo", async ()
     srcFileFocus <= srcFileNoFocus,
     `src file ranked at ${srcFileFocus} with focus vs ${srcFileNoFocus} without focus`
   );
+});
+
+// ---------------------------------------------------------------------------
+// MCP-14: getGitTimestamp interpolated a repo-controlled filename into an
+// execSync shell string. A tracked file named with a quote or `$( )` executed
+// arbitrary shell during a repo map.
+// ---------------------------------------------------------------------------
+
+test("a hostile tracked filename cannot execute shell during a repo map", async () => {
+  await withTempRepo(async (root) => {
+    const marker = join(root, "PWNED");
+    // Every one of these is a legal POSIX filename and a shell metacharacter
+    // soup. The first one survives the old `-- "<rel>"` quoting (command
+    // substitution runs inside double quotes) and creates PWNED in cwd=root.
+    const hostileNames = [
+      "evil$(touch PWNED).ts",
+      'quote".ts',
+      "semi;colon.ts",
+      "back`tick`.ts",
+      "amp&and.ts",
+      "pipe|d.ts",
+    ];
+
+    for (const name of hostileNames) {
+      await writeFile(join(root, name), "export const x = 1;\n", "utf8");
+    }
+    await writeFile(join(root, "ordinary.ts"), "export const y = 2;\n", "utf8");
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "hostile filenames"], { cwd: root, stdio: "ignore" });
+
+    const result = await buildRepoMap({ root, tokenBudget: 4000 });
+
+    assert.equal(existsSync(marker), false, "a repo-controlled filename must never reach a shell");
+    // The map still works: hostile names are ordinary files, not skipped.
+    const mapped = new Set(result.files.map((f) => f.path));
+    assert.ok(mapped.has("ordinary.ts"));
+    for (const name of hostileNames) {
+      // `git ls-files` C-quotes a path containing a literal double quote, so
+      // that one name never reaches getGitTimestamp as a usable path at all
+      // (a separate, pre-existing discovery gap — not a shell-safety hole).
+      if (name.includes('"')) continue;
+      assert.ok(mapped.has(name), `${name} should still appear in the repo map`);
+    }
+  });
+});
+
+test("git timestamps still rank a recently touched file above an older one", async () => {
+  await withTempRepo(async (root) => {
+    await writeAndCommit(root, "old.ts", "export const old = 1;\n");
+    await new Promise((r) => setTimeout(r, 1100));
+    await writeAndCommit(root, "new.ts", "export const fresh = 1;\n");
+
+    const result = await buildRepoMap({ root, tokenBudget: 4000 });
+    const byPath = new Map(result.files.map((f) => [f.path, f.score]));
+    assert.ok(byPath.has("old.ts") && byPath.has("new.ts"));
+    assert.ok(
+      byPath.get("new.ts")! >= byPath.get("old.ts")!,
+      "argv-style git log must still produce a usable recency signal"
+    );
+  });
 });

@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
+import { jsonContent, type JsonToolResult } from "./agent_tool_helpers.js";
 import {
   getRepoConfigPath,
   getUserConfigPath,
@@ -55,7 +56,21 @@ export interface SupervisorSessionState {
     // evidence gathered so far. Never presented as a normal completion.
     | "force_synthesized";
   startedAt: number;
+  /**
+   * Last time the session was considered "moving". Bumped by genuine progress
+   * AND by a failover (so the new lane gets a fresh stall window), which is why
+   * it must never be used to decide whether a failure streak decayed — see
+   * `lastObservedProgressAt` (MCP-11).
+   */
   lastProgressAt: number;
+  /**
+   * Last time deterministic progress was actually observed (progress tick or a
+   * status/output event). Never bumped by a fallback: applying a fallback is a
+   * failure recovery, not progress.
+   */
+  lastObservedProgressAt?: number;
+  /** Last time a stall was counted against `failureCount`. */
+  lastFailureAt?: number;
   lastOutputAt?: number;
   completionEvidenceAt?: number;
   completionEvidenceSummary?: string;
@@ -233,19 +248,116 @@ export async function loadReliabilityConfig(): Promise<ReliabilityConfig> {
   };
 }
 
+/**
+ * A store file that exists but cannot be read or parsed (MCP-1).
+ *
+ * The stores are read-modify-write-whole-document, so treating an unreadable
+ * file as "empty" makes the very next write truncate every session/task. Only a
+ * genuinely missing file is an empty store; everything else — parse error,
+ * EACCES, EIO, a truncated document — raises this and the caller decides.
+ */
+export class StoreAccessError extends Error {
+  readonly store: "supervisor" | "task";
+  readonly path: string;
+  readonly code: string | null;
+
+  constructor(store: "supervisor" | "task", path: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`${store} store at ${path} exists but could not be read: ${detail}`, { cause });
+    this.name = "StoreAccessError";
+    this.store = store;
+    this.path = path;
+    const code = (cause as NodeJS.ErrnoException | null)?.code;
+    this.code = typeof code === "string" ? code : null;
+  }
+
+  /** Structured tool payload: a failed read is reported, never silently healed. */
+  toToolPayload(): Record<string, unknown> {
+    return {
+      status: "error",
+      reasonCode: "store_unavailable",
+      store: this.store,
+      path: this.path,
+      errorCode: this.code,
+      detail: this.message,
+      remediation:
+        "The state file exists but is unreadable or corrupt. Nothing was written — inspect or restore the file before retrying; the request was not applied.",
+    };
+  }
+}
+
+/** True only for a genuinely missing file — the one case that means "empty store". */
+export function isMissingFileError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
+
+/** The structured payload for a store-access failure, or null for other errors. */
+export function storeAccessErrorPayload(error: unknown): Record<string, unknown> | null {
+  return error instanceof StoreAccessError ? error.toToolPayload() : null;
+}
+
+/**
+ * Turn a store-access failure into a structured tool result instead of letting
+ * it escape the handler and crash the server (MCP-1). Any other error still
+ * propagates — this guard exists to report unreadable state, not to swallow bugs.
+ */
+export async function guardStoreAccess(
+  work: () => Promise<JsonToolResult>
+): Promise<JsonToolResult> {
+  try {
+    return await work();
+  } catch (error) {
+    const payload = storeAccessErrorPayload(error);
+    if (!payload) throw error;
+    return jsonContent(payload);
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function readSupervisorStore(): Promise<SupervisorStore> {
   const path = getSupervisorStatePath();
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw) as Partial<SupervisorStore>;
-    return {
-      version: SUPERVISOR_STORE_VERSION,
-      sessions: parsed.sessions ?? {},
-      hostModelFailures: parsed.hostModelFailures ?? {},
-    };
-  } catch {
-    return emptySupervisorStore();
+    raw = await readFile(path, "utf-8");
+  } catch (error) {
+    // A missing file is the only "empty store" case. Anything else (EACCES,
+    // EIO, EISDIR, ...) must fail loudly: the next write would truncate the
+    // whole document.
+    if (isMissingFileError(error)) return emptySupervisorStore();
+    throw new StoreAccessError("supervisor", path, error);
   }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new StoreAccessError("supervisor", path, error);
+  }
+
+  if (!isPlainRecord(parsed)) {
+    throw new StoreAccessError("supervisor", path, new Error("store root is not a JSON object"));
+  }
+  const sessions = parsed.sessions;
+  const hostModelFailures = parsed.hostModelFailures;
+  if (sessions !== undefined && !isPlainRecord(sessions)) {
+    throw new StoreAccessError("supervisor", path, new Error("sessions is not a JSON object"));
+  }
+  if (hostModelFailures !== undefined && !isPlainRecord(hostModelFailures)) {
+    throw new StoreAccessError(
+      "supervisor",
+      path,
+      new Error("hostModelFailures is not a JSON object")
+    );
+  }
+
+  return {
+    version: SUPERVISOR_STORE_VERSION,
+    sessions: (sessions as SupervisorStore["sessions"]) ?? {},
+    hostModelFailures: (hostModelFailures as SupervisorStore["hostModelFailures"]) ?? {},
+  };
 }
 
 export async function writeSupervisorStore(store: SupervisorStore): Promise<void> {

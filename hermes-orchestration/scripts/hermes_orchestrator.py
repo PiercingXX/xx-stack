@@ -121,15 +121,64 @@ def cloud_lane_keys(cfg: Dict[str, Any]) -> List[str]:
     return _priority_sorted(cfg, keys)
 
 
+def self_hosted_first_enabled(cfg: Dict[str, Any]) -> bool:
+    """policy.self_hosted_first — self-hosted lanes are tried before cloud lanes.
+
+    Defaults to True: dropping the key must not turn the local-first ordering off.
+    """
+    policy = cfg.get("policy", {})
+    if not isinstance(policy, dict):
+        return True
+    return bool(policy.get("self_hosted_first", True))
+
+
+def _apply_lane_policy_order(cfg: Dict[str, Any], keys: List[str]) -> List[str]:
+    """Order lane keys by priority, keeping cloud last when local-first is on."""
+    if not self_hosted_first_enabled(cfg):
+        return _priority_sorted(cfg, keys)
+    self_hosted = [key for key in keys if not is_cloud_lane(cfg, key)]
+    cloud = [key for key in keys if is_cloud_lane(cfg, key)]
+    return _priority_sorted(cfg, self_hosted) + _priority_sorted(cfg, cloud)
+
+
 def ordered_lane_keys(cfg: Dict[str, Any]) -> List[str]:
-    return self_hosted_lane_keys(cfg) + cloud_lane_keys(cfg)
+    return _apply_lane_policy_order(cfg, list(cfg.get("lanes", {})))
 
 
 def primary_lane_order(cfg: Dict[str, Any]) -> List[str]:
+    """Lane order for primary tasks.
+
+    ``policy.primary_lane_order`` is machine-generated from raw object insertion
+    order, so it selects *which* lanes participate, never their order — the order
+    is always re-derived from ``priority`` (and the local-first policy). Adding a
+    machine in the wrong position in the generated list therefore cannot silently
+    demote a higher-priority lane.
+    """
     configured = cfg.get("policy", {}).get("primary_lane_order")
     if isinstance(configured, list) and configured:
-        return [str(key) for key in configured if str(key) in cfg.get("lanes", {})]
+        known = [str(key) for key in configured if str(key) in cfg.get("lanes", {})]
+        if known:
+            return _apply_lane_policy_order(cfg, known)
     return ordered_lane_keys(cfg)
+
+
+def cloud_default_enabled(cfg: Dict[str, Any]) -> bool:
+    """Config-level default for cloud delegation, with no explicit --allow-cloud.
+
+    Fails **closed**: every one of the three keys must be present and explicitly
+    permissive. If any is missing (config/orchestration.json is partly
+    machine-generated, so keys can be dropped on regeneration) cloud stays off.
+    """
+    policy = cfg.get("policy", {})
+    policy = policy if isinstance(policy, dict) else {}
+    execution = cfg.get("execution", {})
+    execution = execution if isinstance(execution, dict) else {}
+
+    if bool(policy.get("require_manual_cloud_escalation", True)):
+        return False
+    if not bool(policy.get("cloud_enabled_by_default", False)):
+        return False
+    return bool(execution.get("subagents_allow_cloud_default", False))
 
 
 def request_timeout(cfg: Dict[str, Any]) -> int:
@@ -140,19 +189,35 @@ def health_timeout(cfg: Dict[str, Any]) -> int:
     return int(cfg["execution"].get("health_check_timeout_seconds", 8))
 
 
-def resolve_api_key(lane: Lane) -> str:
+# A credential helper that hangs must not park the calling thread: resolve_api_key
+# is on the proxy hot path (one call per upstream request).
+API_KEY_COMMAND_TIMEOUT_SECONDS = 10
+
+
+def resolve_api_key(lane: Lane, timeout: int = API_KEY_COMMAND_TIMEOUT_SECONDS) -> str:
     if lane.api_key_env:
         value = os.environ.get(lane.api_key_env, "")
         if value:
             return value
 
     if lane.api_key_command:
-        completed = subprocess.run(
-            lane.api_key_command,
-            shell=True,
-            text=True,
-            capture_output=True,
-        )
+        try:
+            completed = subprocess.run(
+                lane.api_key_command,
+                shell=True,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"WARN: api_key_command for lane {lane.key} timed out after {timeout}s",
+                file=sys.stderr,
+            )
+            return ""
+        except OSError as exc:
+            print(f"WARN: api_key_command for lane {lane.key} failed: {exc}", file=sys.stderr)
+            return ""
         if completed.returncode == 0:
             return completed.stdout.strip()
 
@@ -207,12 +272,13 @@ def cloud_allowed_for_subagents(cfg: Dict[str, Any], allow_cloud: bool, task_pro
     ]
     if not enabled_cloud:
         return False
-    if not bool(cfg["execution"].get("allow_cloud_subagent_delegation", True)):
+    # Both keys are cloud opt-ins and both fail closed: a dropped key must never
+    # widen cloud eligibility (HERMES-2).
+    if not bool(cfg["execution"].get("allow_cloud_subagent_delegation", False)):
         return False
-    allowed_profiles = cfg["execution"].get(
-        "cloud_subagent_profiles",
-        ["hardware-constrained", "specialized-model"],
-    )
+    allowed_profiles = cfg["execution"].get("cloud_subagent_profiles", [])
+    if not isinstance(allowed_profiles, list):
+        return False
     return task_profile in allowed_profiles
 
 
@@ -288,7 +354,12 @@ def http_json(
             body = resp.read().decode("utf-8")
             return resp.getcode(), json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
+        # HTTPError is file-like: closing it releases the socket/fd. Without this
+        # every failed upstream call leaks one fd in a long-running proxy.
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        finally:
+            e.close()
         try:
             parsed = json.loads(body)
         except json.JSONDecodeError:
@@ -442,7 +513,7 @@ def log_routing_event(cfg: Dict[str, Any], event: Dict[str, Any]) -> None:
 
 def routing_event(
     source: str,
-    lane: Lane,
+    lane: Optional[Lane],
     model: str,
     ok: bool,
     latency_ms: Optional[int] = None,
@@ -451,10 +522,11 @@ def routing_event(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     usage = usage if isinstance(usage, dict) else {}
+    # lane is None for total-failure events, where no lane was ever selected.
     event: Dict[str, Any] = {
         "source": source,
-        "lane_key": lane.key,
-        "lane": lane.name,
+        "lane_key": lane.key if lane else "",
+        "lane": lane.name if lane else "",
         "model": model,
         "ok": ok,
         "latency_ms": latency_ms,
@@ -773,7 +845,10 @@ def resolve_subagent_lane(
     required_model: str,
 ) -> Tuple[str, Lane]:
     lane_map = {key: lane_from_config(cfg, key) for key in ordered_lane_keys(cfg)}
-    strict_tools = bool(cfg["execution"].get("require_tool_call_for_subagents", False)) and task_profile == "default"
+    # Strict mode is profile-independent. It used to also require
+    # task_profile == "default", which no shipped preset uses, so the whole strict
+    # branch was dead in production while the docs promised it was on (HERMES-8).
+    strict_tools = bool(cfg["execution"].get("require_tool_call_for_subagents", False))
     cloud_for_profile = cloud_allowed_for_subagents(cfg, allow_cloud=allow_cloud, task_profile=task_profile)
     require_live_inventory = bool(required_model.strip()) or task_profile != "default"
     cache_path = Path(cfg["execution"].get("capability_cache_file", "logs/capability-cache.json"))
@@ -893,9 +968,54 @@ def parse_executable_plan(raw: str) -> Dict[str, Any]:
     return parsed
 
 
-UNSAFE_TOKEN_CHARS = ";|&<>`$\n"
+# "+" is here because it is the terminator of `find -exec cmd {} +`. The cost is
+# that no argument may contain a literal "+" (regexes, "g++"); that is deliberate.
+UNSAFE_TOKEN_CHARS = ";|&<>`$\n\r+"
+
+# Arguments that turn an otherwise read-only command into an execution or
+# escape primitive. Matched exactly, and against the option half of "--opt=value".
+#
+#   find:   -exec/-execdir/-ok/-okdir spawn processes, -delete/-fprint* write,
+#           -o/-or lets a denied branch be reached past an earlier filter
+#   rg:     --pre/--pre-glob run a preprocessor binary, -z/--search-zip shells
+#           out to decompressors, --hostname-bin runs a binary
+#   git:    -c/--config-env inject config (diff.external, core.pager),
+#           --ext-diff runs the configured external differ, --exec-path,
+#           --upload-pack/--receive-pack name programs to run
+#   node/npm: --node-options/--require load arbitrary modules, --prefix escapes
+#           the workspace
+#   python/pytest: -c executes a literal program, -p/--plugins imports a module
+#
+# Collateral: `ls -o`, `ls -p`, `ls -r`, `git diff -z` are rejected too. Accepted
+# — the point of this list is that a denied token is never reasoned about again.
+DENIED_ARGUMENTS = frozenset(
+    {
+        "-exec", "-execdir", "-ok", "-okdir",
+        "-delete", "-fprint", "-fprint0", "-fprintf", "-fls",
+        "-o", "-or", "--output",
+        "--pre", "--pre-glob", "--hostname-bin", "-z", "--search-zip",
+        "-c", "--config-env", "--exec-path", "--ext-diff",
+        "--upload-pack", "--receive-pack",
+        "--prefix", "--node-options", "--require", "-r",
+        "-p", "--plugins",
+    }
+)
 
 
+# Residual limits of the allowlist — stated so nobody mistakes it for a sandbox:
+#
+#  * `npm test` and `python3 -m pytest` execute code the repository controls
+#    (package.json scripts, conftest.py). Allowlisting them trusts the checkout,
+#    not the model. Remove them if the checkout is not trusted.
+#  * `cat`/`ls` can read any file *inside* the workspace, including a stray .env.
+#    Containment is a workspace boundary, not a secrets boundary.
+#  * The denylist enumerates known-bad flags. A future flag of an allowlisted
+#    command that spawns a process is not covered until it is added here — which
+#    is why `find` and `rg`, whose escape hatches are numerous and version-
+#    dependent, were dropped from the shipped default list entirely.
+#  * The real boundary remains the double gate: `execution.allow_shell_execution`
+#    (shipped false) AND `--execute-approved`. Both must be on before any of this
+#    code path runs at all.
 def parse_command_argv(command: str) -> Optional[List[str]]:
     """Parse a command string into argv, rejecting shell metacharacters.
 
@@ -915,21 +1035,87 @@ def parse_command_argv(command: str) -> Optional[List[str]]:
     return tokens
 
 
-def command_allowed(command: str, allowed_prefixes: List[str]) -> bool:
+def _argument_escapes_workspace(token: str, workspace: Path) -> bool:
+    """True if a non-flag argument can address a file outside the workspace.
+
+    Resolution-based, not string-based, so "a..b" and "HEAD~5" are fine while
+    "..", "/etc/passwd" and a symlink pointing outside are not.
+    """
+    if not token:
+        return False
+    if token.startswith("~"):
+        # shlex does not expand "~", but several commands do it themselves.
+        return True
+    try:
+        candidate = Path(token)
+        resolved = (candidate if candidate.is_absolute() else workspace / candidate).resolve()
+        resolved.relative_to(workspace.resolve())
+    except (ValueError, OSError):
+        return True
+    return False
+
+
+def command_rejection_reason(
+    command: str,
+    allowed_prefixes: List[str],
+    workspace: Optional[Path] = None,
+) -> Optional[str]:
+    """Return why a command is rejected, or None if it is permitted.
+
+    Three layers, all of which must pass:
+
+    1. argv parse with no shell metacharacter in any token (`parse_command_argv`)
+    2. whole-token prefix match against the configured allowlist
+    3. per-argument screening of *every* remaining argument: no token from
+       DENIED_ARGUMENTS, and no path argument that leaves the workspace
+
+    Layer 3 is the HERMES-1 fix. Previously a prefix match permitted every
+    remaining argument unchecked, so an allowlisted `find` or `rg` was a general
+    execution primitive and an allowlisted `cat` read any file on the host.
+    """
+    workspace = Path.cwd() if workspace is None else Path(workspace)
     argv = parse_command_argv(command)
     if argv is None:
-        return False
+        return "unparseable_or_unsafe"
+
+    matched = False
     for prefix in allowed_prefixes:
         try:
             prefix_argv = shlex.split(prefix)
         except ValueError:
             continue
         if prefix_argv and argv[: len(prefix_argv)] == prefix_argv:
-            return True
-    return False
+            matched = True
+            break
+    if not matched:
+        return "not_allowlisted"
+
+    for token in argv[1:]:
+        option, _, value = token.partition("=")
+        if token in DENIED_ARGUMENTS or (value and option in DENIED_ARGUMENTS):
+            return f"denied_argument:{token}"
+        checked = value if (value and token.startswith("-")) else token
+        if checked.startswith("-"):
+            continue
+        if _argument_escapes_workspace(checked, workspace):
+            return f"argument_outside_workspace:{token}"
+    return None
 
 
-def run_actions(actions: List[str], allowed_prefixes: List[str]) -> List[Dict[str, Any]]:
+def command_allowed(
+    command: str,
+    allowed_prefixes: List[str],
+    workspace: Optional[Path] = None,
+) -> bool:
+    return command_rejection_reason(command, allowed_prefixes, workspace) is None
+
+
+def run_actions(
+    actions: List[str],
+    allowed_prefixes: List[str],
+    workspace: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    workspace = Path.cwd() if workspace is None else Path(workspace)
     results = []
     for command in actions:
         if not isinstance(command, str):
@@ -939,11 +1125,19 @@ def run_actions(actions: List[str], allowed_prefixes: List[str]) -> List[Dict[st
         if argv is None:
             results.append({"command": command, "status": "rejected", "reason": "unparseable_or_unsafe"})
             continue
-        if not command_allowed(command, allowed_prefixes):
-            results.append({"command": command, "status": "rejected", "reason": "not_allowlisted"})
+        reason = command_rejection_reason(command, allowed_prefixes, workspace)
+        if reason is not None:
+            results.append({"command": command, "status": "rejected", "reason": reason})
             continue
         try:
-            completed = subprocess.run(argv, shell=False, text=True, capture_output=True, timeout=120)
+            completed = subprocess.run(
+                argv,
+                shell=False,
+                text=True,
+                capture_output=True,
+                timeout=120,
+                cwd=str(workspace),
+            )
         except subprocess.TimeoutExpired:
             results.append({"command": command, "status": "error", "reason": "timeout"})
             continue
@@ -1117,8 +1311,8 @@ def command_run(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
 def command_subagents(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
     timeout = request_timeout(cfg)
     request = resolve_subagent_request(cfg, args)
-    default_allow_cloud = bool(cfg["execution"].get("subagents_allow_cloud_default", True))
-    allow_cloud = bool(args.allow_cloud) or default_allow_cloud
+    # Fails closed: cloud is off unless policy AND execution both opt in (HERMES-2).
+    allow_cloud = bool(args.allow_cloud) or cloud_default_enabled(cfg)
     max_parallel = max(1, int(cfg["execution"].get("max_parallel_subagents", 4)))
     explicit_tasks = split_subtasks(args.task)
 
@@ -1379,12 +1573,11 @@ PROXY_PASSTHROUGH_KEYS = (
 class ProxyServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, handler, cfg, token, allow_cloud, log_prompts):
+    def __init__(self, address, handler, cfg, token, allow_cloud):
         super().__init__(address, handler)
         self.cfg = cfg
         self.token = token
         self.allow_cloud = allow_cloud
-        self.log_prompts = log_prompts
 
 
 def flatten_messages_for_cli(messages: List[Dict[str, Any]]) -> str:
@@ -1406,22 +1599,66 @@ def flatten_messages_for_cli(messages: List[Dict[str, Any]]) -> str:
     return "\n\n".join(parts)
 
 
+MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024
+REQUEST_SOCKET_TIMEOUT_SECONDS = 30
+_DRAIN_CHUNK_BYTES = 64 * 1024
+
+
 class ProxyHandler(BaseHTTPRequestHandler):
     server: ProxyServer  # narrowed type for attribute access
 
     protocol_version = "HTTP/1.1"
+    # StreamRequestHandler.setup() applies this to the connection socket. Without
+    # it a client that sends headers and then stalls parks a handler thread
+    # forever (HERMES-6).
+    timeout = REQUEST_SOCKET_TIMEOUT_SECONDS
 
     def log_message(self, format: str, *log_args: Any) -> None:  # noqa: A002
         # Suppress per-request stderr noise; routing telemetry covers requests.
         pass
 
-    def _send_json(self, code: int, obj: Dict[str, Any]) -> None:
+    def _send_json(self, code: int, obj: Dict[str, Any], close: bool = False) -> None:
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        if close:
+            self.send_header("Connection", "close")
+            self.close_connection = True
         self.end_headers()
         self.wfile.write(body)
+
+    def _content_length(self) -> int:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return -1
+        return length if length >= 0 else -1
+
+    def _drain_request_body(self) -> bool:
+        """Consume the request body so keep-alive stays in sync.
+
+        With HTTP/1.1 keep-alive an undrained body is parsed as the next request
+        line (HERMES-5). Returns False when the body is too large to drain, in
+        which case the caller must close the connection instead.
+        """
+        length = self._content_length()
+        if length <= 0:
+            return True
+        if length > MAX_REQUEST_BODY_BYTES:
+            return False
+        remaining = length
+        while remaining > 0:
+            chunk = self.rfile.read(min(_DRAIN_CHUNK_BYTES, remaining))
+            if not chunk:
+                return False
+            remaining -= len(chunk)
+        return True
+
+    def _reject(self, code: int, message: str) -> None:
+        """Answer an early-return error, keeping the connection consistent."""
+        drained = self._drain_request_body()
+        self._send_json(code, {"error": {"message": message}}, close=not drained)
 
     def _authorized(self) -> bool:
         if self.server.token is None:
@@ -1429,14 +1666,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
         header = self.headers.get("Authorization", "")
         if not header.startswith("Bearer "):
             return False
-        return hmac.compare_digest(header[len("Bearer "):].strip(), self.server.token)
+        # Compare bytes: hmac.compare_digest on str raises TypeError for any
+        # non-ASCII input, which crashed the handler thread pre-auth (HERMES-3).
+        presented = header[len("Bearer "):].strip().encode("utf-8", errors="surrogateescape")
+        expected = str(self.server.token).encode("utf-8", errors="surrogateescape")
+        return hmac.compare_digest(presented, expected)
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/healthz":
             self._send_json(200, {"status": "ok"})
             return
         if not self._authorized():
-            self._send_json(401, {"error": {"message": "missing or invalid bearer token"}})
+            self._reject(401, "missing or invalid bearer token")
             return
         if self.path == "/v1/models":
             cfg = self.server.cfg
@@ -1451,21 +1692,38 @@ class ProxyHandler(BaseHTTPRequestHandler):
             data = [{"id": model_id, "object": "model", "owned_by": "hermes-orchestrator"} for model_id in model_ids]
             self._send_json(200, {"object": "list", "data": data})
             return
-        self._send_json(404, {"error": {"message": f"unknown path {self.path}"}})
+        self._reject(404, f"unknown path {self.path}")
 
     def do_POST(self) -> None:  # noqa: N802
         if not self._authorized():
-            self._send_json(401, {"error": {"message": "missing or invalid bearer token"}})
+            self._reject(401, "missing or invalid bearer token")
             return
         if self.path != "/v1/chat/completions":
-            self._send_json(404, {"error": {"message": f"unknown path {self.path}"}})
+            self._reject(404, f"unknown path {self.path}")
+            return
+
+        length = self._content_length()
+        if length < 0:
+            self._send_json(400, {"error": {"message": "invalid Content-Length"}}, close=True)
+            return
+        if length > MAX_REQUEST_BODY_BYTES:
+            # Do not read it; answer and close rather than stream megabytes we
+            # already know we will discard (HERMES-6).
+            self._send_json(
+                413,
+                {"error": {"message": f"request body exceeds {MAX_REQUEST_BODY_BYTES} bytes"}},
+                close=True,
+            )
             return
 
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
-        except (ValueError, json.JSONDecodeError):
-            self._send_json(400, {"error": {"message": "invalid JSON body"}})
+            raw = self.rfile.read(length) if length else b""
+            if len(raw) != length:
+                self._send_json(400, {"error": {"message": "truncated request body"}}, close=True)
+                return
+            payload = json.loads(raw.decode("utf-8")) if raw else {}
+        except (ValueError, json.JSONDecodeError, OSError):
+            self._send_json(400, {"error": {"message": "invalid JSON body"}}, close=True)
             return
 
         messages = payload.get("messages")
@@ -1550,7 +1808,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 cfg,
                 routing_event(
                     "proxy", lane, model_used, ok=True, latency_ms=latency_ms, usage=usage,
-                    extra={"requested_model": requested_model, "stream": stream},
+                    extra={
+                        "requested_model": requested_model,
+                        "stream": stream,
+                        # Reasons every earlier lane was skipped or failed. Empty
+                        # when the first lane served the request (HERMES-DOC-1).
+                        "attempts": list(attempts),
+                    },
                 ),
             )
             if stream:
@@ -1559,6 +1823,23 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self._send_json(200, data)
             return
 
+        # Total failure used to write no telemetry at all, so failed requests were
+        # invisible in routing.jsonl (HERMES-12).
+        log_routing_event(
+            cfg,
+            routing_event(
+                "proxy",
+                None,
+                requested_model,
+                ok=False,
+                error="no lane could serve the request",
+                extra={
+                    "requested_model": requested_model,
+                    "stream": stream,
+                    "attempts": list(attempts),
+                },
+            ),
+        )
         self._send_json(
             502,
             {"error": {"message": "no lane could serve the request", "attempts": attempts}},
@@ -1602,7 +1883,6 @@ def command_serve(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
     host = args.host or str(proxy_cfg.get("bind_host", "127.0.0.1"))
     port = int(args.port or proxy_cfg.get("port", 8180))
     allow_cloud = bool(args.allow_cloud or proxy_cfg.get("allow_cloud", False))
-    log_prompts = bool(proxy_cfg.get("log_prompts", False))
 
     token: Optional[str] = args.token or os.environ.get(str(proxy_cfg.get("auth_token_env", "HERMES_PROXY_TOKEN")), "")
     if not token:
@@ -1620,7 +1900,9 @@ def command_serve(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
             file=sys.stderr,
         )
 
-    server = ProxyServer((host, port), ProxyHandler, cfg, token, allow_cloud, log_prompts)
+    # No prompt-logging switch exists by design: request bodies are never written
+    # anywhere, so there is nothing to gate (HERMES-9).
+    server = ProxyServer((host, port), ProxyHandler, cfg, token, allow_cloud)
     actual_port = server.server_address[1]
     print(
         json.dumps(

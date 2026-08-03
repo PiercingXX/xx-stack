@@ -84,48 +84,51 @@ By default, xx-stack should execute on whatever host model or lane invoked it. R
 
 ## Common Commands
 
-Run these from repo root unless noted otherwise.
+Run these from the **repository root** (the directory containing `xx-stack/`,
+`opencode-orchestration/`, and `hermes-orchestration/`), not from `xx-stack/`.
+There is no `xx-stack/package.json`; the npm workspace root is the repo root.
 
 Verify the MCP server:
 
 ```bash
-npm --prefix mcp-server test
+npm test
 ```
 
-Verify repo layout and compatibility shims:
+Verify repo layout and compatibility shims. The verifier takes the component to
+check as an argument, so there is one invocation per component:
 
 ```bash
-node scripts/verify-repo-layout.mjs
+npm run layout:verify
 ```
 
 Verify VS Code agent mirrors are in sync with canonical runtime agents:
 
 ```bash
-node scripts/sync-vscode-agents.mjs --check
+npm run agents:check
 ```
 
 Regenerate VS Code agent mirrors from canonical runtime agents:
 
 ```bash
-node scripts/sync-vscode-agents.mjs
+npm run agents:sync
 ```
 
 Regenerate the design catalog:
 
 ```bash
-npm --prefix mcp-server run design-pack:catalog
+npm run design:catalog
 ```
 
 Run golden-task checks:
 
 ```bash
-npm --prefix mcp-server run design-pack:golden
+npm run design:golden
 ```
 
 Run the HTML quality gate:
 
 ```bash
-npm --prefix mcp-server run design-pack:html-gate -- --skill web-prototype path/to/artifact.html
+npm run design:html-gate -- --skill web-prototype path/to/artifact.html
 ```
 
 ## Autonomous Todo Loop
@@ -133,7 +136,7 @@ npm --prefix mcp-server run design-pack:html-gate -- --skill web-prototype path/
 For unattended whole-plan execution, use the outer-loop runner instead of relying on the orchestrator prompt alone:
 
 ```bash
-node scripts/run-agent-loop.mjs \
+node xx-stack/scripts/run-agent-loop.mjs \
 	--runner 'your-agent-command-that-reads-stdin' \
 	--runner-timeout-ms 900000 \
 	--todo TODO.md \
@@ -145,14 +148,14 @@ This creates disk-backed loop state under `.xx-stack/loops/` and keeps retrying 
 For OpenCode, use the dedicated safe wrapper instead of hand-assembling the runner and preflight commands:
 
 ```bash
-node scripts/run-opencode-loop.mjs \
+node xx-stack/scripts/run-opencode-loop.mjs \
 	--todo TODO.md
 ```
 
 Optional model override:
 
 ```bash
-node scripts/run-opencode-loop.mjs \
+node xx-stack/scripts/run-opencode-loop.mjs \
 	--todo TODO.md \
 	--model ollama-local/qwen2.5-coder:14b
 ```
@@ -171,7 +174,7 @@ At the moment, treat headless OpenCode as unsupported for unattended todo execut
 If you need the raw lower-level form for a non-OpenCode runner, add a preflight so the loop fails fast instead of burning iterations on a broken runtime:
 
 ```bash
-node scripts/run-agent-loop.mjs \
+node xx-stack/scripts/run-agent-loop.mjs \
 	--runner 'your-runner-that-reads-stdin' \
 	--runner-preflight 'your-fast-health-check-command' \
 	--preflight-input 'health check input' \
@@ -180,7 +183,7 @@ node scripts/run-agent-loop.mjs \
 	--todo TODO.md
 ```
 
-For OpenCode-style headless runs, use `scripts/run-opencode-loop.mjs` instead of assembling the lower-level command yourself.
+For OpenCode-style headless runs, use `xx-stack/scripts/run-opencode-loop.mjs` instead of assembling the lower-level command yourself.
 
 ## Customizing
 
@@ -202,7 +205,7 @@ To add an agent:
 - Preferred host for interactive xx-stack use: VS Code + Copilot Chat
 - Required workspace surfaces: `.vscode/mcp.json` and `.github/copilot-instructions.md`
 - Downstream install path: `./setup-vscode.sh <target-project>`
-- Headless OpenCode remains fail-fast only unless `scripts/run-opencode-loop.mjs` preflight passes
+- Headless OpenCode remains fail-fast only unless `xx-stack/scripts/run-opencode-loop.mjs` preflight passes
 
 To add a skill:
 

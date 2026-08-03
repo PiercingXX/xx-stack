@@ -2,7 +2,6 @@
 name: plan-architecture
 description: Architecture planning with explicit decisions, failure modes, and verification plans before implementation.
 mode: agent
-model: self-hosted-api/coder-deep
 tools:
   - codebase
   - readFile

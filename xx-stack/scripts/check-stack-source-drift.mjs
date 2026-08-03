@@ -46,14 +46,24 @@ const EXPECTED_ONLY = {
   "opencode-orchestration/opencode": new Set(["package-lock.json", "runtime-constants.json"]),
 };
 
+// Two empty sets compare equal, so an emptied tree would otherwise report
+// "structurally aligned". Every subdirectory this script compares must contain
+// at least this many entries on each side or the run is treated as broken
+// input, not as a pass.
+const MIN_ENTRIES_PER_SIDE = 1;
+
 function listNames(dir) {
   if (!fs.existsSync(dir)) return null;
-  return new Set(
-    fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((e) => !e.name.startsWith("."))
-      .map((e) => e.name)
-  );
+  try {
+    return new Set(
+      fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((e) => !e.name.startsWith("."))
+        .map((e) => e.name)
+    );
+  } catch {
+    return null;
+  }
 }
 
 const findings = [];
@@ -67,6 +77,19 @@ function compareSubdir(sub) {
     const missing = aNames === null ? a.name : b.name;
     findings.push({ kind: "missing-dir", where: `${missing}/${sub}`, detail: "directory absent" });
     return;
+  }
+
+  for (const [source, names] of [
+    [a, aNames],
+    [b, bNames],
+  ]) {
+    if (names.size < MIN_ENTRIES_PER_SIDE) {
+      findings.push({
+        kind: "empty-dir",
+        where: `${source.name}/${sub}`,
+        detail: `contains ${names.size} entr(ies); at least ${MIN_ENTRIES_PER_SIDE} expected — an empty set trivially matches, so this is not a pass`,
+      });
+    }
   }
 
   for (const name of aNames) {
@@ -98,7 +121,11 @@ if (asJson) {
     console.log("PASS  agents/ and skills/ are structurally aligned.");
   } else {
     for (const f of findings) {
-      console.log(`FAIL  ${f.detail} :: present only in ${f.where}`);
+      if (f.kind === "only-in") {
+        console.log(`FAIL  ${f.detail} :: present only in ${f.where}`);
+      } else {
+        console.log(`FAIL  ${f.where} :: ${f.detail}`);
+      }
     }
     console.log("");
     console.log(`${findings.length} structural difference(s).`);

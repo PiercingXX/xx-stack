@@ -19,7 +19,41 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const inventoryPath = path.join(repoRoot, "inventory.json");
 
 const [, , mode, target] = process.argv;
-const inventory = JSON.parse(fs.readFileSync(inventoryPath, "utf8"));
+
+/**
+ * inventory.json is hardware truth for the whole stack. A corrupt or partial
+ * file must produce an actionable message, not a raw parser stack trace.
+ */
+function loadInventory() {
+  let raw;
+  try {
+    raw = fs.readFileSync(inventoryPath, "utf8");
+  } catch (err) {
+    console.error(`Cannot read inventory at ${inventoryPath}: ${err.message}`);
+    console.error("Restore it from git before toggling lanes.");
+    process.exit(1);
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    console.error(`inventory.json is not valid JSON (${inventoryPath}):`);
+    console.error(`  ${err.message}`);
+    console.error("Fix the syntax error, or restore the file from git, then retry.");
+    process.exit(1);
+  }
+
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.machines)) {
+    console.error(`inventory.json has no top-level "machines" array (${inventoryPath}).`);
+    console.error("Refusing to operate on a structurally invalid inventory.");
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
+const inventory = loadInventory();
 
 const green = (s) => `[32m${s}[0m`;
 const dim = (s) => `[2m${s}[0m`;
@@ -27,8 +61,8 @@ const dim = (s) => `[2m${s}[0m`;
 function listAll() {
   console.log("Machines and lanes in inventory.json:\n");
   for (const m of inventory.machines) {
-    console.log(`  ${m.id}  ${dim(`(${m.network.scope} · ${m.network.address})`)}`);
-    for (const r of m.runtimes) {
+    console.log(`  ${m.id}  ${dim(`(${m.network?.scope ?? "?"} · ${m.network?.address ?? "?"})`)}`);
+    for (const r of m.runtimes ?? []) {
       const on = r.enabled !== false;
       const state = on ? green("on ") : dim("off");
       const models = (r.models ?? []).length;
@@ -42,7 +76,7 @@ function listAll() {
     console.log(`\n  ${a.id}  ${dim(`(${a.kind} aggregator)`)}\n      ${state}  :${a.port}`);
   }
   console.log(
-    `\n  cloud escalation: ${inventory.policy.cloudEscalation.optIn ? green("opted in") : dim("off (default)")}`
+    `\n  cloud escalation: ${inventory.policy?.cloudEscalation?.optIn ? green("opted in") : dim("off (default)")}`
   );
   console.log(dim("\n  npm run inventory:enable <machine>[.<runtime>]"));
 }
@@ -76,13 +110,16 @@ if (aggregator) {
   aggregator.enabled = wantEnabled;
   touched.push(aggregator.id);
 } else {
-  const targets = runtimeKind
-    ? machine.runtimes.filter((r) => r.kind === runtimeKind)
-    : machine.runtimes;
+  const runtimes = machine.runtimes ?? [];
+  const targets = runtimeKind ? runtimes.filter((r) => r.kind === runtimeKind) : runtimes;
 
   if (!targets.length) {
-    console.error(`Machine "${machineId}" has no runtime of kind "${runtimeKind}".`);
-    console.error(`Available: ${machine.runtimes.map((r) => r.kind).join(", ")}`);
+    console.error(
+      runtimeKind
+        ? `Machine "${machineId}" has no runtime of kind "${runtimeKind}".`
+        : `Machine "${machineId}" has no runtimes at all.`
+    );
+    console.error(`Available: ${runtimes.map((r) => r.kind).join(", ") || "(none)"}`);
     process.exit(1);
   }
   for (const r of targets) {

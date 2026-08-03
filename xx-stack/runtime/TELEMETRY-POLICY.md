@@ -33,7 +33,7 @@ If a telemetry event does not support measurable automation outcomes, remove it.
 - Telemetry can be added later to specific ops/eval skills if automation reporting requires it.
 
 ## Current Implementation
-- Config file: `.xx-stack/telemetry.json`
+- Config file: `runtime/telemetry.json`
 - Default: disabled (`"enabled": false`)
 - Helper hooks: not shipped by default; if you add one locally, keep it minimal and local-first
 

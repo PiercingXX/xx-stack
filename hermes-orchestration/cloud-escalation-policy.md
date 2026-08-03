@@ -5,8 +5,13 @@ Purpose
 
 ## Default behavior
 
-- Cloud is enabled in `config/orchestration.json`.
-- Cloud can be selected for delegated subagents when the active routing preset allows it.
+- A cloud lane is *configured* in `config/orchestration.json`, but cloud use is
+  off by default and the default fails closed: it turns on only when
+  `policy.require_manual_cloud_escalation` is `false`,
+  `policy.cloud_enabled_by_default` is `true` **and**
+  `execution.subagents_allow_cloud_default` is `true`. A missing key means off.
+- Cloud can be selected for delegated subagents when the active routing preset allows it
+  and `--allow-cloud` was passed (or the three keys above are all set).
 - Primary task cloud use still requires explicit `--allow-cloud`.
 - Decisions are made on the orchestrator host after self-hosted lane checks.
 
@@ -23,8 +28,8 @@ If any condition is false, cloud is denied.
 
 ## Delegation order
 
-1. `skippy-sglang-5090` over Tailscale (preferred delegated lane, 8x RTX 5090)
-2. `skippy-ollama-5090` over Tailscale (fallback runtime on the same rig)
+1. `skippy-debian-5090-sglang` over Tailscale (preferred delegated lane, 8x RTX 5090)
+2. `skippy-debian-5090-ollama` over Tailscale (fallback runtime on the same rig)
 3. Cloud lane for eligible delegated tasks only after self-hosted exhaustion or model mismatch
 
 ## Specialized-model rule
@@ -41,8 +46,8 @@ If any condition is false, cloud is denied.
 ## Cloud model policy
 
 - Model pool: premium GitHub-hosted models available through the local `hermes` CLI.
-- Preferred default when approved: `gpt-5.3-codex`.
-- Cloud fallback model #2: `gpt-5.4`.
+- Preferred default when approved: `gpt-5.3-codex` (`lanes.cloud.model`).
+- Cloud fallback model #2: `gpt-5.4` (`lanes.cloud.fallback_models`).
 
 ## Required escalation telemetry
 

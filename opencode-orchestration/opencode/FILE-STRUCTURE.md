@@ -2,93 +2,113 @@
 name: File Structure & Navigation Guide
 ---
 
-# xx-stack File Structure Guide
+# OpenCode Orchestration File Structure Guide
 
-## Primary Entry Points
+This file is a navigation map, not a full product overview. It deliberately
+carries no inventory counts — the counts drift the moment an agent or skill is
+added, and `opencode/SKILLS.md` plus the directories themselves are the
+authority. To see what exists, list the directory.
 
-- README.md
-- opencode/SKILLS.md
-- opencode/config.json
-- opencode/platforms.json
-- setup.sh
+## Start Here
 
-## Active Runtime Layout
+- `README.md` for install and high-level usage
+- `REPO-LAYERS.md` for stack-core vs content-pack boundaries
+- `opencode/config.json` for the agent registry and policy
+- `opencode/shared_instructions.md` for shared runtime behavior
+- `opencode/SKILLS.md` for skill conventions and the skill inventory
+- `opencode/platforms.json` for the shipped platform registry
+- `MAINTAINER-RUNBOOK.md` for install and release operations
 
-opencode/
-- config.json
-- platforms.json
-- platforms.schema.json
-- telemetry.json
-- SKILLS.md
-- FILE-STRUCTURE.md
-- agents/ (8)
-- skills/
-  - <skill-name>/SKILL.md (canonical repo skill content)
+## Stack Core
 
-Installed runtime:
-- ~/.config/opencode/skills/xx-stack/
-- ~/.config/opencode/skills/<skill-name>/SKILL.md (top-level shim discovery format)
-- ~/.config/opencode/xx-stack-platforms.json
+`opencode/`
+- OpenCode-specialized agents and skills
+- shared runtime docs and registry files (`config.json`, `platforms.json`,
+  `platforms.schema.json`, `telemetry.json`)
 
-Compatibility workspace shim:
-- .opencode/ -> opencode/
+`opencode/agents/`
+- one `.md` per agent; `<name>.nano.md` beside an agent is its tight-context
+  variant, byte-identical to the xx-stack canonical nano
 
-## Active Agents
+`opencode/skills/`
+- one `<skill-name>/SKILL.md` per skill; `SKILL.nano.md` beside a skill is its
+  tight-context variant
 
-- fast-build
-- deep-thinker
-- release-manager
-- incident-commander
-- execution-orchestrator
-- performance-engineer
-- rust-rewrite
-- model-trainer
+`vscode/`
+- VS Code adapter agent and prompt mirrors
 
-## Active Skill Categories
+`scripts/run-agent-loop.mjs`
+- generic outer-loop runner for unattended todo or plan execution
 
-Core:
-- ideate-product
-- plan-feature
-- plan-architecture
-- review-code
-- deploy-ship
+`scripts/run-opencode-loop.mjs`
+- OpenCode-specific unattended wrapper with built-in preflight wiring
 
-Advanced:
-- debug-investigate
-- plan-design
-- audit-security
-- ops-deploy-land
-- reflect-retrospective
-- plan-autoreview
-- ops-canary
-- benchmark-performance
-- rewrite-rust-oneshot
-- train-model-knowledge-injection
+`scripts/opencode-stdin-runner.mjs`
+- bridge that turns stdin prompts into a single `opencode run [message]` invocation
 
-Utility:
-- write-docs
-- setup-observability
-- test-qa
-- release-doc-sync
-- safety-guardrails
-- orchestrate-platform-routing
+`mcp-server/`
+- symlink to `xx-stack/mcp-server`: TypeScript MCP server source, tests, and
+  package scripts. One copy shared with the core component.
 
-## Recommended Paths
+`hooks/`
+- optional local hook scaffolding
 
-Feature path:
-execution-orchestrator -> plan-feature -> plan-architecture -> review-code -> test-qa -> benchmark-performance -> deploy-ship -> ops-canary
+`setup.sh`
+- top-level installer for this component
 
-Incident path:
-debug-investigate -> deploy-ship -> ops-canary -> reflect-retrospective
+`setup-opencode.sh`
+- OpenCode host adapter setup
 
-## Notes
+`setup-vscode.sh`
+- VS Code adapter setup and MCP wiring
 
-Canonical SKILL.md folders live under `opencode/skills`, but installed OpenCode discovery outside the repo depends on top-level shims under `~/.config/opencode/skills/<skill-name>/SKILL.md`.
-Platform inventory for orchestration ships from `opencode/platforms.json` and runs live from `~/.config/opencode/xx-stack-platforms.json`.
-Controller-grade orchestration helpers are absorbed into `execution-orchestrator` instead of exposed as standalone user skills.
+## Installed Runtime
 
-Agent and skill prompts now follow a shared contract style:
-- explicit activation conditions
-- evidence-first execution loops
-- deterministic verification states (`PASS`, `FAIL`, `AMBIGUOUS`)
-- explicit degradation when repo/runtime surfaces are missing
+Discovery outside the repo reads from the OpenCode config directory, not from
+the repo tree:
+
+- `~/.config/opencode/skills/<skill-name>/SKILL.md` (top-level shim discovery format)
+- `~/.config/opencode/skills/xx-stack/` (installed canonical copy)
+- `~/.config/opencode/xx-stack-platforms.json` (live platform registry)
+
+`opencode/platforms.json` ships the defaults; the installed file is what actually
+runs.
+
+## Content Packs
+
+`packs/` is a symlink to `xx-stack/packs` — one copy shared with the core
+component.
+
+Design pack:
+
+- `packs/design/design-systems/`
+- `packs/design/design-skills/`
+- `packs/design/workflow-skills/`
+- `packs/design/evals/golden-tasks/`
+- `packs/design/scripts/`
+- `packs/design/DESIGN-CATALOG.md`
+
+Rules pack:
+
+- `packs/rules/`
+
+## Compatibility Shims
+
+These paths remain for downstream stability:
+
+- `design-systems/`
+- `design-skills/`
+- `DESIGN-CATALOG.md`
+- `opencode/skills/design/`
+- `evals/golden-tasks/`
+
+## Rule Of Thumb
+
+- Runtime contracts belong in stack core.
+- Domain payloads belong in `packs/`.
+- If a path exists only for backward compatibility, document it as a shim rather
+  than a source of truth.
+- Agent and skill prompts follow a shared contract style: explicit activation
+  conditions, evidence-first execution loops, deterministic verification states
+  (`PASS`, `FAIL`, `AMBIGUOUS`), and explicit degradation when repo or runtime
+  surfaces are missing.

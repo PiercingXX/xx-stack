@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
@@ -32,8 +32,19 @@ export interface CompletionMemorySyncStatus {
   helperPrompt: string | null;
 }
 
+/**
+ * Reduce an agent id or project path to one safe path segment.
+ *
+ * The character class keeps `.` so ordinary names like `reviewer.v2` survive,
+ * but that also let the dot-only segments `.` and `..` through untouched — and
+ * an agentId of `..` resolves one directory ABOVE the scoped memory dir, so
+ * MEMORY.md lands outside the scope the caller asked for. Dot-only results are
+ * therefore replaced outright; nothing else changes.
+ */
 export function sanitizeNameForPath(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
+  const collapsed = value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-");
+  if (collapsed.length === 0 || /^\.+$/.test(collapsed)) return "_";
+  return collapsed;
 }
 
 function getScopedAgentMemoryDir(agentId: string, scope: AgentMemoryScope, cwd: string): string {
@@ -90,11 +101,24 @@ export async function readMemoryEntrypoint(path: string): Promise<string> {
   }
 }
 
+/** The bytes ensureMemoryEntrypoint writes into an absent memory file. */
+export const DEFAULT_MEMORY_TEMPLATE = "# Agent Memory\n\n";
+
+/**
+ * Create the memory file with its header if it is not there yet.
+ *
+ * `wx` — create exclusively, never truncate. The previous read-then-replace
+ * shape raced every concurrent append: N callers all observe an absent file,
+ * and the last atomic replace renames the template over entries another caller
+ * had already appended. Losing to EEXIST is the success case here.
+ */
 export async function ensureMemoryEntrypoint(path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const current = await readMemoryEntrypoint(path);
-  if (current.length === 0) {
-    await atomicWriteTextFile(path, "# Agent Memory\n\n");
+  try {
+    await writeFile(path, DEFAULT_MEMORY_TEMPLATE, { flag: "wx" });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (code !== "EEXIST") throw error;
   }
 }
 
@@ -106,24 +130,46 @@ export async function readSnapshotMeta(path: string): Promise<Record<string, unk
   return readJson(path);
 }
 
+/**
+ * Line-level added/removed/changed counts, derived from the LCS *length*.
+ *
+ * Only the final LCS length is consumed, never a traceback, so the DP keeps two
+ * rolling rows instead of the full (rows+1)x(cols+1) matrix. MEMORY.md is
+ * append-only and never trimmed: at ~10k lines a side the full matrix is ~10^8
+ * numbers (gigabytes), allocated inside a ~2.5s `_Stop` hook budget. Memory is
+ * now O(min(rows, cols)); the returned numbers are unchanged.
+ */
 export function lineDiffSummary(previousContent: string, nextContent: string): MemoryDiffSummary {
   const previous = previousContent.split(/\r?\n/);
   const next = nextContent.split(/\r?\n/);
   const rows = previous.length;
   const cols = next.length;
-  const dp: number[][] = Array.from({ length: rows + 1 }, () => Array<number>(cols + 1).fill(0));
 
-  for (let i = 1; i <= rows; i += 1) {
-    for (let j = 1; j <= cols; j += 1) {
-      if (previous[i - 1] === next[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1;
+  // Iterate over the longer sequence so the rolling rows are the shorter one.
+  const [outer, inner] = rows >= cols ? [previous, next] : [next, previous];
+  const innerLength = inner.length;
+
+  let prevRow = new Array<number>(innerLength + 1).fill(0);
+  let curRow = new Array<number>(innerLength + 1).fill(0);
+
+  for (let i = 1; i <= outer.length; i += 1) {
+    const outerLine = outer[i - 1];
+    curRow[0] = 0;
+    for (let j = 1; j <= innerLength; j += 1) {
+      if (outerLine === inner[j - 1]) {
+        curRow[j] = prevRow[j - 1] + 1;
       } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        const up = prevRow[j];
+        const left = curRow[j - 1];
+        curRow[j] = up >= left ? up : left;
       }
     }
+    const swap = prevRow;
+    prevRow = curRow;
+    curRow = swap;
   }
 
-  const lcs = dp[rows][cols];
+  const lcs = prevRow[innerLength];
   const added = Math.max(0, cols - lcs);
   const removed = Math.max(0, rows - lcs);
   return {
@@ -172,18 +218,37 @@ export async function writeSnapshotHistoryEntry(
   return base;
 }
 
+export interface CompletionMemorySyncStatusOptions {
+  /**
+   * Create MEMORY.md/SNAPSHOT.md (and their directory) when absent. Defaults to
+   * true for the completion gate, which wants the scaffolding in place. Read-only
+   * callers — notably the `_Stop` hook, whose contract is "two file reads, no
+   * filesystem walks" — must pass false: an mkdir + atomic write from a status
+   * check is a side effect on a read path.
+   */
+  ensureFiles?: boolean;
+}
+
 export async function getCompletionMemorySyncStatus(
-  guard: CompletionMemorySyncGuard
+  guard: CompletionMemorySyncGuard,
+  options: CompletionMemorySyncStatusOptions = {}
 ): Promise<CompletionMemorySyncStatus> {
   const memoryPath = getAgentMemoryEntrypoint(guard.agentId, guard.scope, guard.cwd);
   const snapshotPath = getAgentMemorySnapshotPath(guard.agentId, guard.scope, guard.cwd);
   const metaPath = getAgentMemorySnapshotMetaPath(guard.agentId, guard.scope, guard.cwd);
 
-  await ensureMemoryEntrypoint(memoryPath);
-  await ensureMemoryEntrypoint(snapshotPath);
+  if (options.ensureFiles !== false) {
+    await ensureMemoryEntrypoint(memoryPath);
+    await ensureMemoryEntrypoint(snapshotPath);
+  }
 
-  const memoryContent = await readMemoryEntrypoint(memoryPath);
-  const snapshotContent = await readMemoryEntrypoint(snapshotPath);
+  // Without the scaffolding writes an absent file reads as "", where the
+  // ensuring path would have read back the template. Substituting the template
+  // here keeps both modes byte-identical in what they report.
+  const orDefault = (content: string): string =>
+    content.length === 0 ? DEFAULT_MEMORY_TEMPLATE : content;
+  const memoryContent = orDefault(await readMemoryEntrypoint(memoryPath));
+  const snapshotContent = orDefault(await readMemoryEntrypoint(snapshotPath));
 
   const memoryHash = hashMemoryContent(memoryContent);
   const snapshotHash = hashMemoryContent(snapshotContent);

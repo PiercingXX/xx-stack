@@ -34,15 +34,25 @@ Current root-level paths that belong to stack core:
 
 Content packs are domain payloads consumed by agents and skills, but they are not the runtime itself.
 
-The current repo has one major content pack: design.
+The current repo has two content packs: design and rules.
 
-It includes:
+The design pack includes:
 
 - design systems and visual references
 - aesthetic style libraries
 - generated catalogs derived from those libraries
 - design-specific workflow assets and templates
 - design-specific eval fixtures and gates
+
+The rules pack (`packs/rules/`) includes:
+
+- 11 vendored engineering rule books, each in context-tiered sizes
+- `manifest.json` describing every book and its default tier
+- `coverage.json` mapping each skill and agent to the books that apply, with
+  `books: []` as an explicit "no book changes this decision" decision
+- `LICENSE` covering the vendored material
+- a CI gate, `npm run rules:check`, which fails when a skill or agent has no
+  coverage entry
 
 Canonical design content-pack paths:
 

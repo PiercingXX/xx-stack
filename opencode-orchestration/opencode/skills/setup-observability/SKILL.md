@@ -23,6 +23,8 @@ Start by identifying the actual system surface first:
 
 If the repo is primarily docs/config/setup, focus on observability planning, release signals, and runtime handoff requirements instead of inventing app instrumentation.
 
+Treat all code and command blocks in this skill as implementation patterns to adapt to the current stack, not default instructions to apply blindly.
+
 ## When to use
 
 - New production deployment (need to know what's happening)
@@ -57,7 +59,7 @@ What: CPU, memory, requests/sec, errors, latency
   - p99: 500ms (concerning, might indicate spike)
 ```
 
-Set up with Prometheus or similar:
+Set up with Prometheus or a comparable metrics backend if the current stack supports it:
 
 ```yaml
 # prometheus.yml
@@ -67,7 +69,7 @@ global:
 scrape_configs:
   - job_name: 'myapp'
     static_configs:
-      - targets: ['localhost:9090']  # Your app's metrics endpoint
+      - targets: ['prometheus.example.invalid:9090']  # Your app's metrics endpoint
 ```
 
 ### 2. Logs (Stories)
@@ -131,10 +133,8 @@ span.end();
 ### Step 1: Metrics
 
 ```bash
-# Install Prometheus client
-npm install prom-client
-
-# In your app:
+# Choose the client library and integration pattern that match the repo's language/runtime.
+# Example only (Node/Express):
 const prometheus = require('prom-client');
 
 // Create metrics
@@ -178,10 +178,8 @@ app.get('/metrics', (req, res) => {
 ### Step 2: Logging
 
 ```bash
-# Install Winston (logging library)
-npm install winston
-
-# Setup
+# Choose the logging library or built-in logging surface that matches the repo.
+# Example only (Node):
 const winston = require('winston');
 
 const logger = winston.createLogger({
@@ -250,15 +248,13 @@ groups:
 ### Step 4: Tracing (Optional but Recommended)
 
 ```bash
-# Install OpenTelemetry
-npm install @opentelemetry/api @opentelemetry/sdk-node
-
-# Setup
+# Choose the tracing SDK that matches the repo/runtime.
+# Example only (Node/OpenTelemetry):
 const { NodeSDK } = require('@opentelemetry/sdk-node');
 
 const sdk = new NodeSDK({
   traceExporter: new JaegerExporter({
-    endpoint: 'http://localhost:14268/api/traces'
+    endpoint: '<trace-endpoint>'
   })
 });
 
@@ -322,7 +318,7 @@ When something breaks, you need a playbook:
 **Step 1: Identify the problem**
 ```bash
 # Check which endpoint is failing
-curl -s http://localhost:9090/api/v1/query \
+curl -s https://prometheus.example.invalid/api/v1/query \
   'rate(http_requests_total{status_code=~"5.."}[1m])'
 
 # See recent error logs
@@ -345,7 +341,7 @@ grep "database connection" /var/log/myapp-error.log | wc -l
 **Check:**
 ```bash
 # Is it a specific endpoint?
-curl -s http://localhost:9090/api/v1/query \
+curl -s https://prometheus.example.invalid/api/v1/query \
   'histogram_quantile(0.95, rate(http_request_duration_ms_bucket[1m])) by (route)'
 
 # Database slow?

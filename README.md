@@ -65,7 +65,8 @@ consider cloud without being asked.
 ```
 
 Works with any MCP-compatible host — OpenCode, VS Code, or your own client.
-Your agent gets 33 new tools for routing, health checks, and supervision.
+Your agent gets 45 new tools for routing, health checks, and supervision, plus 2
+optional hook tools behind `XX_STACK_HOOK_TOOLS=1`.
 
 ### Split a big job across your machines
 
@@ -208,8 +209,11 @@ Most people only need the first one.
 | **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode / VS Code. Only needed if you use those. |
 | **[`hermes-orchestration/`](hermes-orchestration/)** | Standalone Python service for routing raw inference across GPU boxes. Optional. |
 
-`xx-stack/` is the source of truth; the second folder symlinks into it rather
-than keeping copies. See [CONTRIBUTING.md](CONTRIBUTING.md) for how that works.
+`xx-stack/` is the source of truth. The second folder symlinks into it for the
+shared machinery — `mcp-server/`, `scripts/`, and `packs/` are one copy, not two
+— but `opencode/agents/` and `opencode/skills/` are full copies, deliberately
+specialised for OpenCode and kept structurally in step by
+`npm run drift:check`. See [CONTRIBUTING.md](CONTRIBUTING.md) for how that works.
 
 ---
 

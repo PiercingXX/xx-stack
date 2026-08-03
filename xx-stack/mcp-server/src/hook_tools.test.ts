@@ -465,3 +465,55 @@ test("registered _Stop handler returns the empty-string no-objection signal thro
   const objection = await objecting.handler({});
   assert.ok(objection.content[0]!.text.includes("tsk-open"));
 });
+
+// ---------------------------------------------------------------------------
+// MCP-9b: `_Stop` documents itself as a read path. The default memory status
+// check mkdir's and atomically writes MEMORY.md/SNAPSHOT.md, so the hook must
+// ask for the non-mutating mode explicitly.
+// ---------------------------------------------------------------------------
+
+test("_Stop asks for the non-mutating memory status check", async () => {
+  const guard = { agentId: "reviewer", scope: "project" as const, cwd: "/tmp/xx-stack-fixture" };
+  const calls: Array<{ guard: unknown; options: unknown }> = [];
+  const deps: HookToolDeps = {
+    ...makeDeps({
+      sessions: [makeSession({ completionMemorySync: guard })],
+    }),
+    getCompletionMemorySyncStatus: async (g, options) => {
+      calls.push({ guard: g, options });
+      return { driftDetected: true };
+    },
+  };
+
+  const text = await runStop(deps, {});
+  assert.ok(text.includes("memory snapshot drift is unresolved"));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].guard, guard);
+  assert.deepEqual(
+    calls[0].options,
+    { ensureFiles: false },
+    "_Stop must never scaffold memory files as a side effect of checking drift"
+  );
+});
+
+test("_Stop passes ensureFiles:false for every guarded session it checks", async () => {
+  const sessions = [1, 2, 3, 4, 5].map((n) =>
+    makeSession({
+      sessionId: `sx-000${n}`,
+      completionMemorySync: { agentId: `agent-${n}`, scope: "project", cwd: "/tmp/fixture" },
+    })
+  );
+  const seen: Array<boolean | undefined> = [];
+  const deps: HookToolDeps = {
+    ...makeDeps({ sessions }),
+    getCompletionMemorySyncStatus: async (_guard, options) => {
+      seen.push(options?.ensureFiles);
+      return { driftDetected: false };
+    },
+  };
+
+  await runStop(deps, {});
+  // Bounded by MAX_MEMORY_DRIFT_CHECKS, and every one of them read-only.
+  assert.equal(seen.length, 3);
+  assert.deepEqual(seen, [false, false, false]);
+});

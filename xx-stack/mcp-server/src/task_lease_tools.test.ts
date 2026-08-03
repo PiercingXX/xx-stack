@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -11,6 +13,7 @@ import { registerTaskTools } from "./task_tools.js";
 import {
   readTaskStore,
   revokeSessionTaskLeases,
+  withTaskStoreLock,
   type PersistentTask,
   type TaskLease,
 } from "./task_runtime.js";
@@ -27,14 +30,15 @@ function restore(name: "HOME" | "XX_STACK_REPO", original: string | undefined): 
   else process.env[name] = original;
 }
 
-async function withTempHome<T>(work: () => Promise<T>): Promise<T> {
+async function withTempHome<T>(work: (homeDir: string) => Promise<T>): Promise<T> {
   const homeDir = await mkdtemp(join(tmpdir(), "xx-stack-task-lease-"));
   process.env.HOME = homeDir;
   // Lifecycle-hook config also resolves from HOME / XX_STACK_REPO; point both
   // at the throwaway dir so no configured hook can fire during these tests.
   process.env.XX_STACK_REPO = homeDir;
+  await mkdir(join(homeDir, ".config/opencode"), { recursive: true });
   try {
-    return await work();
+    return await work(homeDir);
   } finally {
     restore("HOME", ORIGINAL_HOME);
     restore("XX_STACK_REPO", ORIGINAL_REPO);
@@ -305,5 +309,202 @@ test("task_resume carries the lease and self-fencing clause only when a lease ex
       leasedResume.directive.includes("re-check this task's lease"),
       "the resume directive states the self-fencing rule"
     );
+  });
+});
+
+// --- MCP-4: the fence covers every write path -----------------------------
+
+test("task_suspend against a revoked lease is rejected and persists nothing", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+
+    const created = await call(tools.task_create!, {
+      title: "Leased and running",
+      status: "in_progress",
+      lease: { expiresAt: FUTURE },
+    });
+    const taskId = created.task.taskId as string;
+    await call(tools.task_update!, { taskId, lease: { expiresAt: FUTURE, revoked: true } });
+
+    const rejected = await call(tools.task_suspend!, {
+      taskId,
+      checkpoint: "stale checkpoint from the dead lane",
+    });
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.reasonCode, "lease_revoked");
+    assert.equal(rejected.operation, "task_suspend");
+    assert.ok(rejected.selfFencingClause.includes("do not write"));
+
+    const stored = (await readTaskStore()).tasks[taskId]!;
+    assert.equal(stored.status, "in_progress", "a fenced suspend must not change status");
+    assert.equal(stored.lastCheckpoint, undefined, "a fenced suspend must not land a checkpoint");
+  });
+});
+
+test("task_suspend against an expired lease is rejected against the server clock", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+    const created = await call(tools.task_create!, {
+      title: "Expired lane",
+      status: "in_progress",
+      lease: { expiresAt: PAST },
+    });
+
+    const rejected = await call(tools.task_suspend!, { taskId: created.task.taskId });
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.reasonCode, "lease_expired");
+  });
+});
+
+test("task_resume against a revoked lease is rejected; re-leasing restores it", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+
+    const created = await call(tools.task_create!, {
+      title: "Suspended and leased",
+      status: "suspended",
+      lease: { expiresAt: FUTURE },
+    });
+    const taskId = created.task.taskId as string;
+    await call(tools.task_update!, { taskId, lease: { expiresAt: FUTURE, revoked: true } });
+
+    const rejected = await call(tools.task_resume!, { taskId });
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.reasonCode, "lease_revoked");
+    assert.equal(rejected.operation, "task_resume");
+
+    const stored = (await readTaskStore()).tasks[taskId]!;
+    assert.equal(stored.status, "suspended", "a fenced resume must not restart the task");
+    assert.equal(stored.resumeCount ?? 0, 0, "a fenced resume must not count as an attempt");
+
+    // Re-assignment is the supervisor's job and carries a replacement lease.
+    await call(tools.task_update!, { taskId, lease: { expiresAt: FUTURE } });
+    const resumed = await call(tools.task_resume!, { taskId });
+    assert.equal(resumed.status, "resumed");
+    assert.equal(resumed.task.status, "in_progress");
+  });
+});
+
+test("an unleased task suspends and resumes exactly as before", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+    const created = await call(tools.task_create!, { title: "Plain", status: "in_progress" });
+    const taskId = created.task.taskId as string;
+
+    const suspended = await call(tools.task_suspend!, { taskId, checkpoint: "half done" });
+    assert.equal(suspended.status, "suspended");
+    assert.equal(suspended.task.lastCheckpoint, "half done");
+
+    const resumed = await call(tools.task_resume!, { taskId });
+    assert.equal(resumed.status, "resumed");
+    assert.equal(resumed.task.resumeCount, 1);
+  });
+});
+
+test("a terminal task is never reopened by task_resume", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+
+    for (const status of ["done", "canceled", "force_synthesized"] as const) {
+      const created = await call(tools.task_create!, { title: `Finished (${status})`, status });
+      const rejected = await call(tools.task_resume!, { taskId: created.task.taskId });
+      assert.equal(rejected.status, "rejected", `${status} must not resume`);
+      assert.equal(rejected.reasonCode, "task_terminal");
+      assert.equal(rejected.taskStatus, status);
+
+      const stored = (await readTaskStore()).tasks[created.task.taskId]!;
+      assert.equal(stored.status, status, "the terminal outcome survives the resume attempt");
+    }
+  });
+});
+
+// --- MCP-1: an unreadable task store never becomes an empty one -----------
+
+test("a task tool on a corrupt store reports the failure and does not truncate it", async () => {
+  await withTempHome(async (homeDir) => {
+    const tools = captureTaskTools();
+    await call(tools.task_create!, { title: "Precious task" });
+
+    const statePath = join(homeDir, ".config/opencode/xx-stack-task-state.json");
+    const good = await readFile(statePath, "utf-8");
+    await writeFile(statePath, good.slice(0, 30), "utf-8");
+    const corrupt = await readFile(statePath, "utf-8");
+
+    for (const [toolName, args] of [
+      ["task_list", {}],
+      ["task_get", { taskId: "tsk-anything" }],
+      ["task_create", { title: "Would clobber everything" }],
+      ["task_update", { taskId: "tsk-anything", status: "done" }],
+      ["task_suspend", { taskId: "tsk-anything" }],
+      ["task_resume", { taskId: "tsk-anything" }],
+    ] as Array<[string, Record<string, unknown>]>) {
+      const payload = await call(tools[toolName]!, args);
+      assert.equal(payload.status, "error", `${toolName} must not report success`);
+      assert.equal(payload.reasonCode, "store_unavailable");
+      assert.equal(payload.store, "task");
+    }
+
+    assert.equal(
+      await readFile(statePath, "utf-8"),
+      corrupt,
+      "one bad read must never rewrite the whole document"
+    );
+  });
+});
+
+// --- MCP-12: lifecycle hooks run outside the task-store mutex -------------
+
+test("a lifecycle hook runs with the task-store lock released", async () => {
+  await withTempHome(async (homeDir) => {
+    // A hook that blocks until the test releases it. While it is running the
+    // task store lock must be free: it is a non-reentrant promise-chain mutex,
+    // so a hook awaited inside it deadlocks any hook that calls back into the
+    // task tools, and blocks every task_get/task_list behind subprocess time.
+    const hookScript = join(homeDir, "blocking-hook.sh");
+    const startedFlag = join(homeDir, "hook-started");
+    const releaseFlag = join(homeDir, "hook-release");
+    await writeFile(
+      hookScript,
+      [
+        "#!/bin/sh",
+        `: > "${startedFlag}"`,
+        `while [ ! -f "${releaseFlag}" ]; do sleep 0.02; done`,
+        "exit 0",
+      ].join("\n"),
+      { mode: 0o755 }
+    );
+    await writeFile(
+      join(homeDir, ".config/opencode/config.json"),
+      JSON.stringify({
+        lifecycleHooks: {
+          enabled: true,
+          allowedCommands: [hookScript],
+          events: { "task.created": [{ command: hookScript, args: [], timeoutMs: 30_000 }] },
+        },
+      }),
+      "utf-8"
+    );
+
+    const tools = captureTaskTools();
+    const creating = call(tools.task_create!, { title: "Task with a slow hook" });
+
+    // Wait for the hook subprocess to actually be running.
+    const deadline = Date.now() + 20_000;
+    while (!existsSync(startedFlag)) {
+      if (Date.now() > deadline) throw new Error("lifecycle hook never started");
+      await delay(20);
+    }
+
+    // With the hook mid-flight, the store lock must be acquirable.
+    const acquired = await Promise.race([
+      withTaskStoreLock(async () => "acquired"),
+      delay(5_000).then(() => "deadlocked"),
+    ]);
+    assert.equal(acquired, "acquired", "the hook must not be awaited while holding the store lock");
+
+    await writeFile(releaseFlag, "", "utf-8");
+    const created = await creating;
+    assert.equal(created.status, "created");
+    assert.equal(created.hooks.executedHookCount, 1, "the hook still runs, just outside the lock");
   });
 });

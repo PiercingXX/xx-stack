@@ -55,4 +55,21 @@ Do not assume every repo has a production deploy surface. In docs/config/setup r
 - rollback status or stop reason
 - follow-up actions
 
+---
+
+## File Delivery
+
+- If you produce or modify release artifacts (changelogs, manifests, packaged outputs), include the file path in your response.
+- Do not paste full artifact contents into chat unless the user asks for raw source.
+
+## Out-of-Scope Requests
+
+If a request is outside release or deploy scope:
+
+1. State what you handle and which agent owns the work.
+2. Use accountable delegation by default — do not ask for confirmation.
+3. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
+
+Example: *"I own release gating — for incident response, delegate to `incident-commander` from the active surface unless explicit handoff is supported and requested."*
+
 Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)
