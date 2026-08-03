@@ -5,6 +5,7 @@ import process from 'node:process';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', '..');
 const gatesPath = path.join(root, 'packs', 'design', 'workflow-skills', 'quality-gates.json');
+const slopRulesPath = path.join(root, 'packs', 'design', 'craft', 'anti-ai-slop-rules.json');
 
 function parseArgs(argv) {
   const args = {
@@ -171,17 +172,172 @@ function checkGenericGates(content, profile) {
     warnings.push('Treated as an HTML fragment (no <html>/<body>); document-shell gates skipped.');
   }
 
-  if (hasRegex(content, /linear-gradient\([^)]*(#6a0dad|#8a2be2|purple)/i)) {
-    warnings.push('Potential purple-gradient anti-pattern detected.');
-  }
-  if (hasRegex(content, /[\u{1F300}-\u{1FAFF}]/u)) {
-    warnings.push('Emoji characters detected; ensure they are not primary UI icons.');
-  }
+  // The two taste heuristics that used to live here — a purple-gradient regex
+  // naming two hexes no model actually emits, and a document-wide emoji match —
+  // are gone. Both were guesses. They are replaced by the rule table in
+  // craft/anti-ai-slop-rules.json, evaluated by evaluateSlopRules() below,
+  // which carries concrete values and a P0/P1/P2 severity ladder.
+
   if (!hasRegex(content, /@media\s*\(/i)) {
     warnings.push('No @media query found; verify responsive behavior.');
   }
 
   return { failures, warnings };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Anti-AI-slop rules: a generic engine over an external rule table.
+ *
+ * The rule VALUES live in craft/anti-ai-slop-rules.json, derived from
+ * nexu-io/open-design (Apache-2.0) and attributed there and in manifest.json.
+ * This script — the engine — is ours under the repo-root MIT LICENSE and
+ * contains no rule values of its own. That is the licensing boundary, and it
+ * also means the rule set is reviewable and editable without touching code.
+ *
+ * Severity is not exit code. P0 fails alongside the pre-existing structural
+ * checks; P1/P2 report only. Upstream's own linter does not hard-block on P0
+ * either — these are a quality signal for the agent, not a merge gate on
+ * generated content.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+let slopRules = { rules: [] };
+if (fs.existsSync(slopRulesPath)) {
+  slopRules = JSON.parse(fs.readFileSync(slopRulesPath, 'utf8'));
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const clip = (s, n = 80) => {
+  const flat = String(s).replace(/\s+/g, ' ').trim();
+  return flat.length > n ? `${flat.slice(0, n)}…` : flat;
+};
+
+// Comments often carry pedagogical examples ("paste <section class=...> here")
+// that would fire rules against markup the browser never renders.
+const stripComments = (html) => html.replace(/<!--[\s\S]*?-->/g, '');
+
+// Global theme scopes where declaring a color IS the design system speaking:
+// `:root`, `html`, and bare `[data-theme="..."]`. A component-local
+// `.cta { --cta-bg: #6366f1 }` stays in scope, so indigo laundered through a
+// local custom property is still caught.
+const stripGlobalTokenBlocks = (html) =>
+  html.replace(/(?::root|(?<![\w.#-])html|\[data-theme[^\]]*\])[^{}]*\{[^}]*\}/gi, '');
+
+function gradientBodies(html) {
+  return [...html.matchAll(/linear-gradient\(([^)]*)\)/gi)];
+}
+
+function sideMatch(body, hexes, keywords) {
+  const lower = body.toLowerCase();
+  for (const hex of hexes ?? []) {
+    if (lower.includes(hex.toLowerCase())) return hex;
+  }
+  for (const kw of keywords ?? []) {
+    if (new RegExp(`\\b${escapeRe(kw)}\\b`, 'i').test(body)) return kw;
+  }
+  return null;
+}
+
+function evaluateRule(rule, html) {
+  switch (rule.kind) {
+    case 'gradientContainsAny': {
+      for (const m of gradientBodies(html)) {
+        const hit = sideMatch(m[1], rule.hexes, rule.keywords);
+        if (hit) return { match: hit, snippet: clip(m[0]) };
+      }
+      return null;
+    }
+    case 'gradientContainsPair': {
+      for (const m of gradientBodies(html)) {
+        const a = sideMatch(m[1], rule.hexesA, rule.keywordsA);
+        const b = sideMatch(m[1], rule.hexesB, rule.keywordsB);
+        if (a && b) return { match: `${a} → ${b}`, snippet: clip(m[0]) };
+      }
+      return null;
+    }
+    case 'literalAny': {
+      const hay = rule.scope === 'outsideGlobalTokenBlocks' ? stripGlobalTokenBlocks(html) : html;
+      const lower = hay.toLowerCase();
+      for (const v of rule.values ?? []) {
+        if (lower.includes(v.toLowerCase())) return { match: v, snippet: v };
+      }
+      return null;
+    }
+    case 'emojiInElement': {
+      const tags = (rule.elements ?? []).map(escapeRe).join('|');
+      for (const e of rule.emoji ?? []) {
+        if (!html.includes(e)) continue;
+        const m = new RegExp(`<(?:${tags})\\b[^>]*>[^<]*${escapeRe(e)}`, 'i').exec(html);
+        if (m) return { match: e, snippet: clip(m[0]) };
+      }
+      return null;
+    }
+    case 'emojiInClass': {
+      const cls = escapeRe(rule.classSubstring ?? 'icon');
+      for (const e of rule.emoji ?? []) {
+        if (!html.includes(e)) continue;
+        const m = new RegExp(
+          `<[a-z][a-z0-9-]*\\b[^>]*class=["'][^"']*${cls}[^"']*["'][^>]*>[^<]*${escapeRe(e)}`,
+          'i'
+        ).exec(html);
+        if (m) return { match: e, snippet: clip(m[0]) };
+      }
+      return null;
+    }
+    case 'regexAny': {
+      for (const p of rule.patterns ?? []) {
+        const m = new RegExp(p, 'i').exec(html);
+        if (m) return { match: clip(m[0], 60), snippet: clip(m[0]) };
+      }
+      return null;
+    }
+    case 'countHexOutsideRoot': {
+      const style = /<style[^>]*>([\s\S]*?)<\/style>/i.exec(html);
+      if (!style) return null;
+      const css = (style[1] ?? '').replace(/:root\s*\{[^}]*\}/g, '');
+      const hexes = css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+      if (hexes.length <= (rule.threshold ?? 12)) return null;
+      return { count: hexes.length, snippet: hexes.slice(0, 6).join(' ') };
+    }
+    case 'countLiteralOutsideStyle': {
+      const stripped = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+      const n = stripped.split(rule.value).length - 1;
+      if (n <= (rule.threshold ?? 6)) return null;
+      return { count: n, snippet: rule.value };
+    }
+    default:
+      return null;
+  }
+}
+
+function fill(template, hit) {
+  return String(template ?? '')
+    .replaceAll('{match}', hit.match ?? '')
+    .replaceAll('{count}', String(hit.count ?? ''));
+}
+
+function evaluateSlopRules(rawContent) {
+  const html = stripComments(rawContent);
+  const findings = [];
+  for (const rule of slopRules.rules ?? []) {
+    if ((rule.suppressedBy ?? []).some((id) => findings.some((f) => f.id === id))) continue;
+    const hit = evaluateRule(rule, html);
+    if (!hit) continue;
+    findings.push({
+      id: rule.id,
+      severity: rule.severity ?? 'P2',
+      message: fill(rule.message, hit),
+      fix: fill(rule.fix, hit),
+      snippet: hit.snippet ?? ''
+    });
+  }
+  const order = { P0: 0, P1: 1, P2: 2 };
+  return findings.sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
+}
+
+function formatFinding(f) {
+  const parts = [`[${f.severity}] ${f.id} — ${f.message}`];
+  if (f.fix) parts.push(`→ ${f.fix}`);
+  return parts.join(' ');
 }
 
 function checkProfileGates(content, profile) {
@@ -235,8 +391,12 @@ if (fs.existsSync(gatesPath)) {
 const explicitProfileName = args.skill ? gates.skills?.[args.skill] : '';
 const explicitProfile = explicitProfileName ? (gates.profiles?.[explicitProfileName] ?? null) : null;
 
-// gates.exempt maps a repo-relative HTML path to { checks: [...], reason }.
-// Every entry is a documented decision, not a mute button.
+// gates.exempt maps a repo-relative HTML path to
+//   { checks: [...], rules: [...], reason }.
+// `checks` matches the message text of a structural check (the original
+// mechanism). `rules` names anti-slop RULE IDS, so an exemption says which rule
+// it silences rather than pattern-matching prose — the granularity the rule
+// table makes possible. Every entry is a documented decision, not a mute button.
 const exemptions = gates.exempt ?? {};
 
 /**
@@ -291,9 +451,22 @@ for (const file of files) {
   const gateRel = path.relative(root, file).split(path.sep).join('/');
   const exempt = exemptions[gateRel];
   const exemptChecks = exempt?.checks ?? [];
+  const exemptRules = exempt?.rules ?? [];
+
+  // P0 joins the structural failures; P1/P2 are advisories.
+  const slop = evaluateSlopRules(content);
+  const slopFailures = [];
+  const slopAdvisories = [];
+  for (const f of slop) {
+    if (exemptRules.includes(f.id)) {
+      exemptedChecks += 1;
+      continue;
+    }
+    (f.severity === 'P0' ? slopFailures : slopAdvisories).push(formatFinding(f));
+  }
 
   const kept = [];
-  for (const f of [...generic.failures, ...prof.failures]) {
+  for (const f of [...generic.failures, ...prof.failures, ...slopFailures]) {
     const matched = exemptChecks.find((c) => f.startsWith(c) || f.includes(c));
     if (matched) {
       exemptedChecks += 1;
@@ -303,7 +476,7 @@ for (const file of files) {
   }
 
   const failures = kept;
-  const warnings = [...generic.warnings, ...prof.warnings];
+  const warnings = [...slopAdvisories, ...generic.warnings, ...prof.warnings];
 
   if (failures.length > 0) {
     failedFiles += 1;

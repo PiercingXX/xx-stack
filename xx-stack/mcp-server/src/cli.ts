@@ -36,6 +36,7 @@ import type { RouteRecommendation } from "./platform_types.js";
 import { loadRegistry } from "./platform_runtime.js";
 import { routeTask } from "./routing_runtime.js";
 import { StoreAccessError } from "./supervisor_store_runtime.js";
+import { narrowTaskStoreToReady } from "./task_graph_runtime.js";
 import { filterTasks, type TaskListFilters, type TaskListResult } from "./task_list_runtime.js";
 import {
   readTaskStore,
@@ -101,6 +102,7 @@ export type ParsedCommand =
       tag?: string;
       owner?: string;
       includeCompleted: boolean;
+      readyOnly: boolean;
       limit?: number;
     }
   | {
@@ -132,6 +134,7 @@ const TASKS_LIST_OPTIONS = {
   tag: { type: "string" as const },
   owner: { type: "string" as const },
   "include-completed": { type: "boolean" as const, default: false },
+  "ready-only": { type: "boolean" as const, default: false },
   limit: { type: "string" as const },
 };
 
@@ -257,6 +260,7 @@ export function parseCliArgs(argv: string[]): ParsedCommand {
         tag: typeof values.tag === "string" ? values.tag : undefined,
         owner: typeof values.owner === "string" ? values.owner : undefined,
         includeCompleted: values["include-completed"] === true,
+        readyOnly: values["ready-only"] === true,
         limit,
       };
     }
@@ -392,6 +396,9 @@ const COMMAND_HELP: Record<string, string> = {
     "  --tag <tag>            Filter by tag (case-insensitive)",
     "  --owner <owner>        Filter by owner (case-insensitive)",
     "  --include-completed    Include done and canceled tasks",
+    "  --ready-only           Only tasks that can start now: every blockedBy",
+    "                         entry is already terminal. A view, not a runner —",
+    "                         xx-stack returns the schedule, it never runs it.",
     "  --limit <n>            Maximum tasks to return (1-500, default 100)",
     "  --json                 Emit { total, returned, tasks } as JSON",
   ].join("\n"),
@@ -569,10 +576,15 @@ export async function runCli(
           includeCompleted: parsed.includeCompleted,
           limit: parsed.limit,
         };
-        // Same lock + read path the task_list MCP tool uses.
-        const result = await withTaskStoreLock(async () =>
-          filterTasks(await readTaskStore(), filters)
-        );
+        const readyOnly = parsed.readyOnly;
+        // Same lock + read path the task_list MCP tool uses, and the same two
+        // shared runtime functions in the same order — narrowTaskStoreToReady
+        // then filterTasks. MCP-DUP-3: the readiness rule is imported, never
+        // re-expressed here.
+        const result = await withTaskStoreLock(async () => {
+          const store = await readTaskStore();
+          return filterTasks(readyOnly ? narrowTaskStoreToReady(store) : store, filters);
+        });
         if (parsed.json) emitJson(out, result);
         else {
           err.write(`xx: ${result.total} task(s), showing ${result.returned}\n`);

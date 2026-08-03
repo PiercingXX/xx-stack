@@ -130,6 +130,14 @@
     "packs/design/workflow-skills/guizang-ppt/assets/template.html": {
       "checks": ["External script detected"],
       "reason": "Vendored upstream template; its icon set is lucide, loaded from unpkg. Inlining the UMD bundle would fork the template from upstream for no user-visible gain. Generated decks should inline or drop it."
+    },
+    "packs/design/workflow-skills/critique/example.html": {
+      "rules": ["filler-copy"],
+      "reason": "The critique artifact is a design REVIEW: its prose names design problems found in the thing under review. The phrase 'the placeholder text inside is centered' is a review finding about someone else's slide, not filler shipped by this artifact. The rule is correct and stays P0 everywhere else; this surface is the one place where naming the anti-pattern is the content."
+    },
+    "packs/design/workflow-skills/critique/assets/template.html": {
+      "rules": ["filler-copy"],
+      "reason": "Same file body as critique/example.html, same reason: the seed template carries the worked review example whose prose quotes a 'placeholder text' finding."
     }
   }
 }

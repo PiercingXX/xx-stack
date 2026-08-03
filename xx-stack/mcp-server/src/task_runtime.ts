@@ -42,6 +42,26 @@ export const ANTI_REWARD_HACKING_CLAUSE =
   "do not delete, skip, weaken, or narrow tests to make the goal pass";
 
 /**
+ * The inverse clause, and it is not symmetric decoration.
+ *
+ * ANTI_REWARD_HACKING_CLAUSE guards one direction only: degrading the verifier
+ * so a goal passes. The opposite failure is manufacturing work so a run looks
+ * productive, and this stack has a mechanism that actively pressures an agent
+ * into it. A prospecting task ("find dead code", "find performance wins")
+ * whose honest answer is "nothing worth changing" has an unmet stopCondition
+ * BY CONSTRUCTION — so `_Stop` objects at every end-turn until the caller's
+ * rejection budget is spent, and the cheapest way for the agent to silence the
+ * objection is to invent a diff.
+ *
+ * Stating that a null result is a valid completion is what makes the honest
+ * answer available. It is carried beside the clause above wherever contracts
+ * render, so both directions arrive together.
+ */
+export const NULL_RESULT_VALID_CLAUSE =
+  "a null result is a valid completion — do not manufacture a change to look productive; " +
+  "finding nothing worth changing is a real answer when the evidence shows you looked";
+
+/**
  * Five-part goal contract for supervised autonomous tasks (UPSTREAM-BORROW task 21).
  * Optional metadata on task registration; when present, the supervisor
  * completion path cites the stop condition and — if validationCmd is set —
@@ -91,11 +111,43 @@ export function sanitizeGoalContract(contract: GoalContract | undefined): GoalCo
   };
 }
 
+/**
+ * A verify_edit result reported against a goal contract's validationCmd.
+ * Mirrors `CmdResult`'s classification from verify_edit_tools.ts; kept
+ * structural rather than imported so the task store does not depend on a tool
+ * module.
+ */
+export interface ValidationAttempt {
+  /** The command as it was run, matched against the contract's validationCmd. */
+  command: string;
+  outcome: "pass" | "fail" | "could_not_run" | "denied";
+  /** e.g. command_not_found, deps_not_installed, bad_cwd, timeout. */
+  reasonCode?: string;
+  /** One sentence naming the fix, carried straight into the prompt. */
+  remediation?: string;
+}
+
 export interface GoalContractCompletionCheck {
   ok: boolean;
-  reasonCode: "goal_contract_ready" | "goal_contract_validation_evidence_missing";
+  reasonCode:
+    | "goal_contract_ready"
+    | "goal_contract_validation_evidence_missing"
+    /**
+     * The lane could not execute the validation at all. NOT a code failure and
+     * NOT a pass — a third answer, so the continuation prompt can say
+     * "validation could not execute on this lane" instead of "tests are
+     * failing" and send the agent to fix code that is fine.
+     */
+    | "goal_contract_validation_could_not_run";
   stopConditionCitation: string;
   expectedValidationCmd?: string;
+  /** Present only for `goal_contract_validation_could_not_run`. */
+  validationBlocker?: { reasonCode: string; remediation?: string };
+}
+
+/** Did this attempt run the contract's validation command? */
+function attemptMatchesValidationCmd(attempt: ValidationAttempt, validationCmd: string): boolean {
+  return attempt.command.includes(validationCmd) || validationCmd.includes(attempt.command);
 }
 
 /**
@@ -103,13 +155,37 @@ export interface GoalContractCompletionCheck {
  * Always cites the stop condition; when validationCmd is present, the
  * completion evidence summary must reference that exact command (i.e. a
  * verify_edit result for it was recorded).
+ *
+ * `validationAttempts` is optional and additive. When one of them reports that
+ * the contract's validationCmd `could_not_run`, that takes priority over the
+ * evidence check: an agent may well have recorded an evidence summary quoting
+ * the command, and "the command never executed here" must not be allowed to
+ * satisfy a stop condition just because its name appears in a string.
  */
 export function evaluateGoalContractCompletion(
   contract: GoalContract,
-  completionEvidenceSummary: string | undefined
+  completionEvidenceSummary: string | undefined,
+  validationAttempts?: ValidationAttempt[]
 ): GoalContractCompletionCheck {
   const stopConditionCitation = `stop-condition: ${contract.stopCondition}`;
   if (contract.validationCmd) {
+    const blocked = validationAttempts?.find(
+      (attempt) =>
+        attempt.outcome === "could_not_run" &&
+        attemptMatchesValidationCmd(attempt, contract.validationCmd!)
+    );
+    if (blocked) {
+      return {
+        ok: false,
+        reasonCode: "goal_contract_validation_could_not_run",
+        stopConditionCitation,
+        expectedValidationCmd: contract.validationCmd,
+        validationBlocker: {
+          reasonCode: blocked.reasonCode ?? "could_not_run",
+          ...(blocked.remediation !== undefined ? { remediation: blocked.remediation } : {}),
+        },
+      };
+    }
     const evidence = completionEvidenceSummary ?? "";
     if (!evidence.includes(contract.validationCmd)) {
       return {
@@ -359,6 +435,7 @@ export function buildResumeDirective(
       lines.push(`  - docs-note: ${contract.docsNote}`);
     }
     lines.push(`  - anti-reward-hacking: ${ANTI_REWARD_HACKING_CLAUSE}`);
+    lines.push(`  - null-result: ${NULL_RESULT_VALID_CLAUSE}`);
   }
   if (task.lease) {
     lines.push("- lease:");

@@ -508,3 +508,197 @@ test("findMalformedSessions and pruningRemovedEntries report exactly what change
   assert.equal(pruningRemovedEntries(store, pruned), true);
   assert.equal(pruningRemovedEntries(store, store), false);
 });
+
+// --- "could not run" is not "failed" (goal-contract gate) -------------------
+//
+// xx-stack dispatches to heterogeneous machines: the lane that got the task is
+// exactly the one most likely to be missing the toolchain. When a goal
+// contract's validationCmd could not EXECUTE here, reading that as a failing
+// validation tells the agent to fix code that is fine, spends the failure
+// budget on a misdiagnosis, and can walk the session to `force_synthesized`
+// over an environment problem.
+
+const VALIDATION_CMD = "npm test -- --filter loader";
+
+function contractTask(overrides: Partial<PersistentTask> = {}): PersistentTask {
+  return {
+    taskId: "tsk-contract",
+    title: "loader migration",
+    status: "in_progress",
+    sessionId: "sx-test",
+    goalContract: {
+      objective: "Migrate the config loader",
+      constraints: ["do not delete, skip, weaken, or narrow tests"],
+      validationCmd: VALIDATION_CMD,
+      stopCondition: "the loader suite passes",
+    },
+    tags: [],
+    blockedBy: [],
+    createdAt: "2026-08-02T00:00:00.000Z",
+    updatedAt: "2026-08-02T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** A session that clears every completion gate ahead of the contract check. */
+function completionReadySession(): SupervisorSessionState {
+  const now = Date.now();
+  return makeSession({
+    lastOutputAt: now - 1_000,
+    completionEvidenceAt: now - 500,
+    completionEvidenceSummary: `verify_edit result for ${VALIDATION_CMD}: recorded`,
+    completionJudgeAt: now - 100,
+    completionJudgeVerdict: "pass",
+  });
+}
+
+test("a validationCmd that could not run blocks completion as an environment problem, not a code failure", async () => {
+  await withTempHome(async () => {
+    const { handlers } = captureTools();
+    await seedSession(completionReadySession());
+
+    const taskStore = emptyTaskStore();
+    const task = contractTask();
+    taskStore.tasks[task.taskId] = task;
+    await writeTaskStore(taskStore);
+
+    const blocked = await call(handlers.supervisor_complete_session!, {
+      sessionId: "sx-test",
+      outcome: "completed",
+      validationAttempts: [
+        {
+          command: VALIDATION_CMD,
+          outcome: "could_not_run",
+          reasonCode: "deps_not_installed",
+          remediation: "/repo has a package.json but no node_modules — run the install step.",
+        },
+      ],
+    });
+
+    // Neither a pass nor a code failure: a distinct blocker.
+    assert.equal(blocked.status, "running", "an unrun validation never satisfies a stop condition");
+    assert.equal(blocked.reasonCode, "validation_could_not_run");
+    assert.notEqual(
+      blocked.reasonCode,
+      "goal_contract_validation_evidence_missing",
+      "the evidence summary quoted the command; without the outcome this looked ready"
+    );
+    assert.equal(blocked.validationBlockers.length, 1);
+    assert.equal(blocked.validationBlockers[0].reasonCode, "deps_not_installed");
+    assert.ok(blocked.validationBlockers[0].remediation.includes("node_modules"));
+    assert.ok(
+      blocked.continuationDirective.includes("Validation could not execute on this lane"),
+      "the directive must name the environment, not the code"
+    );
+    assert.ok(
+      !/tests? (are |is )?failing/i.test(JSON.stringify(blocked)),
+      "nothing in the response may claim the tests failed"
+    );
+
+    const persisted = await readSupervisorStore();
+    const state = persisted.sessions["sx-test"]!;
+
+    // The code-failure budget is untouched: no failure counted, and nothing
+    // recorded on the `completion.validation_failed` channel.
+    assert.equal(state.failureCount, 0, "an environment problem is not a code failure");
+    assert.equal(state.lastFailureAt, undefined);
+    assert.deepEqual(
+      state.events.filter((event) => event.type === "completion.validation_failed"),
+      [],
+      "a could_not_run must not accumulate on the code-failure event channel"
+    );
+    assert.equal(
+      state.events.filter((event) => event.type === "completion.validation_blocked").length,
+      1,
+      "it is recorded on its own channel instead"
+    );
+
+    // And the continuation prompt says so.
+    const continuation = await call(handlers.supervisor_emit_continuation_prompt!, {
+      sessionId: "sx-test",
+      remainingTasks: ["finish the loader migration"],
+    });
+    assert.equal(continuation.completionRecoveryReason, "validation_could_not_run");
+    assert.ok(
+      continuation.prompt.includes("Validation could not execute on this lane"),
+      "the prompt must state the environment blocker"
+    );
+    assert.ok(
+      continuation.prompt.includes("deps_not_installed"),
+      "the prompt must carry the concrete reason"
+    );
+    // The remediation checklist is the environment one, not the code-repair
+    // one — telling an agent to run the validationCmd and record its result is
+    // exactly the instruction that misdiagnoses a missing toolchain.
+    assert.ok(
+      !continuation.remediationChecklist.some((item: string) =>
+        item.startsWith("Run the goal contract's validationCmd through verify_edit")
+      ),
+      "the code-repair checklist is the wrong instruction when nothing was checked"
+    );
+    assert.ok(
+      continuation.remediationChecklist[0].startsWith("Validation could not execute on this lane"),
+      "the checklist leads with the environment blocker"
+    );
+    assert.ok(
+      continuation.prompt.includes("not a code failure"),
+      "the prompt must say outright that this is not a code failure"
+    );
+  });
+});
+
+test("a validationCmd that ran and failed still takes the ordinary code-failure path", async () => {
+  await withTempHome(async () => {
+    const { handlers } = captureTools();
+    // Evidence that does NOT cite the command: the historical missing-evidence
+    // branch must be untouched by the new classification.
+    const session = completionReadySession();
+    session.completionEvidenceSummary = "ran the linter, all clean";
+    await seedSession(session);
+
+    const taskStore = emptyTaskStore();
+    const task = contractTask();
+    taskStore.tasks[task.taskId] = task;
+    await writeTaskStore(taskStore);
+
+    const failed = await call(handlers.supervisor_complete_session!, {
+      sessionId: "sx-test",
+      outcome: "completed",
+      validationAttempts: [{ command: VALIDATION_CMD, outcome: "fail" }],
+    });
+
+    assert.equal(failed.reasonCode, "goal_contract_validation_evidence_missing");
+    const persisted = await readSupervisorStore();
+    assert.equal(
+      persisted.sessions["sx-test"]!.events.filter(
+        (event) => event.type === "completion.validation_failed"
+      ).length,
+      1,
+      "a genuine code failure still lands on the code-failure channel"
+    );
+  });
+});
+
+test("with no validationAttempts the goal-contract gate behaves exactly as before", async () => {
+  await withTempHome(async () => {
+    const { handlers } = captureTools();
+    await seedSession(completionReadySession());
+
+    const taskStore = emptyTaskStore();
+    const task = contractTask();
+    taskStore.tasks[task.taskId] = task;
+    await writeTaskStore(taskStore);
+
+    const completed = await call(handlers.supervisor_complete_session!, {
+      sessionId: "sx-test",
+      outcome: "completed",
+    });
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.reasonCode, "session_finalized");
+    assert.equal(completed.goalContractCitations.length, 1);
+    assert.equal(
+      completed.goalContractCitations[0].stopConditionCitation,
+      "stop-condition: the loader suite passes"
+    );
+  });
+});

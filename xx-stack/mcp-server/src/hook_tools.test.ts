@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   buildPostCompactState,
   buildStopObjections,
+  buildStopReport,
   hookToolsEnabled,
   registerHookTools,
   registerHookToolsIfEnabled,
@@ -592,4 +593,116 @@ test("_Stop passes ensureFiles:false for every guarded session it checks", async
   // Bounded by MAX_MEMORY_DRIFT_CHECKS, and every one of them read-only.
   assert.equal(seen.length, 3);
   assert.deepEqual(seen, [false, false, false]);
+});
+
+// ---------------------------------------------------------------------------
+// BORROW A — `_Stop` objects only on READY work
+// ---------------------------------------------------------------------------
+
+/** Render `_Stop` the way the registered handler does: objections + context. */
+async function runStopFull(deps: HookToolDeps, scope: HookScope = {}): Promise<string> {
+  const report = await buildStopReport(deps, scope);
+  return renderStopObjection(report.objections, scope, report.blockedContext);
+}
+
+test("_Stop raises no objection when the only open task cannot be started", async () => {
+  // `_Stop` used to object on every non-terminal task, including ones whose
+  // blockers were still open. MANUAL §5 requires an objection the agent can
+  // act on in one round; blocked work is not one, so the loop just burned the
+  // caller's rejection budget.
+  const deps = makeDeps({
+    tasks: [
+      makeTask({ taskId: "tsk-blocked", blockedBy: ["tsk-upstream"], status: "blocked" }),
+      makeTask({ taskId: "tsk-upstream", status: "in_progress", sessionId: "sx-other" }),
+    ],
+  });
+  // Scope to the blocked task's session-less owner view: only the blocked task
+  // is in scope, and its blocker is open.
+  const scoped = makeDeps({
+    tasks: [
+      makeTask({
+        taskId: "tsk-blocked",
+        blockedBy: ["tsk-upstream"],
+        status: "blocked",
+        owner: "a",
+      }),
+      makeTask({ taskId: "tsk-upstream", status: "in_progress", owner: "b" }),
+    ],
+  });
+  assert.equal(await runStopFull(scoped, { agentId: "a" }), "");
+
+  // Fleet-wide the upstream task is itself open and ready, so it — and only
+  // it — is the objection.
+  const text = await runStopFull(deps);
+  assert.ok(text.includes("tsk-upstream"), text);
+  assert.ok(!text.split("context only")[0]!.includes("tsk-blocked"), text);
+});
+
+test("_Stop names blocked work as context beneath a real objection, never as the objection", async () => {
+  const deps = makeDeps({
+    tasks: [
+      makeTask({ taskId: "tsk-ready", status: "todo", title: "startable now" }),
+      makeTask({ taskId: "tsk-waiting", status: "todo", blockedBy: ["tsk-ready"] }),
+    ],
+  });
+  const report = await buildStopReport(deps, {});
+  assert.deepEqual(
+    report.objections.map((line) => line.split(" ")[1]),
+    ["tsk-ready"],
+    "only the startable task is an objection"
+  );
+  assert.equal(report.blockedContext.length, 1);
+  assert.ok(report.blockedContext[0]!.includes("tsk-waiting"));
+  assert.ok(report.blockedContext[0]!.includes("tsk-ready"), "the open blocker is named");
+
+  const text = renderStopObjection(report.objections, {}, report.blockedContext);
+  const [objectionHalf, contextHalf] = text.split("- context only");
+  assert.ok(objectionHalf!.includes("tsk-ready"));
+  assert.ok(!objectionHalf!.includes("tsk-waiting"));
+  assert.ok(contextHalf!.includes("tsk-waiting"));
+});
+
+test("_Stop treats a terminal blocker as satisfied, so the dependent objects normally", async () => {
+  for (const status of ["done", "canceled", "force_synthesized"] as const) {
+    const deps = makeDeps({
+      tasks: [
+        makeTask({ taskId: "tsk-blocker", status }),
+        makeTask({ taskId: "tsk-next", status: "todo", blockedBy: ["tsk-blocker"] }),
+      ],
+    });
+    const report = await buildStopReport(deps, {});
+    assert.deepEqual(report.blockedContext, [], `${status} must satisfy the edge`);
+    assert.ok(
+      report.objections.some((line) => line.includes("tsk-next")),
+      status
+    );
+  }
+});
+
+test("_Stop treats a blocker that names no task as unsatisfiable, not as satisfied", async () => {
+  const deps = makeDeps({
+    tasks: [makeTask({ taskId: "tsk-orphan", status: "todo", blockedBy: ["tsk-typo"] })],
+  });
+  const report = await buildStopReport(deps, {});
+  assert.deepEqual(report.objections, [], "a task nothing can unblock is not actionable");
+  assert.equal(report.blockedContext.length, 1);
+  assert.ok(report.blockedContext[0]!.includes("tsk-typo"));
+  // Nothing to object to means the agent is allowed to stop.
+  assert.equal(await runStopFull(deps), "");
+});
+
+test("_Stop blocked context is bounded and never phrased as an operator instruction", async () => {
+  const tasks = [makeTask({ taskId: "tsk-ready", status: "todo" })];
+  for (let index = 0; index < 6; index += 1) {
+    tasks.push(
+      makeTask({ taskId: `tsk-b${index}`, status: "todo", blockedBy: ["tsk-still-running"] })
+    );
+  }
+  tasks.push(makeTask({ taskId: "tsk-still-running", status: "in_progress" }));
+  const text = await runStopFull(makeDeps({ tasks }));
+  const contextHalf = text.split("- context only")[1]!;
+  assert.ok(contextHalf.includes("more blocked items not shown"), contextHalf);
+  for (const imperative of ["you must", "You must", "do not stop", "continue working"]) {
+    assert.ok(!text.includes(imperative), `hook output must not instruct: ${imperative}`);
+  }
 });

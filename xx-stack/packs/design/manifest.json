@@ -49,6 +49,36 @@
       "scopeNote": "runtime/agents/design-engineer.md names this repo as a source for the whole design pack. The audit found exactly one file that actually comes from it (design-systems/bmw-m/DESIGN.md). The agent frontmatter overstates this upstream's contribution."
     },
     {
+      "id": "stitch-skills",
+      "repo": "https://github.com/google-labs-code/stitch-skills",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/google-labs-code-stitch-skills-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a filtered clone on 2026-08-03 and copied verbatim (blob b31ddffd7a087dcdf4d780019f9b6b8c6db7f7b1, byte-identical). Shipped as a separate file from licenses/nexu-io-open-design-Apache-2.0.txt even though both are Apache-2.0: the two renderings differ in line-wrapping, in the §4 and §9 heading wording, and in the appendix copyright line, so neither was assumed to stand in for the other.",
+      "headAtAudit": "535b0889a46868c9b08f8a7f7084db3c1958a2b6",
+      "headAtAuditDate": "2026-07-30T10:07:48-07:00",
+      "vendoredAtCommit": null,
+      "nullReason": "No file from this upstream is redistributed here. It contributes rule VALUES only, to craft/anti-ai-slop-rules.json, from plugins/stitch-utilities/skills/taste-design/SKILL.md.",
+      "supplies": "Seven of the 18 rules in craft/anti-ai-slop-rules.json, each tagged `source: stitch-skills`, plus three extra invented-metric phrasings folded into open-design's rule (the 18th, tagged `open-design + stitch-skills`). Eight further rules of its own were explicitly refused; see that file's `notAdopted` list, which records the reason for each.",
+      "selfContainedNote": "The skill's design guidance needs no hosted service. It lists Google Stitch and an optional Stitch MCP server under Prerequisites for its own generate-a-DESIGN.md workflow; none of the rules taken depend on either, and that workflow was not taken.",
+      "conflictNote": "This upstream and open-design disagree on one point and the disagreement is recorded rather than smoothed over: stitch-skills recommends picsum.photos as a placeholder image host, open-design bans it. open-design's position holds here, because this pack's artifacts are self-contained single files and any runtime host fetch is what the gate exists to catch."
+    },
+    {
+      "id": "refero_skill",
+      "repo": "https://github.com/referodesign/refero_skill",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 Refero",
+      "licenseFile": "licenses/referodesign-refero_skill-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a filtered clone on 2026-08-03 and copied verbatim to licenses/referodesign-refero_skill-MIT.txt (blob 2c7d699d6123a4dc9ea5ec7dfbc2939963e6ef01, byte-identical). NOTE: nexu-io/open-design attributes craft/ to '© Refero Design'; the LICENSE file itself says 'Copyright (c) 2026 Refero'. The shorter form is what the license text actually holds and is what is recorded here.",
+      "headAtAudit": "f78b4ec (2026-06-10T15:17:40+02:00)",
+      "vendoredAtCommit": null,
+      "nullReason": "Nothing in this pack is vendored from refero_skill directly. It reaches us only as the second hop of a chain: nexu-io/open-design authored craft/ as an adaptation of refero_skill's references/, and we vendor open-design's files. No refero_skill file is redistributed here.",
+      "reachesUsVia": "open-design",
+      "relationshipEvidence": "Verified, not taken on trust. (1) craft/README.md § Attribution states the adaptation and names the repo and license. (2) Three craft files — typography.md, color.md, anti-ai-slop.md — carry an inline '> Adapted from [refero_skill] (MIT)' blockquote. (3) refero_skill ships references/{typography,color,anti-ai-slop,motion,icons,copywriting,craft-details}.md, the same subject axis, at the same paths-by-topic. (4) Diffing refero's references/{anti-ai-slop,color,typography}.md against open-design's craft/ counterparts shows a heavy rewrite and condensation (378, 649, 827 diff lines respectively), not a copy — open-design's own copyright in the derived text is substantial. The chain is real; the bytes we hold are open-design's.",
+      "scopeNote": "The other eight craft rulebooks (typography-hierarchy, typography-hierarchy-editorial, state-coverage, animation-discipline, accessibility-baseline, rtl-and-bidi, form-validation, laws-of-ux) carry NO refero attribution, inline or in the README's file table, and postdate the three that do. They read as open-design's own work under Apache-2.0. The README's blanket 'craft content is adapted from refero_skill' is broader than the per-file evidence supports; both licenses are shipped, so the conservative reading costs nothing."
+    },
+    {
       "id": "guizang",
       "repo": null,
       "license": "MIT",
@@ -221,6 +251,77 @@
       ]
     },
     {
+      "path": "craft/",
+      "contents": "11 brand-agnostic craft rulebooks + upstream's README.md and FUTURE_SECTIONS.md, vendored byte-for-byte; plus two files authored here (XX-STACK-NOTES.md, anti-ai-slop-rules.json)",
+      "provenance": "verified",
+      "nature": "vendored verbatim, zero local edits to any vendored file",
+      "primarySource": "open-design",
+      "license": "Apache-2.0 (nexu-io/open-design), over a two-hop chain from referodesign/refero_skill (MIT)",
+      "axis": "A fourth content axis for this pack, and the one genuinely new KIND of content. design-systems/ says what a brand looks like; design-skills/ supplies aesthetic direction; workflow-skills/ says how to build one artifact type; craft/ supplies the universal rules that hold regardless of brand (ALL CAPS needs >=0.06em tracking; cap visible accent uses at ~2 per screen; every stateful surface needs empty/loading/error/partial states).",
+      "detail": {
+        "upstreamPath": "nexu-io/open-design craft/",
+        "vendoredAtCommit": "dceac12f70df2b9eb0fae9c90aff1fe75da309c0",
+        "vendoredAtCommitDate": "2026-08-03T03:12:16Z",
+        "vendoredOn": "2026-08-03",
+        "method": "--filter=blob:none clone, `git archive HEAD craft`, then `git hash-object` on every landed file compared against `git rev-parse HEAD:craft/<file>`. All 13 vendored files verified byte-identical.",
+        "byteIdenticalToUpstreamHead": 13,
+        "locallyModified": 0,
+        "apacheSection4bModifiedSet": [],
+        "totalBytes": 108643,
+        "tokenEstimateMethod": "bytes/4 rounded, same convention as packs/rules/manifest.json",
+        "files": [
+          { "file": "typography.md", "slug": "typography", "bytes": 3067, "tokensEstimated": 767, "vendored": true, "reforoAttributedInline": true },
+          { "file": "typography-hierarchy.md", "slug": "typography-hierarchy", "bytes": 7414, "tokensEstimated": 1854, "vendored": true },
+          { "file": "typography-hierarchy-editorial.md", "slug": "typography-hierarchy-editorial", "bytes": 8748, "tokensEstimated": 2187, "vendored": true },
+          { "file": "color.md", "slug": "color", "bytes": 3118, "tokensEstimated": 780, "vendored": true, "reforoAttributedInline": true },
+          { "file": "anti-ai-slop.md", "slug": "anti-ai-slop", "bytes": 3919, "tokensEstimated": 980, "vendored": true, "reforoAttributedInline": true },
+          { "file": "state-coverage.md", "slug": "state-coverage", "bytes": 7084, "tokensEstimated": 1771, "vendored": true },
+          { "file": "animation-discipline.md", "slug": "animation-discipline", "bytes": 9114, "tokensEstimated": 2279, "vendored": true },
+          { "file": "accessibility-baseline.md", "slug": "accessibility-baseline", "bytes": 12894, "tokensEstimated": 3224, "vendored": true },
+          { "file": "rtl-and-bidi.md", "slug": "rtl-and-bidi", "bytes": 12159, "tokensEstimated": 3040, "vendored": true },
+          { "file": "form-validation.md", "slug": "form-validation", "bytes": 17186, "tokensEstimated": 4297, "vendored": true },
+          { "file": "laws-of-ux.md", "slug": "laws-of-ux", "bytes": 17339, "tokensEstimated": 4335, "vendored": true },
+          { "file": "README.md", "slug": null, "bytes": 6310, "tokensEstimated": 1578, "vendored": true },
+          { "file": "FUTURE_SECTIONS.md", "slug": null, "bytes": 291, "tokensEstimated": 73, "vendored": true },
+          { "file": "XX-STACK-NOTES.md", "slug": null, "bytes": 4777, "tokensEstimated": 1194, "vendored": false, "license": "MIT (repo root LICENSE)" },
+          { "file": "anti-ai-slop-rules.json", "slug": null, "bytes": 22695, "tokensEstimated": 5674, "vendored": false, "license": "MIT structure; rule VALUES from two Apache-2.0 upstreams (nexu-io/open-design and google-labs-code/stitch-skills) — see its own `attribution` block, and every rule's `source` field" }
+        ],
+        "whyReadmeWasNotRewritten": "Task 30 proposed rewriting upstream's README for our paths. It was vendored unmodified instead: byte-comparability against upstream is the reason packs/ is .prettierignore'd, and editing the one file that documents the axis would forfeit it for the file most likely to drift. The corrections a reader needs — `pnpm lint:craft` is `scripts/check-craft-references.mjs` here, there is no daemon prompt-composer, `data-od-id` is an upstream desktop-app concern — are in craft/XX-STACK-NOTES.md, which is clearly ours.",
+        "optIn": {
+          "mechanism": "od.craft.requires in each workflow skill's SKILL.md frontmatter — upstream's own convention, inside the `od:` namespace block our 31 SKILL.md files already carry.",
+          "conventionEvidence": "Not invented here. workflow-skills/saas-landing/SKILL.md already shipped `craft: requires: [typography, color, anti-ai-slop]` — the May-era upstream binding, carried in when the pack was vendored. This audit's earlier finding that blog-post 'drops upstream's craft.requires list' is the same signal from the other direction.",
+          "boundSkills": 12,
+          "unboundSkills": 19,
+          "bindings": {
+            "blog-post": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
+            "dashboard": ["state-coverage", "accessibility-baseline", "laws-of-ux"],
+            "digital-eguide": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
+            "docs-page": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
+            "finance-report": ["rtl-and-bidi"],
+            "gamified-app": ["state-coverage", "animation-discipline"],
+            "hr-onboarding": ["accessibility-baseline"],
+            "kanban-board": ["state-coverage", "laws-of-ux"],
+            "mobile-app": ["state-coverage", "animation-discipline"],
+            "mobile-onboarding": ["state-coverage", "animation-discipline", "accessibility-baseline", "form-validation", "laws-of-ux"],
+            "pricing-page": ["laws-of-ux"],
+            "saas-landing": ["typography", "color", "anti-ai-slop", "laws-of-ux"]
+          },
+          "bindingProvenance": "Every binding above is upstream's at dceac12, for the same slug, transcribed unchanged. saas-landing's pre-existing list gained `laws-of-ux` to match. The 19 unbound skills have no upstream binding and were left unbound rather than guessed — absence is a decision here, the way packs/rules/coverage.json records explicit empty entries. Note these bindings are resolved against SKILL.md bodies roughly three months behind upstream; taking the binding line without the rest of the drift is deliberate.",
+          "resolution": "Selection is a budget decision against the target lane's context window, surfaced in the agent's reasoning. Nothing in the MCP server injects craft sections — the same position packs/rules takes with nano/mini/full.",
+          "check": "scripts/check-craft-references.mjs asserts every slug named by an od.craft.requires resolves to craft/<slug>.md or appears in craft/FUTURE_SECTIONS.md. Upstream's contract, reimplemented (their `pnpm lint:craft` assumes a pnpm monorepo). NOT yet wired into `npm run verify` — that needs a package.json edit outside this change's scope."
+        },
+        "shelfWare": "None. All 11 shipped sections are required by at least one skill, including laws-of-ux (5 skills) and form-validation (1), which Task 30 flagged as candidates to skip if unrequired."
+      },
+      "honestyNote": "craft/ is not entirely new since we vendored. Three rulebooks (typography, color, anti-ai-slop) plus README.md landed upstream in 1edab99 on 2026-05-02T11:00+08:00 — about twelve hours BEFORE our vendoring window (9ee2c19 .. 483e00d) opened. They were available and we simply did not take them. The other eight landed 2026-05-05 through 2026-06-14, after the window closed, and are genuinely new: they are ~90% of the bytes. Recorded so the pack's record distinguishes what upstream added later from what we missed.",
+      "copyrightNote": "Brand-agnostic by construction — no brand names, no trademarks, no copied assets. The redistribution obligation is Apache-2.0's alone (license text shipped at licenses/nexu-io-open-design-Apache-2.0.txt); the MIT text for refero_skill is shipped as well because upstream declares the chain, even though no refero_skill file is redistributed here.",
+      "ruleTableNote": "craft/anti-ai-slop-rules.json is authored here and is the only file in this subtree that draws on a second upstream. It encodes 18 mechanically checkable rules — 10 from nexu-io/open-design, 7 from google-labs-code/stitch-skills, 1 (invented-metric) combining both — as data, with a P0/P1/P2 ladder. It carries NO upstream code: open-design's enforcement lives in apps/daemon/src/lint-artifact.ts (Apache-2.0) and porting it would have pulled Apache-2.0 code into an MIT script. Rules-as-data keeps the licence boundary exactly where the pack boundary already is, and the rule set reviewable without touching the gate. Its `notAdopted` list records 15 upstream rules that were deliberately refused, each with the reason and, where triage informed the call, the hit count over this pack's 67 HTML files.",
+      "usedBy": [
+        "scripts/quality-gate-html.mjs — reads craft/anti-ai-slop-rules.json",
+        "scripts/check-craft-references.mjs — resolves od.craft.requires slugs",
+        "scripts/test-anti-slop-rules.mjs — fixture coverage for the rule table"
+      ]
+    },
+    {
       "path": "evals/",
       "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures",
       "provenance": "verified",
@@ -233,13 +334,15 @@
     },
     {
       "path": "scripts/",
-      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs",
+      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs",
       "provenance": "verified",
       "nature": "authored in this repository",
       "primarySource": null,
       "license": "MIT (repo root LICENSE)",
       "detail": {
-        "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream."
+        "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream.",
+        "licenceBoundary": "quality-gate-html.mjs evaluates the anti-slop rules but holds none of their values — those live in craft/anti-ai-slop-rules.json, which is data derived from two Apache-2.0 upstreams. The engine's rule KINDS (gradientContainsAny, literalAny, emojiInElement, regexAny, countHexOutsideRoot, countLiteralOutsideStyle, …) were written here; no upstream code was transliterated. That is what keeps the script MIT.",
+        "notWiredIntoVerify": "check-craft-references.mjs and test-anti-slop-rules.mjs both run clean and exit non-zero on failure, but neither is in `npm run verify` — adding them needs a package.json edit outside the scope of the change that introduced them. A human should wire them, or decide not to."
       }
     },
     {

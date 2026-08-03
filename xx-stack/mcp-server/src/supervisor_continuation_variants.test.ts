@@ -8,6 +8,8 @@ import {
   buildHandoffSections,
   buildLeaseFenceSections,
   buildRevokedClaimSections,
+  isDotenvPath,
+  redactDotenvAssignments,
   redactSecrets,
   VERIFY_DONT_TRUST_PREAMBLE,
   type HandoffInput,
@@ -403,4 +405,137 @@ test("redactSecrets scrubs auth-scheme tokens that the assignment pass would str
   // where the secret lives without carrying its value.
   const location = "token lives in ~/.hermes/config.yaml";
   assert.equal(redactSecrets(location), location);
+});
+
+// --- Redaction by file shape (dotenv) --------------------------------------
+//
+// The value-pattern and key-name passes are unbounded-by-construction. These
+// three lines survived them VERBATIM and were confirmed leaking through
+// `review_to_continuation` into a continuation prompt bound for another lane.
+
+/** The exact lines confirmed leaking before the structural pass existed. */
+const CONFIRMED_LEAKS = [
+  "DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod",
+  "STRIPE_KEY=sk_live_51ABCdefGHI",
+  "SMTP_PASS=hunter2",
+];
+
+test("isDotenvPath matches dotenv basenames and nothing else", () => {
+  for (const path of [
+    ".env",
+    ".envrc",
+    ".env.production",
+    ".env.test.local",
+    "config/.env",
+    "/srv/app/.env.production",
+    "C:\\srv\\app\\.env",
+    ".ENV.Production",
+    // Suffixed dotenv names match too. Over-redacting `.env.example.md` is the
+    // safe side of the line; the file is dotenv-shaped by name.
+    "docs/.env.example.md",
+  ]) {
+    assert.equal(isDotenvPath(path), true, `${path} should be dotenv-shaped`);
+  }
+  for (const path of [
+    "src/env.ts",
+    "env",
+    ".environment",
+    ".env.production/notes.md",
+    ".envrc.bak",
+    "package.json",
+  ]) {
+    assert.equal(isDotenvPath(path), false, `${path} must not be treated as dotenv`);
+  }
+});
+
+test("redactSecrets with no path is byte-identical to the value-pattern behavior", () => {
+  // Prompt-shape tests and drift checks pin this: adding a file-shape pass must
+  // not move a single byte on the default (pathless) call.
+  const samples = [
+    CONFIRMED_LEAKS.join("\n"),
+    "export XX_TOKEN=abcd1234efgh5678",
+    "Authorization: Bearer eyJhbGciOiJI.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2QT4",
+    "token lives in ~/.hermes/config.yaml",
+    "- session: sx-001\n- continuation-attempt: 2\n",
+  ];
+  for (const sample of samples) {
+    assert.equal(
+      redactSecrets(sample),
+      redactSecrets(sample, {}),
+      "an empty opts object must behave exactly like no opts"
+    );
+    assert.equal(
+      redactSecrets(sample, { path: "src/app.ts" }),
+      redactSecrets(sample),
+      "a non-dotenv path must not engage the structural pass"
+    );
+  }
+  // And the pathless call still leaves these three alone — that is the
+  // documented, pinned behavior; the file-shape pass is what closes the hole.
+  assert.equal(redactSecrets(CONFIRMED_LEAKS.join("\n")), CONFIRMED_LEAKS.join("\n"));
+});
+
+test("redactSecrets redacts every dotenv value when the path is dotenv-shaped", () => {
+  const out = redactSecrets(CONFIRMED_LEAKS.join("\n"), { path: ".env.production" });
+  for (const secret of ["hunter2", "sk_live_51ABCdefGHI", "postgres://admin"]) {
+    assert.ok(!out.includes(secret), `secret survived redaction: ${out}`);
+  }
+  // Key names MUST survive: a handoff has to be able to say "DATABASE_URL is
+  // set in .env.production" without carrying the value.
+  for (const key of ["DATABASE_URL", "STRIPE_KEY", "SMTP_PASS"]) {
+    assert.ok(out.includes(key), `key name ${key} must survive redaction`);
+  }
+  assert.equal(out.split("\n").length, CONFIRMED_LEAKS.length, "line count must be preserved");
+});
+
+test("redactDotenvAssignments preserves keys, comments, blanks, and line count", () => {
+  const input = [
+    "# production credentials",
+    "export FOO=bar",
+    "BAR: baz",
+    'QUOTED="a b"  # note',
+    "SINGLE='it\\'s fine' # trailing",
+    "EMPTY=",
+    "BLANKISH=   ",
+    "",
+    "PLAIN=value # tail comment",
+  ].join("\n");
+  const out = redactDotenvAssignments(input);
+  const lines = out.split("\n");
+
+  assert.equal(lines.length, input.split("\n").length, "line count must be preserved");
+  assert.equal(lines[0], "# production credentials", "comment lines are untouched");
+  assert.equal(lines[1], "export FOO=[redacted-secret]", "export prefixes survive");
+  assert.equal(lines[2], "BAR: [redacted-secret]", "colon separators are handled");
+  assert.equal(lines[3], "QUOTED=[redacted-secret]  # note", "trailing comments survive");
+  assert.ok(lines[4]!.startsWith("SINGLE=[redacted-secret]"), "escaped quotes are handled");
+  assert.ok(lines[4]!.endsWith("# trailing"));
+  assert.equal(lines[5], "EMPTY=", "an already-empty value is left alone");
+  assert.equal(lines[6], "BLANKISH=   ", "a whitespace-only value is left alone");
+  assert.equal(lines[7], "", "blank lines survive");
+  assert.equal(lines[8], "PLAIN=[redacted-secret] # tail comment");
+  assert.ok(!out.includes("bar"), "no value may survive");
+  assert.ok(!out.includes("value"), "no value may survive");
+  // FOO, BAR, QUOTED, SINGLE, PLAIN — the two empty values gain no marker.
+  assert.equal(out.match(/\[redacted-secret\]/g)?.length, 5, "one marker per redacted value");
+});
+
+test("a multi-line quoted value collapses to one redaction per line", () => {
+  const input = [
+    'CERT="-----BEGIN KEY-----',
+    "MIIEowIBAAKCAQEAsecretmaterial",
+    'MIIEowIBAAKCAQEAmoresecret-----END KEY-----"  # pem',
+    "NEXT=after",
+  ].join("\n");
+  const out = redactDotenvAssignments(input);
+  const lines = out.split("\n");
+
+  assert.equal(lines.length, 4, "line count must be preserved so line reads keep coordinates");
+  assert.equal(lines[0], "CERT=[redacted-secret]");
+  assert.equal(lines[1], "[redacted-secret]", "a continuation line must not leak");
+  assert.equal(lines[2], "[redacted-secret]  # pem", "the closing line re-attaches its comment");
+  assert.equal(lines[3], "NEXT=[redacted-secret]", "quote state closes so the next key is normal");
+  assert.ok(!out.includes("secretmaterial"));
+  assert.ok(!out.includes("moresecret"));
+  assert.ok(!out.includes("after"));
 });
