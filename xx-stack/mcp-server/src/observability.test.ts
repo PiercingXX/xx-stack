@@ -63,26 +63,11 @@ test("telemetry.json has enabled: false by default", async () => {
       const raw = await readFile(candidate, "utf-8");
       const config = JSON.parse(raw);
       assert.equal(config.enabled, false, "telemetry must be disabled by default");
-      assert.ok(
-        Array.isArray(config.fields),
-        "telemetry config must have a fields array"
-      );
-      assert.ok(
-        config.fields.includes("lane"),
-        "fields must include lane"
-      );
-      assert.ok(
-        config.fields.includes("tokensIn"),
-        "fields must include tokensIn"
-      );
-      assert.ok(
-        config.fields.includes("tokensOut"),
-        "fields must include tokensOut"
-      );
-      assert.ok(
-        config.fields.includes("costUsd"),
-        "fields must include costUsd"
-      );
+      assert.ok(Array.isArray(config.fields), "telemetry config must have a fields array");
+      assert.ok(config.fields.includes("lane"), "fields must include lane");
+      assert.ok(config.fields.includes("tokensIn"), "fields must include tokensIn");
+      assert.ok(config.fields.includes("tokensOut"), "fields must include tokensOut");
+      assert.ok(config.fields.includes("costUsd"), "fields must include costUsd");
       found = true;
       break;
     } catch {

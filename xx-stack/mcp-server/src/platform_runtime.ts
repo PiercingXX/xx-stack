@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { guardedExecFile, INTERNAL_VRAM_PROBE } from "./execution_policy.js";
 import type { Registry } from "./platform_types.js";
