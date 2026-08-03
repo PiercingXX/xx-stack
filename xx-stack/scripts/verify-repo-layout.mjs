@@ -158,9 +158,11 @@ checkFile("packs/design/craft/README.md");
 checkFile("packs/design/craft/FUTURE_SECTIONS.md");
 checkFile("packs/design/craft/XX-STACK-NOTES.md");
 checkFile("packs/design/craft/anti-ai-slop-rules.json");
+checkFile("packs/design/craft/design-intent.md");
 
 for (const license of [
   "bergside-awesome-design-skills-MIT",
+  "google-labs-code-design-md-Apache-2.0",
   "google-labs-code-stitch-skills-Apache-2.0",
   "nexu-io-open-design-Apache-2.0",
   "referodesign-refero_skill-MIT",

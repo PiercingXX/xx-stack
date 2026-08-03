@@ -1,3 +1,4 @@
+import { residentModelVramGb } from "./host_memory_runtime.js";
 import type { EndpointCompatibilityProbe, Host } from "./platform_types.js";
 
 export interface HostModelHealthResult {
@@ -88,6 +89,73 @@ async function pingOpenAiCompatible(endpoint: string): Promise<{ ok: boolean; la
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** One model a host reports as currently loaded, with its footprint on the card. */
+export interface ResidentModel {
+  name: string;
+  vramGb: number;
+}
+
+/**
+ * Which models a host has loaded right now, or `null` when that is unknowable.
+ *
+ * The distinction is the point. `[]` means the host answered and is holding
+ * nothing; `null` means nobody asked or the answer did not arrive. Collapsing
+ * the two would let a lane nobody can inspect read as an idle lane with the
+ * whole card free, which is the opposite of a safe default.
+ *
+ * `null` is returned — without dialling anything — whenever
+ * `capabilities.supportsResidentModelInspection` is not exactly `true`. Today
+ * `generate-registries.mjs` sets that flag only for Ollama runtimes, so this
+ * answers for one lane family and stays silent about the rest.
+ */
+export async function fetchResidentModels(host: Host): Promise<ResidentModel[] | null> {
+  if (host.capabilities?.supportsResidentModelInspection !== true) return null;
+  // The flag says the host can be asked; the family says which endpoint asks it.
+  // Only Ollama exposes /api/ps, so anything else is unknown rather than empty.
+  if (endpointFamilyForHost(host) !== "ollama") return null;
+  if (!host.endpoint.startsWith("http://") && !host.endpoint.startsWith("https://")) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const url = new URL("/api/ps", host.endpoint);
+    const res = await fetch(url.toString(), {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      models?: Array<{ name?: string; size?: number; size_vram?: number }>;
+    };
+    if (!Array.isArray(data?.models)) return null;
+    return data.models
+      .map((model) => ({ name: model?.name ?? "", vramGb: residentModelVramGb(model ?? {}) }))
+      .filter((model) => model.name.length > 0);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Ollama reports `qwen3:8b` where a caller may hold `Qwen3:8b` or `qwen3`, and
+ * an unsuffixed name means `:latest`. Compare on that normal form only.
+ */
+export function normalizeModelName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/:latest$/, "");
+}
+
+/** Whether `modelName` is among the models a host currently has loaded. */
+export function isModelResident(resident: ResidentModel[], modelName: string): boolean {
+  const target = normalizeModelName(modelName);
+  if (!target) return false;
+  return resident.some((model) => normalizeModelName(model.name) === target);
 }
 
 export async function fetchHostModels(host: Host): Promise<string[]> {

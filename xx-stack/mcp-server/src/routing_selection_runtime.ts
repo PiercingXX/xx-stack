@@ -1,5 +1,13 @@
+import { computeHostMemoryPressure, type HostMemoryPressure } from "./host_memory_runtime.js";
 import type { Host, Registry, RouteRecommendation } from "./platform_types.js";
-import { checkHostModelHealth, modelNamesForHost } from "./routing_endpoint_runtime.js";
+import {
+  checkHostModelHealth,
+  fetchResidentModels,
+  isModelResident,
+  modelNamesForHost,
+  type HostModelHealthResult,
+  type ResidentModel,
+} from "./routing_endpoint_runtime.js";
 import { TIER_IDS } from "./runtime_constants.js";
 import { assignWaves, type TaskWavePlan } from "./task_graph_runtime.js";
 import {
@@ -77,14 +85,116 @@ export function routableTierIds(registry: Registry): string[] {
   );
 }
 
+/** What a live probe was able to say about the chosen model on a lane. */
+export type LaneResidency = "warm" | "cold" | "unknown";
+
+/**
+ * Ranking weight for a lane that already has the chosen model loaded, and for
+ * one whose card is saturated.
+ *
+ * These are deliberately small. `hostCapacityScore` is dominated by
+ * `maxParallelSlices * 10`, and in the shipped registry the closest two lanes
+ * from different tiers sit 9.1 points apart while the two runtimes sharing one
+ * physical box sit 0.25 apart. A bonus and a penalty of 2 each cap the total
+ * swing between any two lanes at 4, so:
+ *
+ * - lanes the static score separates by more than 4 keep today's relative
+ *   order no matter what the probes report — a warm model on the wrong lane
+ *   never outranks a cold model on a better one;
+ * - lanes the static score all but ties can be reordered, which is exactly the
+ *   case the nameplate score cannot resolve and a live probe can.
+ *
+ * `overload` demotes by the same bounded amount and never removes a lane: a
+ * saturated lane is still a lane, and a failover with one saturated candidate
+ * beats a failover with none.
+ */
+export const RESIDENT_MODEL_BONUS = 2;
+export const MEMORY_PRESSURE_PENALTY = 2;
+
+/** Maximum distance the live signals can move one lane past another. */
+export const RESIDENCY_ADJUSTMENT_CEILING = RESIDENT_MODEL_BONUS + MEMORY_PRESSURE_PENALTY;
+
+export interface RankableLane {
+  host: Host;
+  residency: LaneResidency;
+  overload: boolean;
+}
+
+/**
+ * The live adjustment for one lane, in `hostCapacityScore` points. An unknown
+ * probe scores exactly 0 — the absence of an answer must cost a lane nothing.
+ */
+export function residencyRankAdjustment(
+  lane: Pick<RankableLane, "residency" | "overload">
+): number {
+  const warmth = lane.residency === "warm" ? RESIDENT_MODEL_BONUS : 0;
+  const pressure = lane.overload ? MEMORY_PRESSURE_PENALTY : 0;
+  return warmth - pressure;
+}
+
+/**
+ * Re-rank already-probed lanes by static capacity plus the bounded live term.
+ *
+ * `hostCapacityScore` itself stays pure and nameplate-only; the folding happens
+ * here, at the ranking site, so nothing on the offline `route_task` path is
+ * affected. The sort is stable, so a set where every probe came back unknown
+ * and unpressured comes out in exactly the order it went in.
+ */
+export function rankLanesByLiveCapacity<T extends RankableLane>(lanes: readonly T[]): T[] {
+  const adjusted = (lane: T): number =>
+    hostCapacityScore(lane.host) + residencyRankAdjustment(lane);
+  return [...lanes].sort((left, right) => adjusted(right) - adjusted(left));
+}
+
+/**
+ * Memory pressure for a lane, or `null` when it cannot be computed — either the
+ * host could not be inspected or it reports no VRAM. Never guesses.
+ */
+export function laneMemoryPressure(
+  host: Host,
+  resident: ResidentModel[] | null
+): HostMemoryPressure | null {
+  if (resident === null) return null;
+  const totalVramGb = Number(host.hardware?.detected?.totalGpuVramGb ?? 0);
+  if (!(totalVramGb > 0)) return null;
+  return computeHostMemoryPressure({
+    totalVramGb,
+    reservePercent: host.executionPolicy?.contextReservePercent,
+    residentVramGb: resident.map((model) => model.vramGb),
+  });
+}
+
+function reportedPressure(pressure: HostMemoryPressure): Record<string, unknown> {
+  const round = (value: number): number => Math.round(value * 10) / 10;
+  return {
+    ...pressure,
+    usableVramGb: round(pressure.usableVramGb),
+    usedVramGb: round(pressure.usedVramGb),
+    contextHeadroomGb: round(pressure.contextHeadroomGb),
+    estimatedFreeGb: round(pressure.estimatedFreeGb),
+  };
+}
+
+/**
+ * Probe functions the watchdog path calls. Injectable so the ranking is
+ * testable without a network; both defaults are the real endpoint probes.
+ */
+export interface WatchdogProbeDeps {
+  checkHostModelHealth?: (host: Host, modelName: string | null) => Promise<HostModelHealthResult>;
+  fetchResidentModels?: (host: Host) => Promise<ResidentModel[] | null>;
+}
+
 export async function buildWatchdogRouteCandidates(
   registry: Registry,
   description: string,
   preferredHost: string | null,
   preferredModel: string | null,
   maxFallbacks: number,
-  banned: Set<string>
+  banned: Set<string>,
+  probes: WatchdogProbeDeps = {}
 ): Promise<WatchdogRouteCandidates> {
+  const probeHealth = probes.checkHostModelHealth ?? checkHostModelHealth;
+  const probeResident = probes.fetchResidentModels ?? fetchResidentModels;
   const baseRoute = routeTask(description, registry);
   const primaryLookup = preferredHost || baseRoute.recommendedHost;
   const selectedPrimary = primaryLookup ? findHostById(registry, primaryLookup) : null;
@@ -102,7 +212,7 @@ export async function buildWatchdogRouteCandidates(
     preferredModel ??
     baseRoute.recommendedModel ??
     chooseModelForTask(selectedPrimary.host, description);
-  const primaryHealth = await checkHostModelHealth(selectedPrimary.host, primaryModel);
+  const primaryHealth = await probeHealth(selectedPrimary.host, primaryModel);
   const primaryRoute: SupervisorRoute = {
     tier: selectedPrimary.tierId,
     host: selectedPrimary.host.id,
@@ -128,6 +238,7 @@ export async function buildWatchdogRouteCandidates(
       if (banned.has(key)) {
         return {
           candidate,
+          host: candidate.host,
           candidateModel,
           candidateHealth: {
             hostHealthy: false,
@@ -135,12 +246,44 @@ export async function buildWatchdogRouteCandidates(
             reason: "circuit breaker active",
           } as const,
           isBanned: true,
+          residency: "unknown" as LaneResidency,
+          memoryPressure: null,
+          overload: false,
         };
       }
-      const candidateHealth = await checkHostModelHealth(candidate.host, candidateModel);
-      return { candidate, candidateModel, candidateHealth, isBanned: false };
+      const candidateHealth = await probeHealth(candidate.host, candidateModel);
+      // The residency probe rides this fan-out slot — the same slot that just
+      // dialled this endpoint for health. There is no second pass over the
+      // fleet, and a host without capabilities.supportsResidentModelInspection
+      // is never dialled for it at all: fetchResidentModels returns null before
+      // touching the network. An unreachable host is not asked either; its
+      // residency is unknown, which costs it nothing in the ranking.
+      const resident = candidateHealth.hostHealthy ? await probeResident(candidate.host) : null;
+      const residency: LaneResidency =
+        resident === null
+          ? "unknown"
+          : candidateModel && isModelResident(resident, candidateModel)
+            ? "warm"
+            : "cold";
+      const memoryPressure = laneMemoryPressure(candidate.host, resident);
+      return {
+        candidate,
+        host: candidate.host,
+        candidateModel,
+        candidateHealth,
+        isBanned: false,
+        residency,
+        memoryPressure,
+        overload: memoryPressure?.overload === true,
+      };
     })
   );
+
+  // Fold the live signals into the ordering here, not into hostCapacityScore:
+  // the static score stays the offline route_task answer, and only this
+  // already-probed path sees residency and pressure. With every probe unknown
+  // this is a stable no-op sort over an already-sorted list.
+  const rankedProbes = rankLanesByLiveCapacity(probeResults);
 
   const candidates: SupervisorRoute[] = [];
   const health: Array<Record<string, unknown>> = [
@@ -154,7 +297,7 @@ export async function buildWatchdogRouteCandidates(
     },
   ];
 
-  for (const probe of probeResults) {
+  for (const probe of rankedProbes) {
     health.push({
       tier: probe.candidate.tierId,
       host: probe.candidate.host.id,
@@ -162,6 +305,11 @@ export async function buildWatchdogRouteCandidates(
       model: probe.candidateModel,
       health: probe.candidateHealth,
       kind: "fallback",
+      // Always stated, including when nothing could be learned: a lane that
+      // was never inspected must be visibly uninspected, not quietly ranked as
+      // if it were idle.
+      residency: probe.residency,
+      memoryPressure: probe.memoryPressure ? reportedPressure(probe.memoryPressure) : "unknown",
     });
 
     if (

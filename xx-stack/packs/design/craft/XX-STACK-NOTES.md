@@ -1,9 +1,19 @@
 # craft/ in xx-stack — what applies here and what does not
 
-**This file is authored in xx-stack. Every other file in `craft/` is vendored
-byte-for-byte from `nexu-io/open-design`** (see `../manifest.json`, subtree
-`craft/`). The vendored files are never edited, because byte-comparability
-against upstream is the only way to tell our changes from upstream drift.
+**This file is authored in xx-stack.** So are `anti-ai-slop-rules.json` and
+`design-intent.md`. **Every other file in `craft/` is vendored byte-for-byte
+from `nexu-io/open-design`** (see `../manifest.json`, subtree `craft/`). The
+vendored files are never edited, because byte-comparability against upstream is
+the only way to tell our changes from upstream drift.
+
+Three kinds of file live here, and conflating them is the mistake this note
+exists to prevent:
+
+| Kind | Files | Rule |
+|---|---|---|
+| Vendored | the 11 rulebooks + `README.md` + `FUTURE_SECTIONS.md` | never edit; byte-identical to `dceac12` |
+| Authored here, from upstream material we hold | `anti-ai-slop-rules.json`, this file | ours; rule *values* attributed per-entry |
+| Authored here, from ideas we did **not** take | `design-intent.md` | ours; nothing to byte-compare, nothing to sync |
 
 `README.md` in this directory is therefore upstream's README, unmodified, and it
 describes upstream's runtime. This file records where that description does not
@@ -64,15 +74,50 @@ The other 19 have no upstream binding. They are left unbound deliberately —
 absence is a decision here, the same way `packs/rules/coverage.json` records
 explicit empty entries. Add one only when upstream does, or with a reason.
 
+`design-intent.md` is a **twelfth** shipped section and is bound to **no**
+skill, on purpose. Every binding in the table above is upstream's at `dceac12`,
+transcribed unchanged; upstream has no binding for a file it does not have, and
+inventing one would break exactly the provenance rule that makes the table
+trustworthy. It still resolves as an `od.craft.requires` slug, so a skill can
+opt in later without a code change. `check-craft-references.mjs` therefore
+reports `craft sections shipped: 12` and names `design-intent` under "shipped
+but required by no skill" — a NOTE, not a failure, and the expected steady
+state.
+
 Resolve a slug with:
 
 ```bash
 node xx-stack/packs/design/scripts/check-craft-references.mjs
 ```
 
+## `design-intent.md` — doctrine, not a rulebook
+
+The 11 vendored rulebooks say how to render something once you know what you are
+building. `design-intent.md` is about the step before: how the thing gets
+described. It is authored here from three arguments in
+`google-labs-code/design.md`'s `PHILOSOPHY.md` (Apache-2.0, read at `9bf8eae`),
+restated in our own words — no upstream sentence is reproduced and no upstream
+file is redistributed.
+
+It ships no checkable rule and no gate reads it. It is filed under `craft/` for
+one reason: it is the **theory** behind `anti-ai-slop-rules.json`, which encodes
+18 mechanically checkable rules and has never stated why any of them exist.
+
+One of its three arguments **argues against work this repo has queued**. Upstream
+holds that token values are context and not rendering instructions, which is the
+premise of `UPSTREAM-BORROW-TODO.md` task 33 (vendor per-brand `tokens.css` so a
+brand becomes a checkable `:root` contract). That dissent is recorded in
+`../manifest.json` under source `design-md` (`dissentNote` /
+`dissentDisposition`), the same way the `picsum.photos` disagreement between
+open-design and stitch-skills is recorded, so it is not buried in a craft file
+nobody re-reads. Task 33 is not blocked by it; whoever actions task 33 should
+read `design-intent.md` §1 first.
+
 ## Licensing
 
-Two hops, both verified by reading the upstream LICENSE files:
+Two hops for the vendored bytes, both verified by reading the upstream LICENSE
+files (a third and fourth upstream reach only the two authored-here files, and
+are recorded further down):
 
 1. `referodesign/refero_skill` — MIT, © 2026 Refero
    (`../licenses/referodesign-refero_skill-MIT.txt`). Upstream attributes
@@ -101,3 +146,21 @@ fifteen upstream rules that were deliberately refused with the reason for each
 — including one point on which the two upstreams flatly disagree
 (`picsum.photos` as a placeholder host: recommended by one, banned by the
 other; banned here).
+
+A **fourth** upstream reaches only `design-intent.md`, and reaches it as ideas
+rather than as bytes:
+
+4. `google-labs-code/design.md` — Apache-2.0
+   (`../licenses/google-labs-code-design-md-Apache-2.0.txt`), from
+   `PHILOSOPHY.md` at commit `9bf8eae`. Nothing is redistributed and no code is
+   ported; the three arguments are paraphrased. Both projects are Apache-2.0,
+   so a verbatim lift would have been permissible with attribution — paraphrase
+   was chosen to keep §4(b) modification-notice bookkeeping out of a subtree
+   whose whole value rests on every other file being byte-identical to a
+   *different* upstream. The licence text ships anyway: attribution is owed
+   even where redistribution is not.
+
+   That licence is a **third distinct Apache-2.0 rendering** in
+   `../licenses/`. It was diffed against both the open-design and stitch-skills
+   copies and differs from each (§1 "submitted to the Licensor", §6, §9, and
+   the §4(a)/(b) indentation). None substitutes for another.

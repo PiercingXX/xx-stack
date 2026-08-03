@@ -64,6 +64,25 @@
       "conflictNote": "This upstream and open-design disagree on one point and the disagreement is recorded rather than smoothed over: stitch-skills recommends picsum.photos as a placeholder image host, open-design bans it. open-design's position holds here, because this pack's artifacts are self-contained single files and any runtime host fetch is what the gate exists to catch."
     },
     {
+      "id": "design-md",
+      "repo": "https://github.com/google-labs-code/design.md",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/google-labs-code-design-md-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a --filter=blob:none clone on 2026-08-03 and copied verbatim (blob 15e431c225cf463f87a61f4e2a76dfb09e2bf849, byte-identical). Shipped as its own file rather than reusing either Apache-2.0 text already under licenses/: this rendering was diffed against BOTH and differs from each. Against nexu-io/open-design's it differs in §1 ('submitted to the Licensor' vs 'submitted to Licensor'), in §6, and in §9; against google-labs-code/stitch-skills' it differs additionally in the §4(a)/(b) indentation and line-wrapping. Neither was assumed to stand in for the other — same rule the stitch-skills entry records.",
+      "headAtAudit": "9bf8eae67128b6cc55ad9bf86665767deb4c11cd",
+      "headAtAuditDate": "2026-07-27T16:09:10-04:00",
+      "readAtCommit": "9bf8eae67128b6cc55ad9bf86665767deb4c11cd",
+      "readPath": "PHILOSOPHY.md (blob b81f5226f64468db4ac0a7bf2380516194bf5273)",
+      "vendoredAtCommit": null,
+      "nullReason": "Nothing from this upstream is vendored. No file is redistributed and no code is ported, so there is no vendoring commit — only a commit the prose was READ at, recorded above as readAtCommit.",
+      "supplies": "prose doctrine only; no file redistributed, no code ported",
+      "suppliesDetail": "Three arguments from PHILOSOPHY.md, restated in our own words in craft/design-intent.md: (1) the prose is the specification and token values are context, not rendering instructions; (2) a specific reference carries more than a list of adjectives, because adjectives name a REGION of design space and a model outputs the centre of it; (3) negative constraints arrive for free when the reference is specific, so a long rambling don't-list is evidence the description was too vague to carry them. Paraphrased rather than quoted. Both projects are Apache-2.0, so a verbatim lift would have been permissible with attribution; paraphrase was chosen to avoid adding §4(b) modification-notice bookkeeping to craft/, a subtree that already carries an open licensing question (see openQuestions apache-notice-placement) and whose whole value rests on every other file being byte-identical to a different upstream.",
+      "dissentNote": "THIS UPSTREAM ARGUES AGAINST WORK THIS REPO HAS QUEUED, and the disagreement is recorded here rather than left in a craft file nobody re-reads — the same treatment given the picsum.photos conflict between open-design and stitch-skills. PHILOSOPHY.md states that token values serve as context and are NOT rendering instructions, and that token requirements in a specification are neither accepted nor recommended. UPSTREAM-BORROW-TODO.md task 33 proposes vendoring per-brand tokens.css for all 137 brands precisely so a brand stops being prose-only and becomes a checkable :root contract. That premise is what this upstream rejects.",
+      "dissentDisposition": "OPEN — recorded, not adjudicated, and task 33 is NOT blocked by it. The two positions are compatible for as long as a vendored :root contract is treated as a VERIFICATION SURFACE for gates and not as the brand's definition; they stop being compatible the moment an agent is pointed at tokens.css instead of DESIGN.md. Whoever actions task 33 should read craft/design-intent.md §1 first and record which of those two readings they are building. Note the objection comes from a THIRD PARTY: task 33 would vendor from nexu-io/open-design, not from this repo, so this is an outside argument against a design decision rather than two sources of the same bytes disagreeing — which is why it is filed as a dissent rather than a conflict.",
+      "alsoEvaluated": "This same repo's linter was evaluated and REJECTED as a dependency for scripts/lint-design-systems.mjs: it requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for one systematic lineage difference. Two of its rules (contrast on declared pairs, canonical section order) were reimplemented against the shape our files actually have; no code was transliterated. See that script's header comment and UPSTREAM-BORROW-TODO.md."
+    },
+    {
       "id": "refero_skill",
       "repo": "https://github.com/referodesign/refero_skill",
       "license": "MIT",
@@ -202,7 +221,7 @@
       "path": "workflow-skills/",
       "contents": "31 skill directories plus quality-gates.json",
       "provenance": "verified",
-      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (10 with local edits: 6 SKILL.md and 4 replit-deck example decks); the other 79 have no upstream counterpart at any path or commit and were written here.",
+      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (11 with local edits: 7 SKILL.md and 4 replit-deck example decks); the other 79 have no upstream counterpart at any path or commit and were written here.",
       "primarySource": "open-design",
       "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
       "detail": {
@@ -217,7 +236,7 @@
           "wireframe-sketch"
         ],
         "modifiedOrDrifted": 25,
-        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten. A third cause was added 2026-08-03: four replit-deck example decks were edited to satisfy this pack's own animate-layout-property rule.",
+        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten. A third cause was added 2026-08-03: four replit-deck example decks were edited to satisfy this pack's own animate-layout-property rule. A fourth cause was added 2026-08-03: simple-deck and replit-deck SKILL.md each gained a 'Content vs production controls' section and one Hard rule bullet (UPSTREAM-BORROW task 41, idea from presenton, prose written here). The rule keeps build instructions from the brief — 'make slide 4 a bar chart' — out of rendered slide text. replit-deck was already in the modified set; simple-deck is new to it.",
         "inFileAttribution": "All 31 SKILL.md files retain upstream's `od:` frontmatter block — open-design's own metadata namespace — which is what identifies the subtree's origin from inside the files.",
         "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick).",
         "skillMdModifiedByUs": [
@@ -226,6 +245,7 @@
           "motion-frames",
           "replit-deck",
           "saas-landing",
+          "simple-deck",
           "tweaks"
         ],
         "authoredHereFiles": "every references/checklist.md (31), references/layouts.md (31), and assets/template.html (31), plus quality-gates.json — upstream ships only SKILL.md + example.html per template",
@@ -237,6 +257,7 @@
           "motion-frames",
           "replit-deck",
           "saas-landing",
+          "simple-deck",
           "tweaks"
         ],
         "exampleHtmlModifiedByUs": [
@@ -246,8 +267,9 @@
           "replit-deck/examples/example-holm.html"
         ],
         "exampleHtmlModificationReason": "2026-08-03. craft/anti-ai-slop-rules.json rule `animate-layout-property` was promoted P1 -> P0; these four decks animated `.deck-progress` with `transition: width`, forcing layout every frame. Each received the identical prescribed change: width:0 -> width:100% plus transform:scaleX(0) and transform-origin:left; transition:width -> transition:transform; and the one JS line setting style.width now sets style.transform. Nine lines per file. The two files with the same construct — replit-deck/assets/template.html and simple-deck/assets/template.html — are authored here and need no section 4(b) record.",
-        "apacheSection4bNote": "Slug-granular. replit-deck was already listed for its SKILL.md; as of 2026-08-03 it also covers exampleHtmlModifiedByUs. No new slug — simple-deck's edited file is authored here.",
-        "authoredHereCountNote": "79 is the count of files with no upstream counterpart. An earlier value of 93 counted every checklist.md + layouts.md + template.html (31 each) plus quality-gates.json without subtracting the skills whose template.html does exist upstream. 79 is the measured figure and the one `nature` states."
+        "apacheSection4bNote": "Slug-granular. replit-deck was already listed for its SKILL.md; as of 2026-08-03 it also covers exampleHtmlModifiedByUs. No new slug — simple-deck's edited file is authored here. As of 2026-08-03 simple-deck joins the set for its SKILL.md. Its checklist.md, and those of replit-deck and weekly-update, took the same rule as P0 items but are authored here.",
+        "authoredHereCountNote": "79 is the count of files with no upstream counterpart. An earlier value of 93 counted every checklist.md + layouts.md + template.html (31 each) plus quality-gates.json without subtracting the skills whose template.html does exist upstream. 79 is the measured figure and the one `nature` states.",
+        "authoredHereFilesCaveat": "The blanket claim that every references/checklist.md is authored here overreaches for guizang-ppt: its five references/*.md and assets/example-slides.html are named in upstream's own SKILL.md resource map and came from op7418 with the rest of the slug. This does not change the authoredHereFileCount derivation but the sentence should not be read as universal."
       },
       "exceptions": [
         {
@@ -269,9 +291,9 @@
     },
     {
       "path": "craft/",
-      "contents": "11 brand-agnostic craft rulebooks + upstream's README.md and FUTURE_SECTIONS.md, vendored byte-for-byte; plus two files authored here (XX-STACK-NOTES.md, anti-ai-slop-rules.json)",
+      "contents": "11 brand-agnostic craft rulebooks + upstream's README.md and FUTURE_SECTIONS.md, vendored byte-for-byte; plus three files authored here (XX-STACK-NOTES.md, anti-ai-slop-rules.json, design-intent.md)",
       "provenance": "verified",
-      "nature": "vendored verbatim, zero local edits to any vendored file",
+      "nature": "vendored verbatim, zero local edits to any vendored file. The three authored-here files are additions, not modifications: no vendored byte changes, so the Apache-2.0 §4(b) set for this subtree stays empty.",
       "primarySource": "open-design",
       "license": "Apache-2.0 (nexu-io/open-design). Three of the 11 rulebooks additionally sit over a two-hop chain from referodesign/refero_skill (MIT); the other eight do not.",
       "axis": "A fourth content axis for this pack, and the one genuinely new KIND of content. design-systems/ says what a brand looks like; design-skills/ supplies aesthetic direction; workflow-skills/ says how to build one artifact type; craft/ supplies the universal rules that hold regardless of brand (ALL CAPS needs >=0.06em tracking; cap visible accent uses at ~2 per screen; every stateful surface needs empty/loading/error/partial states).",
@@ -285,6 +307,9 @@
         "locallyModified": 0,
         "apacheSection4bModifiedSet": [],
         "totalBytes": 108643,
+        "totalBytesScope": "The 13 VENDORED files only. The three authored-here files (XX-STACK-NOTES.md, anti-ai-slop-rules.json, design-intent.md) are listed in `files` but excluded from this figure, which exists to be comparable against upstream.",
+        "shippedSectionCount": 12,
+        "shippedSectionCountNote": "11 vendored rulebooks + design-intent.md, authored here. `byteIdenticalToUpstreamHead: 13` and the '11 rulebooks' phrasing elsewhere both still refer to the vendored set and are not contradicted by this number.",
         "tokenEstimateMethod": "bytes/4 rounded, same convention as packs/rules/manifest.json",
         "files": [
           {
@@ -384,8 +409,8 @@
           {
             "file": "XX-STACK-NOTES.md",
             "slug": null,
-            "bytes": 4777,
-            "tokensEstimated": 1194,
+            "bytes": 9190,
+            "tokensEstimated": 2298,
             "vendored": false,
             "license": "MIT (repo root LICENSE)"
           },
@@ -396,6 +421,19 @@
             "tokensEstimated": 5674,
             "vendored": false,
             "license": "MIT structure; rule VALUES from two Apache-2.0 upstreams (nexu-io/open-design and google-labs-code/stitch-skills) — see its own `attribution` block, and every rule's `source` field"
+          },
+          {
+            "file": "design-intent.md",
+            "slug": "design-intent",
+            "bytes": 5162,
+            "tokensEstimated": 1291,
+            "vendored": false,
+            "nature": "authored-here-from-attributed-ideas",
+            "ideasFrom": "design-md",
+            "license": "MIT (repo root LICENSE) for the text as written here. The IDEAS are attributed to google-labs-code/design.md PHILOSOPHY.md (Apache-2.0, read at 9bf8eae) and restated in our own words; that upstream's license text ships at licenses/google-labs-code-design-md-Apache-2.0.txt regardless, because attribution is owed even where redistribution is not.",
+            "distinctFromVendored": "This is a THIRD kind of file in craft/, and the distinction is the point of this entry. The 13 vendored rulebooks are byte-identical to nexu-io/open-design and their value depends on staying that way. XX-STACK-NOTES.md and anti-ai-slop-rules.json are ours, written against upstream material we hold. design-intent.md is ours too, but written from prose we deliberately did NOT take: not one sentence of PHILOSOPHY.md is reproduced, so there is nothing here to byte-compare and nothing to keep in sync. Do not treat it as vendored, do not diff it against upstream, and do not 'restore' it from any upstream file.",
+            "isDoctrineNotRulebook": "It ships no checkable rule and no P0/P1/P2 finding; no gate reads it. It is filed under craft/ because it states the THEORY behind anti-ai-slop-rules.json's 18 rules, which that file has never carried.",
+            "requirability": "It resolves as an od.craft.requires slug (`design-intent`) — check-craft-references.mjs counts any craft/<slug>.md that is not README/FUTURE_SECTIONS/XX-STACK-NOTES as a shipped section, so a skill CAN require it. Deliberately bound to zero skills: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged, and upstream has no binding for a file it does not have. Inventing one would break `bindingProvenance`. The check reports it under 'shipped but required by no skill', which is a NOTE, not a failure."
           }
         ],
         "whyReadmeWasNotRewritten": "Task 30 proposed rewriting upstream's README for our paths. It was vendored unmodified instead: byte-comparability against upstream is the reason packs/ is .prettierignore'd, and editing the one file that documents the axis would forfeit it for the file most likely to drift. The corrections a reader needs — `pnpm lint:craft` is `scripts/check-craft-references.mjs` here, there is no daemon prompt-composer, `data-od-id` is an upstream desktop-app concern — are in craft/XX-STACK-NOTES.md, which is clearly ours.",
@@ -467,7 +505,7 @@
           "resolution": "Selection is a budget decision against the target lane's context window, surfaced in the agent's reasoning. Nothing in the MCP server injects craft sections — the same position packs/rules takes with nano/mini/full.",
           "check": "scripts/check-craft-references.mjs asserts every slug named by an od.craft.requires resolves to craft/<slug>.md or appears in craft/FUTURE_SECTIONS.md. Upstream's contract, reimplemented (their `pnpm lint:craft` assumes a pnpm monorepo). NOT yet wired into `npm run verify` — that needs a package.json edit outside this change's scope."
         },
-        "shelfWare": "None. All 11 shipped sections are required by at least one skill, including laws-of-ux (5 skills) and form-validation (1), which Task 30 flagged as candidates to skip if unrequired."
+        "shelfWare": "None among the 11 vendored rulebooks — all are required by at least one skill, including laws-of-ux (5 skills) and form-validation (1), which Task 30 flagged as candidates to skip if unrequired. One shipped section IS unrequired and that is deliberate: design-intent.md, authored here, is bound to no skill for the reason recorded in its `requirability` field. check-craft-references.mjs therefore reports `craft sections shipped: 12` with design-intent named in the not-required NOTE. That NOTE is the expected steady state, not drift."
       },
       "honestyNote": "craft/ is not entirely new since we vendored. Three rulebooks (typography, color, anti-ai-slop) plus README.md landed upstream in 1edab99 on 2026-05-02T11:00+08:00 — about twelve hours BEFORE our vendoring window (9ee2c19 .. 483e00d) opened. They were available and we simply did not take them. The other eight landed 2026-05-05 through 2026-06-14, after the window closed, and are genuinely new: they are ~90% of the bytes. Recorded so the pack's record distinguishes what upstream added later from what we missed.",
       "copyrightNote": "Brand-agnostic by construction — no brand names, no trademarks, no copied assets. The redistribution obligation is Apache-2.0's alone (license text shipped at licenses/nexu-io-open-design-Apache-2.0.txt); the MIT text for refero_skill is shipped as well because upstream declares the chain, even though no refero_skill file is redistributed here.",

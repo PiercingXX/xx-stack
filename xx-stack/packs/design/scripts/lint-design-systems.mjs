@@ -132,8 +132,13 @@ const ACCENT_AA = 3.0; // WCAG 2.1 AA, non-text / large text
 // Regression floors. These exist so the extractor cannot rot into a vacuous
 // pass: if a pattern breaks, recall collapses and the gate goes red instead of
 // quietly reporting "0 problems" over 0 tokens (MANUAL §11 BUILD-6).
+// They track the measured baseline exactly rather than sitting loose below it:
+// a loose floor cannot tell a pattern breaking from content being edited, which
+// is the whole reason they exist. Moving one is a deliberate act — record why.
+// Baseline at the time of writing: 137 files, 136 with tokens, 1639 tokens,
+// 57 declared pairs, 96.0% mean in-section hex capture, 111/137 files at 100%.
 const MIN_FILES_WITH_TOKENS = 136;
-const MIN_TOTAL_TOKENS = 1600;
+const MIN_TOTAL_TOKENS = 1639;
 const MIN_DECLARED_PAIRS = 57;
 
 // ---------------------------------------------------------------------------
@@ -198,19 +203,32 @@ function colorSectionRange(lines) {
 // ---------------------------------------------------------------------------
 // Token extraction
 //
-// Two lineages, two shapes, plus one fallback:
+// Two lineages, two shapes, one em-dash variant, plus one fallback:
 //   A ("rich"):      - **Absolute Black** (`#000000`): Immersive hero canvases
 //   B ("generated"): - **Primary:** `#FF5701` — Token from style foundations.
+//   C ("em-dash"):   - **Surface** (`#FFFFFF`) — `--bg`. Cards, modals.
 //   D (fallback):    - **Name**: `#hex` ...
 //
 // The map is keyed on token NAME, never on hex. 192 entries in this corpus are
 // a second name for a hex already present in the same file — Apple's #0071e3
 // is both "Apple Action Blue" and "Selection/Focus Signal" — and keying on hex
 // silently drops one of every such pair.
+//
+// C is disjoint from the others by its SEPARATOR, not by ordering: A and D both
+// require a colon where C requires an em/en dash, and B's colon lives inside the
+// bold span before a backticked hex, where C has a parenthesised one. Verified
+// on the whole corpus (not just the colour sections): zero lines match C and
+// also match A, B or D, so C cannot double-count regardless of where it sits in
+// this list. The `C` tag was simply unused by the original A/B/D set — no
+// earlier pattern is being revived under the name.
+//
+// Deliberately NOT widened to a plain hyphen separator (`) - `). No line in the
+// corpus uses one, so allowing it buys nothing and only loosens the pattern.
 // ---------------------------------------------------------------------------
 const TOKEN_PATTERNS = [
   ['A', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*\(`?(#[0-9a-fA-F]{3,8})`?\)\s*:\s*(.+)$/],
   ['B', /^\s*[-*]\s+\*\*([^*]+?):\*\*\s*`?(#[0-9a-fA-F]{3,8})`?\s*[—–-]?\s*(.*)$/],
+  ['C', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*\(`?(#[0-9a-fA-F]{3,8})`?\)\s*[—–]\s*(.+)$/],
   ['D', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*:\s*`?(#[0-9a-fA-F]{3,8})`?\s*(.*)$/],
 ];
 
@@ -219,6 +237,16 @@ const TOKEN_PATTERNS = [
 // single value; a markdown alpha table row is not a token declaration; a
 // "never use" anti-pattern list names colours precisely so they are not used.
 // Refusing them is the correct behaviour, not a recall bug.
+//
+// Four further classes are refused by the PATTERNS rather than by this filter,
+// and adding C did not open any of them — each is asserted in the self-test:
+//   - dual-value    `- **Coral**: Light \`#ffc6c6\` / Dark \`#600000\``
+//                   `- **Granite** (\`#555555\`) and **Graphite** (\`#565656\`): …`
+//   - hsl + approx  `- **Raycast Blue** (\`hsl(202,100%,67%)\` / ~\`#55b3ff\`): …`
+//   - rgba          `- **Notion Black** (\`rgba(0,0,0,0.95)\` / \`#000000f2\`): …`
+//   - bare-hex list `- \`#ffffff\` as a page background`  (a "never use" item)
+// The miro pastel block is entirely the dual-value form, so C leaves it at its
+// existing 11-of-18 capture — that is the correct answer, not a shortfall.
 const REFUSE_LINE = /→|↔|gradient|linear-gradient|radial-gradient|\|/i;
 
 function extractColorTokens(lines, range) {
@@ -481,8 +509,50 @@ const FIXTURE_EXPECTATIONS = [
   { dir: 'no-color-section', expect: 'no colour section' },
 ];
 
-function runSelfTest() {
+// Pattern-level cases, kept inline rather than as fixture files because they
+// assert properties of the regex set itself (disjointness, refusal classes)
+// rather than end-to-end file behaviour. `expect` is the pattern tag that must
+// win, or null when every pattern must refuse the line.
+const PATTERN_CASES = [
+  ['- **Absolute Black** (`#000000`): Immersive hero canvases', 'A'],
+  ['- **Primary:** `#FF5701` — Token from style foundations.', 'B'],
+  ['- **Surface** (`#FFFFFF`) — `--bg`. Cards, modals.', 'C'],
+  ['- **Canvas** (`#0E0E11`) — deepest layer.', 'C'],
+  ['- **Primary Blue**: `#1b61c9` white text', 'D'],
+  // Names containing an em-dash must still resolve by their own separator.
+  ['- **Brand Red — Token** (`#FF2442`): `--primary` and `--color-red`.', 'A'],
+  // Refusal classes. Each is a real corpus line; see the REFUSE_LINE comment.
+  ['- **Coral**: Light `#ffc6c6` / Dark `#600000`', null],
+  ['- **Granite** (`#555555`) and **Graphite** (`#565656`): Deeper gray.', null],
+  ['- **Raycast Blue** (`hsl(202, 100%, 67%)` / ~`#55b3ff`): Interactive accent', null],
+  ['- **Notion Black** (`rgba(0,0,0,0.95)` / `#000000f2`): Primary text', null],
+  ['- `#ffffff` as a page background', null],
+];
+
+function runPatternSelfTest() {
   const problems = [];
+  const match = (line) => {
+    if (REFUSE_LINE.test(line)) return null;
+    for (const [tag, re] of TOKEN_PATTERNS) if (re.test(line)) return tag;
+    return null;
+  };
+  for (const [line, expect] of PATTERN_CASES) {
+    const got = match(line);
+    if (got !== expect) {
+      problems.push(`pattern case expected ${expect || '(refusal)'} but got ${got || '(refusal)'}: ${line}`);
+    }
+  }
+  // Disjointness: no line may satisfy two patterns. Ordering must not be what
+  // keeps a token from being counted twice.
+  for (const [line] of PATTERN_CASES) {
+    const hits = TOKEN_PATTERNS.filter(([, re]) => re.test(line)).map(([t]) => t);
+    if (hits.length > 1) problems.push(`patterns ${hits.join('+')} both match, so ordering is load-bearing: ${line}`);
+  }
+  return problems;
+}
+
+function runSelfTest() {
+  const problems = runPatternSelfTest();
   if (!fs.existsSync(fixturesDir)) {
     return [`fixtures missing: ${path.relative(packRoot, fixturesDir)}`];
   }
@@ -524,7 +594,10 @@ const selfTestProblems = runSelfTest();
 
 if (argv.has('--self-test')) {
   for (const p of selfTestProblems) console.error(`FAIL self-test ${p}`);
-  console.log(`self-test: ${FIXTURE_EXPECTATIONS.length} fixtures, ${selfTestProblems.length} problems`);
+  console.log(
+    `self-test: ${FIXTURE_EXPECTATIONS.length} fixtures + ${PATTERN_CASES.length} pattern cases, ` +
+      `${selfTestProblems.length} problems`
+  );
   process.exit(selfTestProblems.length > 0 ? 1 : 0);
 }
 
@@ -616,7 +689,10 @@ if (pairs.length < MIN_DECLARED_PAIRS) {
 }
 
 console.log('Design-system lint');
-console.log(`  self-test fixtures: ${FIXTURE_EXPECTATIONS.length} (1 clean, 3 deliberately malformed)`);
+console.log(
+  `  self-test: ${FIXTURE_EXPECTATIONS.length} fixtures (1 clean, 3 deliberately malformed), ` +
+    `${PATTERN_CASES.length} pattern cases`
+);
 console.log(`  design systems iterated: ${iterated} (manifest.json accounts for ${expectedCount})`);
 console.log(`  colour section located: ${withSection}/${iterated}`);
 console.log(`  colour tokens extracted: ${totalTokens} across ${withTokens} files`);

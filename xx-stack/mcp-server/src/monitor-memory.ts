@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import {
+  DEFAULT_CONTEXT_RESERVE_PERCENT,
+  bytesToGb,
+  contextHeadroomGb,
+  estimatedFreeGb,
+  isOverloaded,
+  residentModelVramGb,
+  usableVramGb,
+} from "./host_memory_runtime.js";
 import { PATH_CONSTANTS, liveRegistryPath, repoCompatFileCandidates } from "./runtime_constants.js";
 
 type ModelEntry = {
@@ -102,19 +111,8 @@ function resolveRegistryPath(): string {
   return candidates[0];
 }
 
-function toGb(bytes: number | null | undefined): number {
-  if (!bytes || Number.isNaN(bytes)) return 0;
-  return Math.round((bytes / 1073741824) * 10) / 10;
-}
-
 function formatGb(value: number): string {
   return `${Math.round(value * 10) / 10} GB`;
-}
-
-function loadedVramGb(model: ModelEntry): number {
-  const raw =
-    typeof model.size_vram === "number" && model.size_vram > 0 ? model.size_vram : model.size;
-  return toGb(raw);
 }
 
 async function fetchJson(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
@@ -184,11 +182,13 @@ type HostMemoryReport = HostMemoryReportOk | HostMemoryReportUnavailable;
 
 async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport> {
   const endpoint = (host.endpoint || "").replace(/\/$/, "");
-  const reservePercent = Number(host.executionPolicy?.contextReservePercent ?? 25);
+  const reservePercent = Number(
+    host.executionPolicy?.contextReservePercent ?? DEFAULT_CONTEXT_RESERVE_PERCENT
+  );
   const totalVramGb = Number(
     host.hardware?.detected?.totalGpuVramGb ?? host.hardware?.detected?.totalVramGb ?? 0
   );
-  const usableVramGb = totalVramGb > 0 ? totalVramGb * (1 - reservePercent / 100) : 0;
+  const usableVram = usableVramGb(totalVramGb, reservePercent);
 
   if (!endpoint || (!endpoint.startsWith("http://") && !endpoint.startsWith("https://"))) {
     return {
@@ -198,7 +198,7 @@ async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport>
       status: "invalid-endpoint",
       reservePercent,
       totalVramGb,
-      usableVramGb,
+      usableVramGb: usableVram,
       reason: "Host endpoint missing or invalid",
     };
   }
@@ -208,7 +208,7 @@ async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport>
     const loaded = Array.isArray(ps?.models) ? (ps.models as ModelEntry[]) : [];
     const loadedModels = loaded.map((model) => ({
       name: model.name || "unknown",
-      loadedVramGb: loadedVramGb(model),
+      loadedVramGb: residentModelVramGb(model),
     }));
 
     const usedVramGb = loadedModels.reduce((sum, model) => sum + model.loadedVramGb, 0);
@@ -222,18 +222,22 @@ async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport>
       const tags = await fetchJson(`${endpoint}/api/tags`, args.timeoutMs);
       const catalog = Array.isArray(tags?.models) ? (tags.models as ModelEntry[]) : [];
       peakCatalogModelGb = catalog
-        .map((model) => toGb(typeof model.size === "number" ? model.size : 0))
+        .map((model) => bytesToGb(typeof model.size === "number" ? model.size : 0))
         .reduce((max, sizeGb) => Math.max(max, sizeGb), 0);
     } catch {
       peakCatalogModelGb = 0;
     }
 
     const referenceModelGb = Math.max(peakLoadedModelGb, peakCatalogModelGb);
-    const contextHeadroomGb = loadedModels.length * args.contextGbPerModel + args.extraContextGb;
-    const estimatedFreeGb = Math.max(0, usableVramGb - usedVramGb - contextHeadroomGb);
+    const headroomGb = contextHeadroomGb(
+      loadedModels.length,
+      args.contextGbPerModel,
+      args.extraContextGb
+    );
+    const freeGb = estimatedFreeGb(usableVram, usedVramGb, headroomGb);
     const safeAdditionalLargeModels =
-      referenceModelGb > 0 ? Math.floor(estimatedFreeGb / referenceModelGb) : 0;
-    const overload = usableVramGb > 0 && usedVramGb + contextHeadroomGb > usableVramGb;
+      referenceModelGb > 0 ? Math.floor(freeGb / referenceModelGb) : 0;
+    const overload = isOverloaded(usableVram, usedVramGb, headroomGb);
 
     return {
       hostId: host.id,
@@ -242,13 +246,13 @@ async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport>
       status: "ok",
       reservePercent,
       totalVramGb,
-      usableVramGb,
+      usableVramGb: usableVram,
       loadedModelCount: loadedModels.length,
       loadedModels,
       usedVramGb: Math.round(usedVramGb * 10) / 10,
       referenceModelGb: Math.round(referenceModelGb * 10) / 10,
-      contextHeadroomGb: Math.round(contextHeadroomGb * 10) / 10,
-      estimatedFreeGb: Math.round(estimatedFreeGb * 10) / 10,
+      contextHeadroomGb: Math.round(headroomGb * 10) / 10,
+      estimatedFreeGb: Math.round(freeGb * 10) / 10,
       safeAdditionalLargeModels,
       overload,
       configuredMaxParallelSlices: Number(host.executionPolicy?.maxParallelSlices ?? 1),
@@ -263,7 +267,7 @@ async function inspectHost(host: Host, args: CliArgs): Promise<HostMemoryReport>
       status: "unreachable",
       reservePercent,
       totalVramGb,
-      usableVramGb,
+      usableVramGb: usableVram,
       reason,
     };
   }

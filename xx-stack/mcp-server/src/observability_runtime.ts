@@ -9,8 +9,15 @@
  * behavior change impossible rather than merely discouraged.
  */
 
+import type { HostMemoryPressure } from "./host_memory_runtime.js";
 import type { Host, Registry } from "./platform_types.js";
-import { endpointFamilyForHost, pingHostEndpoint } from "./routing_runtime.js";
+import {
+  endpointFamilyForHost,
+  fetchResidentModels,
+  pingHostEndpoint,
+  type ResidentModel,
+} from "./routing_runtime.js";
+import { laneMemoryPressure } from "./routing_selection_runtime.js";
 
 export interface PlatformsSummary {
   selectionPolicy: Registry["selectionPolicy"];
@@ -48,16 +55,26 @@ export interface DiagnoseResult {
   endpointFamily?: string;
   latencyMs?: number;
   reason?: string;
+  /**
+   * Models the host currently has loaded, and what that costs it. Present only
+   * for a reachable host that can be asked — `capabilities`
+   * `.supportsResidentModelInspection` is true today for Ollama runtimes only.
+   * Absent means "not inspectable", never "nothing loaded"; a host that answers
+   * with nothing resident reports an empty array.
+   */
+  residentModels?: string[];
+  memoryPressure?: HostMemoryPressure;
 }
 
 /**
  * Ping every host in the registry — the disabled / non-HTTP / ping shaping the
- * check_health MCP tool returns. `ping` is injectable for tests; both real
- * callers use the default pingHostEndpoint from routing_runtime.
+ * check_health MCP tool returns. `ping` and `fetchResident` are injectable for
+ * tests; both real callers use the defaults from routing_runtime.
  */
 export async function diagnoseHosts(
   registry: Registry,
-  ping: (host: Host) => Promise<{ ok: boolean; latencyMs: number }> = pingHostEndpoint
+  ping: (host: Host) => Promise<{ ok: boolean; latencyMs: number }> = pingHostEndpoint,
+  fetchResident: (host: Host) => Promise<ResidentModel[] | null> = fetchResidentModels
 ): Promise<DiagnoseResult[]> {
   const allHosts = registry.tiers.flatMap((tier) => tier.hosts.map((host) => ({ tier, host })));
   return Promise.all(
@@ -69,6 +86,11 @@ export async function diagnoseHosts(
         return { tier: tier.id, host: host.id, status: "skipped", reason: "not an HTTP endpoint" };
       }
       const result = await ping(host);
+      // Only a reachable, inspectable host is asked; for everything else
+      // fetchResident returns null without dialling and both fields stay off
+      // the result entirely.
+      const resident = result.ok ? await fetchResident(host) : null;
+      const pressure = laneMemoryPressure(host, resident);
       return {
         tier: tier.id,
         host: host.id,
@@ -77,6 +99,8 @@ export async function diagnoseHosts(
         endpointFamily: endpointFamilyForHost(host),
         status: result.ok ? "healthy" : "unreachable",
         latencyMs: result.latencyMs,
+        ...(resident ? { residentModels: resident.map((model) => model.name) } : {}),
+        ...(pressure ? { memoryPressure: pressure } : {}),
       };
     })
   );
