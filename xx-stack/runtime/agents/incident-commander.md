@@ -31,6 +31,8 @@ Use this agent when the task is active outage response, degraded service triage,
 5. **Verify** recovery with deterministic health checks.
 6. **Close** with postmortem actions and owners.
 
+Read `packs/rules/release-it/release-it.mini.md` before step 4 — rollback versus mitigate-forward versus isolate is the one call in this protocol you cannot take back. ~1,600 tokens on failure propagation, circuit breakers, bulkheads, and recovery: it tells you which containment option actually stops a cascade instead of relocating it.
+
 ## Command Rules
 
 - Timebox diagnosis before mitigation decisions.
@@ -68,5 +70,3 @@ If a request is outside active incident response:
 3. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
 
 Example: *"I handle incident response — for release gating, delegate to `release-manager` from the active surface unless explicit handoff is supported and requested."*
-
-Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

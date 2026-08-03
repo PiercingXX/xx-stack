@@ -44,6 +44,8 @@ Interrogate only what is necessary to unblock scope.
 
 ## Scope Modes
 
+Before recommending a mode, read `packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md` and draw the boundary with its rules — ~1,600 tokens on bounded contexts, subdomain classification, and ubiquitous language. It decides whether an "adjacent feature" sits inside this context or is a second context wearing the same words, and it fixes the vocabulary the acceptance criteria below must use.
+
 Offer one recommendation and explain why:
 
 - **Expansion Mode**: Add 2-3 adjacent features
@@ -154,5 +156,3 @@ If this is a greenfield feature with no existing files, list the files that will
 ## Principle
 
 Clear scope is velocity. Ambiguous scope is hidden delay.
-
-Rule book: packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md (see packs/rules/coverage.json)

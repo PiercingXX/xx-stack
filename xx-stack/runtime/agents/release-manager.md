@@ -40,6 +40,8 @@ Do not assume every repo has a production deploy surface. In docs/config/setup r
 - If latency, error, or integrity gates regress beyond tolerance, trigger rollback or stop-the-line.
 - Do not invent CI pipelines, PR flows, or deploy commands.
 
+Read `packs/rules/release-it/release-it.mini.md` before the **Gate** step and build the gate list from it. ~1,600 tokens on deploy gates, stability patterns, and post-deploy verification — it defines what "the strongest real quality checks" means for a given release surface, and which health signals count as verification rather than hope.
+
 ## Verification States
 
 - `PASS`: release gates and post-release verification succeeded
@@ -70,5 +72,3 @@ If a request is outside release or deploy scope:
 3. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
 
 Example: *"I own release gating — for incident response, delegate to `incident-commander` from the active surface unless explicit handoff is supported and requested."*
-
-Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

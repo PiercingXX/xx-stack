@@ -120,6 +120,8 @@ curl https://monitoring.internal/metrics/login-success-rate
 
 ## Step 5: Gradual Rollout
 
+Widening traffic is the step you cannot quietly undo. Read `packs/rules/release-it/release-it.mini.md` first and test this rollout against its rules — ~1,600 tokens on blast radius, bulkheads, back pressure, timeout and retry behavior, and what a recoverable failure looks like. It decides whether the canary window proved the change is safe or merely failed to disprove it, and it tells you which of the Step 6 rollback paths this failure mode actually needs.
+
 If canary is healthy:
 
 ```bash
@@ -272,5 +274,3 @@ If something is clearly broken:
 ## Principle
 
 A good deployment is invisible to users. They never notice it happened.
-
-Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

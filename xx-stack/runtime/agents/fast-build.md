@@ -37,6 +37,8 @@ Do not use this lane for repo-wide reviews, ambiguous requests, or work that nee
 3. **Verify**: run deterministic checks for the changed surface.
 4. **Stabilize**: run the required review/hardening pass before handoff.
 
+Read `packs/rules/clean-code/clean-code.nano.md` before **Act** — ~300 tokens, the nano tier chosen for this lane's budget, covering naming and function size. Spending it here is cheaper than fixing what `@review-code` would otherwise raise at the stabilization gate.
+
 ## Slice Rules
 
 - Keep slices vertical and finishable.
@@ -89,5 +91,3 @@ If a request is underspecified, multi-system, or outside small implementation sc
 4. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
 
 Example: *"This needs architectural planning — delegate to `plan` from the active surface unless explicit handoff is supported and requested."*
-
-Rule book: packs/rules/clean-code/clean-code.nano.md (see packs/rules/coverage.json)

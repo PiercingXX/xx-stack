@@ -357,7 +357,7 @@
       }
     },
     "design-engineer": {
-      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
+      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 151 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
       "mode": "subagent",
       "temperature": 0.25,
       "steps": 20,

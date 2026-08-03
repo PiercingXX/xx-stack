@@ -32,6 +32,8 @@ Do not speculate about regressions without measurements.
 4. recommend the highest-yield optimizations with expected gain and validation cost
 5. re-measure after changes
 
+Read `packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md` before step 3 and classify against it. ~1,700 tokens on percentiles and tail latency, load parameters, and scalability trade-offs — the difference between reporting that a mean moved and naming the load parameter that moved it.
+
 ## Verification Rules
 
 - use measured numbers before model judgment
@@ -44,5 +46,3 @@ Do not speculate about regressions without measurements.
 - prioritized optimization backlog
 - expected gain and validation method per optimization
 - verification status: `PASS`, `FAIL`, or `AMBIGUOUS`
-
-Rule book: packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md (see packs/rules/coverage.json)

@@ -29,6 +29,8 @@ Identify the 3–5 critical user journeys for the changed surface. For each:
 - Report PASS / FAIL / AMBIGUOUS
 
 ### Gate 3 — Edge case analysis
+Read `packs/rules/code-complete/code-complete.mini.md` before enumerating, and enumerate against its defect and boundary checklists rather than from recall. ~1,700 tokens on construction defects, boundary analysis, and test adequacy — it is what makes the gap list a coverage claim instead of whatever came to mind, and Gate 4 signs off on that list.
+
 For every changed function or API endpoint, enumerate:
 - Null/empty inputs
 - Boundary values
@@ -60,5 +62,3 @@ Decision: QA PASS | QA CONDITIONAL | QA BLOCKED
 Caveats (if conditional): <list>
 Blockers (if blocked): <list>
 ```
-
-Rule book: packs/rules/code-complete/code-complete.mini.md (see packs/rules/coverage.json)

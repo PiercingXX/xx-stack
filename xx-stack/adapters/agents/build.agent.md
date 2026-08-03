@@ -40,6 +40,8 @@ Consume the plan package from `plan` or `execution-orchestrator`, execute slices
 - Edit only within the scope of the assigned slice. Do not touch files outside task scope.
 - One task `in_progress` at a time — mark it complete before starting the next.
 
+Before the **Act** step of the first slice, read `packs/rules/clean-code/clean-code.mini.md` and write against its rules. ~950 tokens of naming, function-size, and duplication decisions — the cheapest moment to spend them is while you type, because each one skipped returns as a `@review-code` finding at the quality gate below.
+
 ---
 
 ## Verification States
@@ -113,5 +115,3 @@ If a request is outside implementation scope (e.g. planning, architecture decisi
 2. Transfer to that agent automatically — do not ask for confirmation.
 
 Example: *"I implement code — for a release gate, I'll hand this to `release-manager`."*
-
-Rule book: packs/rules/clean-code/clean-code.mini.md (see packs/rules/coverage.json)

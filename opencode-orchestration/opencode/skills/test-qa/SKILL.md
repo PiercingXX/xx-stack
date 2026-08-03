@@ -95,6 +95,8 @@ If no deterministic test or build surface exists, say so explicitly and fall bac
 
 ### 4. Add Regression Test
 
+Read `packs/rules/code-complete/code-complete.mini.md` before writing the test and choose the assertion from its rules — ~1,700 tokens on construction quality, trust boundaries, invalid-state representation, and where defects actually cluster. It aims the regression test at the class of defect this bug came from instead of the one literal input that exposed it.
+
 Before writing the test, name the seams under test and confirm they exist — the module boundary, API surface, or state transition where this bug lives. A test aimed at no particular seam verifies nothing.
 
 ```javascript
@@ -188,5 +190,3 @@ Real browsers catch bugs AI misses. Manual journey testing complements automatio
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
-
-Rule book: packs/rules/code-complete/code-complete.mini.md (see packs/rules/coverage.json)

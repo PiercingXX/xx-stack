@@ -98,7 +98,7 @@ Before delivering the artifact, silently score it 1–5 across:
 Anything under 3/5 is a regression. Fix and rescore. Two passes is normal.
 
 ## Reference
-- Design systems: `packs/design/design-systems/` (design content pack: 137 brand DESIGN.md files)
+- Design systems: `packs/design/design-systems/` (design content pack: 151 brand DESIGN.md files)
 - Aesthetic skills: `packs/design/design-skills/` (design content pack: 57 style SKILL.md+DESIGN.md pairs — glassmorphism, brutalism, minimal, etc.)
 - Workflow skills: `packs/design/workflow-skills/` (canonical prototype/deck/doc skills)
 - Compatibility shim: `runtime/skills/design/`

@@ -52,6 +52,8 @@ Listen for:
 ### 4. Narrowest Wedge (MVP Scope)
 "What's the minimal version you could ship next week? What single problem does it solve?"
 
+Before you accept a wedge, read `packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md` and test the answer against its rules. It is ~1,600 tokens on subdomain classification and ubiquitous language — it separates the Core Domain worth building from the Supporting and Generic work that should be bought or kept dumb, and it exposes a wedge whose central noun still means two different things to two different people.
+
 Listen for:
 - Realistic scoping
 - Focus vs. kitchen sink
@@ -112,5 +114,3 @@ Ask: "Is this a startup idea or a learning/side project?"
 ## Key Principle
 
 The questions matter more than the answers. Good founders update their answers weekly. You're forcing them to think clearly, not validating their idea.
-
-Rule book: packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md (see packs/rules/coverage.json)

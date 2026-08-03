@@ -1,6 +1,6 @@
 ---
 name: design-system-pick
-description: Pick and apply a brand design system or aesthetic style. Consults the 137 brand DESIGN.md files and 57 style skills to match the right visual language to the task.
+description: Pick and apply a brand design system or aesthetic style. Consults the 151 brand DESIGN.md files and 57 style skills to match the right visual language to the task.
 mode: agent
 tools:
   - codebase
@@ -60,22 +60,25 @@ Context boundary rule:
 - otherwise fall back to `.gitignore` or host-native excludes
 - treat local `hooks/` as documented-only unless the active runtime proves hook execution exists
 
-## Available design systems (137 brands)
+## Available design systems (151 brands)
+
+Every id below resolves to `packs/design/design-systems/<id>/DESIGN.md`. Ids
+that also name an aesthetic style are listed once, under the styles section.
 
 ### AI & Dev platforms
-cursor, elevenlabs, mistral-ai, ollama, opencode-ai, replicate, runwayml, together-ai, voltagent, x-ai, cohere, minimax
+claude, cursor, elevenlabs, huggingface, mistral-ai, ollama, openai, opencode-ai, perplexity, replicate, runwayml, together-ai, voltagent, x-ai, cohere, minimax
 
 ### Dev tools
-expo, lovable, raycast, superhuman, vercel, warp
+expo, github, lovable, raycast, superhuman, vercel, warp
 
 ### Backend / infra
 clickhouse, composio, hashicorp, mongodb, posthog, sanity, sentry, supabase
 
 ### Productivity / SaaS
-cal, intercom, linear-app, mintlify, notion, resend, zapier
+cal, cisco, intercom, linear-app, loom, mintlify, notion, resend, slack, webex, zapier
 
 ### Design tools
-airtable, clay, figma, framer, miro, webflow
+airtable, canva, clay, figma, framer, miro, webflow
 
 ### Fintech / crypto
 binance, coinbase, kraken, mastercard, revolut, stripe, wise
@@ -84,13 +87,13 @@ binance, coinbase, kraken, mastercard, revolut, stripe, wise
 airbnb, meta, nike, shopify, starbucks
 
 ### Media / consumer tech
-apple, ibm, nvidia, pinterest, playstation, spacex, spotify, theverge, uber, vodafone, wired
+apple, discord, duolingo, ibm, nvidia, pinterest, playstation, spacex, spotify, theverge, uber, vodafone, wechat, wired, xiaohongshu
 
 ### Automotive
 bmw, bmw-m, bugatti, ferrari, lamborghini, renault, tesla
 
 ### Open-design starters
-default (Neutral Modern), warm-editorial, arc, canva, + 100+ more in packs/design/design-systems/
+default (Neutral Modern), warm-editorial, arc, atelier-zero, hud, kami, mission-control, tom-modern, totality-festival, trading-terminal, urdu
 
 ## Available aesthetic skills (57 styles)
 
