@@ -260,17 +260,16 @@ const KNOWN_DELTAS = [
       "- Config file: `<<source>>/telemetry.json` in the repo, with `.opencode/telemetry.json` only as a workspace compatibility shim",
     ],
   },
-  {
-    open: true,
-    file: "xx-stack/adapters/skills/design-system-pick.prompt.md",
-    why: "UNRESOLVED: the OpenCode prompt lists two design systems (`ollama`, `opencode`) the xx-stack prompt omits. Both exist in packs/design/design-systems (as `ollama` and `opencode-ai`) and both headings claim the same 137 brands, so the omission is either deliberate de-branding of the xx-stack surface or a stale curated list. Needs a human call; waived so the gate is usable, reported as OPEN so it is not forgotten.",
-    canonical: [
-      "cursor, elevenlabs, mistral, replicate, runway, together-ai, voltagent, x-ai, cohere, minimax",
-    ],
-    mirror: [
-      "cursor, elevenlabs, mistral, ollama, opencode, replicate, runway, together-ai, voltagent, x-ai, cohere, minimax",
-    ],
-  },
+  // The one `open: true` entry this list carried — the design-system-pick
+  // prompts disagreeing about `ollama` / `opencode` — was adjudicated rather
+  // than waived. `git log --follow -p` showed d458c02 edited both copies in the
+  // same commit: it removed `claude` from both (that was the de-branding) and
+  // added `ollama`/`opencode` to the OpenCode copy only. The xx-stack copy was
+  // simply missed, so it was a rotted list, not a deliberate omission — and
+  // since both components resolve `packs/design` to the same directory, there
+  // was no per-component brand subset to justify the divergence. Both copies now
+  // list the pack's real slugs (`opencode-ai`, plus four other ids that never
+  // resolved), so there is nothing left to waive.
 ];
 
 /** The content check must compare at least this many file pairs in total. */

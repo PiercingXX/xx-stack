@@ -80,12 +80,15 @@ each pack file against upstream content fetched from GitHub, and by reading the
 upstream `LICENSE` files directly. No license was inferred from a README, from
 a project's general reputation, or from memory.
 
-- **`design-systems/`** — 121 of 137 files are byte-identical to
-  `nexu-io/open-design` at `dceac12`. 15 differ by small deltas with two
+- **`design-systems/`** — 117 of 137 files are byte-identical to
+  `nexu-io/open-design` at `dceac12`. 19 differ by small deltas with three
   observed causes: local de-branding applied by commit `d458c02` (e.g.
-  `voltagent/DESIGN.md`: "GitHub stars badge" → "community badge"), and
-  upstream drift since vendoring (e.g. `arc/DESIGN.md` lacks a
-  "Usage Guardrails" section upstream has since added). The 137th, `bmw-m`, is
+  `voltagent/DESIGN.md`: "GitHub stars badge" → "community badge"), upstream
+  drift since vendoring (e.g. `arc/DESIGN.md` lacks a "Usage Guardrails"
+  section upstream has since added), and the 2026-08-03 contrast fix to four
+  files whose declared Text/Surface pair fell below WCAG AA (`bold`,
+  `energetic`, `mono`, `pacman` — one token each, recorded in
+  `manifest.json` under `resolvedContentDefects`). The 137th, `bmw-m`, is
   byte-identical to `VoltAgent/awesome-design-md` apart from one renamed
   frontmatter `name:` field.
 - **`design-skills/`** — 49 of 57 `SKILL.md` and 49 of 57 `DESIGN.md` are
@@ -139,7 +142,7 @@ a project's general reputation, or from memory.
 
 An earlier internal description characterised `design-systems/` as clean-room
 reinterpretation authored here, on the strength of its "Design System Inspired
-by X" framing. That is wrong. The framing is upstream's, and 121 of 137 files
+by X" framing. That is wrong. The framing is upstream's, and 117 of 137 files
 are byte-identical copies. This pack **redistributes** that content under
 Apache-2.0 and MIT; it did not originate it.
 
@@ -148,6 +151,18 @@ Apache-2.0 and MIT; it did not originate it.
 - `npm run design:catalog` — regenerate `DESIGN-CATALOG.md` (deterministic)
 - `npm run design:golden` — grade the golden-task response fixtures
 - `npm run design:html-gate` — HTML quality gate over pack templates and examples
+- `npm run design:systems-lint` — read-only lint over all 137 `design-systems/`
+  files: colour-token extraction, WCAG AA on the text/surface pair each file's
+  own prose declares, and section order against the two schemas this pack ships
+
+`design:systems-lint` checks contrast **only** on pairs a file explicitly tells
+an agent to use together — the 57 Schema-B files that say "Use Surface (#…) for
+large backgrounds" and "Keep body copy on Text (#…) for legibility". Bucketing
+tokens by role and cross-producing them was measured at 52.4% false positives
+on this corpus and must not be reintroduced; the reasoning is in the script's
+header comment. It runs four fixtures in `evals/design-system-lint/` on every
+invocation, because a structural check calibrated to its own corpus passes
+137/137 on day one and would otherwise be proving nothing.
 
 The HTML gate now reports anti-slop findings on a **P0/P1/P2 ladder** — the
 same vocabulary every `workflow-skills/*/references/checklist.md` already uses.

@@ -20,12 +20,12 @@ Dynamic, vibrant style with thick borders, geometric shapes, high-contrast color
 - **Danger:** `#DC2626` — Token from style foundations.
 - **Background:** `#FFEDD5` — Token from style foundations.
 - **Surface:** `#FDBA74` — Token from style foundations.
-- **Text:** `#EA580C` — Token from style foundations.
+- **Text:** `#111827` — Token from style foundations.
 - **Neutral:** `#FDBA74` — Derived from the surface token for official format compatibility.
 
 - Favor Primary (#EA580B) for CTA emphasis.
 - Use Surface (#FDBA74) for large backgrounds and cards.
-- Keep body copy on Text (#EA580C) for legibility.
+- Keep body copy on Text (#111827) for legibility.
 
 ## 3. Typography
 
