@@ -10,11 +10,14 @@ not a hand-picked one: a hand-picked list is what hid HERMES-1.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
 import email.message
 import http.client
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -63,6 +66,8 @@ class StubLaneHandler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not_found"})
 
     def do_POST(self):
+        with self.server.counter_lock:
+            self.server.post_count += 1
         if self.server.fail:
             self._send(500, {"error": "stub_down"})
             return
@@ -82,17 +87,21 @@ class StubLaneHandler(BaseHTTPRequestHandler):
             }
         else:
             message = {"role": "assistant", "content": self.server.reply}
-        self._send(
-            200,
-            {
-                "id": "chatcmpl-stub",
-                "object": "chat.completion",
-                "created": 0,
-                "model": payload.get("model", "stub-model"),
-                "choices": [{"index": 0, "message": message, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12},
-            },
-        )
+        choice = {"index": 0, "message": message}
+        # `finish_reason = None` on the server models a provider that omits the
+        # field entirely, which is different from one that reports a failure.
+        if self.server.finish_reason is not None:
+            choice["finish_reason"] = self.server.finish_reason
+        body = {
+            "id": "chatcmpl-stub",
+            "object": "chat.completion",
+            "created": 0,
+            "model": payload.get("model", "stub-model"),
+            "choices": [choice],
+        }
+        if self.server.usage is not None:
+            body["usage"] = self.server.usage
+        self._send(200, body)
 
 
 class StubLaneServer(ThreadingHTTPServer):
@@ -103,7 +112,11 @@ class StubLaneServer(ThreadingHTTPServer):
         self.models = models
         self.reply = reply
         self.tool_support = tool_support
+        self.finish_reason = "stop"
+        self.usage = {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
         self.fail = False
+        self.post_count = 0
+        self.counter_lock = threading.Lock()
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
 
@@ -584,6 +597,19 @@ class RoutingTests(TempDirMixin):
         self.assertEqual(meta["usage"]["completion_tokens"], 7)
         self.assertIsInstance(meta["latency_ms"], int)
 
+    def test_call_chat_surfaces_finish_reason(self):
+        cfg = self._cfg()
+        lane = ho.lane_from_config(cfg, "a")
+        _, _, meta = ho.call_chat(lane, 10, "sys", "user")
+        self.assertEqual(meta["finish_reason"], "stop")
+
+    def test_call_chat_reports_absent_finish_reason_as_none(self):
+        self.stub_a.finish_reason = None
+        cfg = self._cfg()
+        lane = ho.lane_from_config(cfg, "a")
+        _, _, meta = ho.call_chat(lane, 10, "sys", "user")
+        self.assertIsNone(meta["finish_reason"])
+
     def test_probe_reuse_skips_second_probe(self):
         cfg = self._cfg(require_tool_call_for_subagents=True)
         first = ho.build_inventory_report(cfg, include_cloud=False, probe_tool_calls=True)
@@ -593,6 +619,279 @@ class RoutingTests(TempDirMixin):
             second["lanes"]["b"]["tool_call_supported"],
             first["lanes"]["b"]["tool_call_supported"],
         )
+
+
+# A real repetition loop: a plausible opening sentence, then one clause emitted
+# over and over. This is the dangerous shape — it reads fine in the first line,
+# it emits a very large number of tokens very fast, and before the validity gate
+# it scored as the FASTEST lane.
+REPETITION_LOOP_REPLY = (
+    "The operational notes describe a control plane that routes inference "
+    "requests across self-hosted lanes before considering cloud escalation. "
+    + "and is scored on health and priority and tool support " * 30
+)
+
+# Degenerate in the other direction: almost no distinct vocabulary at all.
+SINGLE_TOKEN_LOOP_REPLY = "summary " * 80
+
+# Control: an actual one-paragraph summary of the bench prompt.
+HEALTHY_SUMMARY_REPLY = (
+    "These notes describe an orchestration control plane whose defining rule is "
+    "that inference requests go to self-hosted lanes first, and cloud escalation "
+    "is considered only afterwards. Every lane presents an OpenAI-compatible API, "
+    "which lets the router treat them uniformly, and each one is ranked using four "
+    "inputs: current health, the models it can actually serve, an operator-assigned "
+    "priority, and whether it supports tool calling. The scoring exists so that "
+    "routing decisions stay explainable rather than arbitrary."
+)
+
+
+class BenchValidityGateTests(unittest.TestCase):
+    """The gate that stops a repetition loop becoming a published speed result."""
+
+    def test_healthy_summary_is_publishable(self):
+        verdict = ho.evaluate_bench_sample(HEALTHY_SUMMARY_REPLY, "stop")
+        self.assertTrue(verdict["publishable"], verdict)
+        self.assertEqual(verdict["exclusion_reason"], "")
+        self.assertLess(verdict["repeated_trigram_ratio"], 0.1)
+
+    def test_repetition_loop_is_rejected(self):
+        verdict = ho.evaluate_bench_sample(REPETITION_LOOP_REPLY, "stop")
+        self.assertFalse(verdict["publishable"])
+        self.assertEqual(verdict["exclusion_reason"], "degenerate_output")
+        self.assertGreater(verdict["repeated_trigram_ratio"], ho.BENCH_MAX_REPEATED_TRIGRAM_RATIO)
+        # It has plenty of distinct words, so the trigram rule is what catches it.
+        self.assertGreaterEqual(verdict["distinct_word_tokens"], ho.BENCH_MIN_DISTINCT_TOKENS)
+
+    def test_single_token_loop_is_rejected(self):
+        verdict = ho.evaluate_bench_sample(SINGLE_TOKEN_LOOP_REPLY, "stop")
+        self.assertFalse(verdict["publishable"])
+        self.assertEqual(verdict["exclusion_reason"], "degenerate_output")
+
+    def test_truncated_reply_is_excluded_not_counted(self):
+        verdict = ho.evaluate_bench_sample(HEALTHY_SUMMARY_REPLY, "length")
+        self.assertFalse(verdict["publishable"])
+        self.assertEqual(verdict["exclusion_reason"], "truncated")
+
+    def test_abnormal_finish_reason_is_excluded(self):
+        verdict = ho.evaluate_bench_sample(HEALTHY_SUMMARY_REPLY, "content_filter")
+        self.assertFalse(verdict["publishable"])
+        self.assertEqual(verdict["exclusion_reason"], "abnormal_finish")
+
+    def test_absent_finish_reason_is_marked_not_failed(self):
+        verdict = ho.evaluate_bench_sample(HEALTHY_SUMMARY_REPLY, None)
+        self.assertTrue(verdict["publishable"])
+        self.assertFalse(verdict["finish_reason_reported"])
+
+    def test_too_short_reply_cannot_certify_non_degeneracy(self):
+        verdict = ho.evaluate_bench_sample("Routes requests.", "stop")
+        self.assertFalse(verdict["publishable"])
+        self.assertEqual(verdict["exclusion_reason"], "too_short")
+
+    def test_repeated_ngram_ratio_is_zero_for_unique_text(self):
+        tokens = ho.bench_word_tokens("alpha beta gamma delta epsilon zeta eta theta")
+        self.assertEqual(ho.repeated_ngram_ratio(tokens, 3), 0.0)
+
+
+class BenchRunMixin(TempDirMixin):
+    """Runs the real `bench` command against a loopback stub lane."""
+
+    def setUp(self):
+        self.tmpdir = self.make_tempdir()
+        self.stub = StubLaneServer(["model-a"], reply=HEALTHY_SUMMARY_REPLY)
+        self.addCleanup(self.stub.stop)
+
+    def _cfg(self):
+        return make_cfg(
+            self.tmpdir,
+            {"a": lane_cfg("lane-a", self.stub.base_url, "model-a", priority=100)},
+        )
+
+    def _args(self, **over):
+        params = {
+            "lane": "a",
+            "parallel": 1,
+            "iterations": 2,
+            "warmup": 0,
+            "context_tokens": 100,
+            "max_tokens": 64,
+            "profile": "synthesis-long",
+            "output": str(Path(self.tmpdir) / "bench"),
+        }
+        params.update(over)
+        return argparse.Namespace(**params)
+
+    def _run(self, **over):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            rc = ho.command_bench(self._args(**over), self._cfg())
+        self.assertEqual(rc, 0)
+        written = sorted((Path(self.tmpdir) / "bench").glob("*.json"))
+        self.assertEqual(len(written), 1, written)
+        return json.loads(written[0].read_text(encoding="utf-8")), stderr.getvalue()
+
+
+class BenchCommandTests(BenchRunMixin):
+    """Drive the gate through the registered `bench` command, not just helpers."""
+
+    def test_healthy_run_is_publishable_and_measured(self):
+        result, _ = self._run()
+        self.assertTrue(result["publishable"], result["publish_blockers"])
+        self.assertEqual(result["publish_blockers"], [])
+        self.assertEqual(result["samples_excluded"], 0)
+        self.assertEqual(result["samples_publishable"], 2)
+        self.assertGreater(result["tokens_per_sec"], 0)
+        self.assertIsNone(result["tokens_per_sec_estimated"])
+        self.assertFalse(result["tokens_estimated"])
+
+    def test_repetition_loop_never_becomes_a_published_speed_result(self):
+        self.stub.reply = REPETITION_LOOP_REPLY
+        result, stderr = self._run()
+        self.assertFalse(result["publishable"])
+        self.assertIn("excluded_samples_present", result["publish_blockers"])
+        self.assertEqual(result["samples_excluded"], 2)
+        self.assertEqual(result["samples_publishable"], 0)
+        self.assertIsNone(result["tokens_per_sec"])
+        self.assertEqual(result["exclusions_by_reason"], {"degenerate_output": 2})
+        # Visibly excluded, not silently dropped: every sample is listed.
+        self.assertEqual(len(result["excluded_samples"]), 2)
+        self.assertIn("degenerate_output", stderr)
+        self.assertIn("NOT PUBLISHABLE", stderr)
+
+    def test_truncated_replies_are_excluded_from_throughput(self):
+        self.stub.finish_reason = "length"
+        result, _ = self._run()
+        self.assertFalse(result["publishable"])
+        self.assertEqual(result["exclusions_by_reason"], {"truncated": 2})
+        self.assertIsNone(result["tokens_per_sec"])
+
+    def test_estimates_never_land_in_the_measured_field(self):
+        self.stub.usage = None  # provider reports no usage block
+        result, _ = self._run()
+        self.assertIsNone(result["tokens_per_sec"])
+        self.assertEqual(result["completion_tokens_measured"], 0)
+        self.assertGreater(result["tokens_per_sec_estimated"], 0)
+        self.assertGreater(result["completion_tokens_estimated"], 0)
+        self.assertTrue(result["tokens_estimated"])
+        self.assertIn("no_provider_reported_token_counts", result["publish_blockers"])
+
+    def test_absent_finish_reason_is_counted_not_silently_trusted(self):
+        self.stub.finish_reason = None
+        result, _ = self._run()
+        self.assertEqual(result["finish_reason_unreported_samples"], 2)
+        self.assertEqual(result["samples_excluded"], 0)
+
+    def test_warmup_requests_are_excluded_from_timing_and_samples(self):
+        result, stderr = self._run(warmup=1, iterations=2)
+        self.assertEqual(self.stub.post_count, 3)  # 1 warmup + 2 timed
+        self.assertEqual(result["samples_total"], 2)
+        self.assertEqual(result["warmup_iterations"], 1)
+        self.assertGreater(result["warmup_seconds"], 0)
+        self.assertIn("warmup", stderr)
+
+    def test_bench_reports_the_thresholds_it_applied(self):
+        result, _ = self._run()
+        self.assertEqual(
+            result["validity_gate"],
+            {
+                "min_reply_tokens": ho.BENCH_MIN_REPLY_TOKENS,
+                "min_distinct_tokens": ho.BENCH_MIN_DISTINCT_TOKENS,
+                "max_repeated_trigram_ratio": ho.BENCH_MAX_REPEATED_TRIGRAM_RATIO,
+            },
+        )
+
+    def test_bench_emits_no_empty_string_lane_classification(self):
+        result, _ = self._run()
+        self.assertIsNone(result["lane_classification"])
+        self.assertIsNone(result["gpu_residency_pass"])
+        self.assertTrue(result["lane_classification_reason"])
+        self.assertEqual(result["gpu_residency_method"], "not_measured_by_bench")
+
+
+class QualificationMatrixDocTests(BenchRunMixin):
+    """D4: the matrix doc is a claim about inventory.json and about the bench.
+
+    Same staleness class as the CONTENT-4/5/12 defects: hardcoded facts in prose
+    rot silently. These check the claims against the source of truth and against
+    a real bench record, so drift fails a gate instead of misleading a reader.
+    """
+
+    DOC_PATH = HERMES_DIR / "model-qualification-matrix.md"
+    INVENTORY_PATH = HERMES_DIR.parent / "inventory.json"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = cls.DOC_PATH.read_text(encoding="utf-8")
+        cls.inventory = json.loads(cls.INVENTORY_PATH.read_text(encoding="utf-8"))
+
+    def test_doc_names_every_inventory_host(self):
+        for machine in self.inventory["machines"]:
+            with self.subTest(machine=machine["id"]):
+                self.assertIn(machine["id"], self.doc)
+
+    def test_no_phantom_host_is_presented_as_current(self):
+        """Retired hosts may appear under Historical record, nowhere above it."""
+        marker = "## Historical record"
+        self.assertIn(marker, self.doc)
+        current = self.doc[: self.doc.index(marker)]
+        # Named as current lanes in the pre-fix doc; in no source of truth.
+        for phantom in ("Debian dual 4080", "Arch dual 5090", "test-bench-archlinux", "server-debian-ai"):
+            with self.subTest(phantom=phantom):
+                self.assertNotIn(phantom, current)
+
+    def test_doc_names_every_shipped_lane(self):
+        for key, lane in SHIPPED_CFG["lanes"].items():
+            with self.subTest(lane=key):
+                self.assertIn(f"`{key}`", self.doc)
+                self.assertIn(lane["name"], self.doc)
+
+    def test_doc_points_at_the_shipped_bench_output_path(self):
+        default_output = ho.build_parser().parse_args(["bench"]).output
+        self.assertIn(f"hermes-orchestration/{default_output}/", self.doc)
+        # The pre-fix doc pointed evidence at a path that exists nowhere.
+        self.assertNotIn(
+            "Evidence artifacts\n- ~/Documents/opencode-orchestration", self.doc
+        )
+
+    def _required_schema_fields(self):
+        start = self.doc.index("### Required — produced by `hermes bench`")
+        end = self.doc.index("### Operator-supplied", start)
+        fields = []
+        for line in self.doc[start:end].splitlines():
+            if not line.startswith("|") or set(line) <= set("|- "):
+                continue
+            first_cell = line.split("|")[1]
+            fields.extend(re.findall(r"`([a-z_0-9]+)`", first_cell))
+        return fields
+
+    def test_every_required_schema_field_is_actually_emitted(self):
+        """The defect: the schema demanded fields no run could produce."""
+        result, _ = self._run()
+        required = self._required_schema_fields()
+        self.assertGreaterEqual(len(required), 12, required)
+        for field in required:
+            with self.subTest(field=field):
+                self.assertIn(field, result)
+
+    def test_unproducible_fields_are_documented_as_operator_supplied(self):
+        result, _ = self._run()
+        operator_section = self.doc[self.doc.index("### Operator-supplied") :]
+        for field in ("gpu_residency_pass", "lane_classification"):
+            with self.subTest(field=field):
+                self.assertNotIn(field, self._required_schema_fields())
+                self.assertIn(f"`{field}`", operator_section)
+                # Still emitted, as an explicit null rather than a fake value.
+                self.assertIn(field, result)
+                self.assertIsNone(result[field])
+
+    def test_unset_thresholds_are_explained_not_left_bare(self):
+        bare = [
+            line
+            for line in self.doc.splitlines()
+            if line.strip().endswith("TBD") and "see above" not in line
+        ]
+        self.assertEqual(bare, [], f"bare TBD placeholders remain: {bare}")
+        self.assertIn("The measurement that sets them", self.doc)
 
 
 class ProxyTests(TempDirMixin):

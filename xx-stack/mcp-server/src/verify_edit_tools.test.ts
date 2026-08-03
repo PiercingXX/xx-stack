@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -308,10 +308,19 @@ test("caller-supplied compaction still reports what it dropped", async () => {
       compactOptions: { collapseRepeats: true },
     });
 
+    // 12 copies of "identical line", newline-joined, is 179 bytes.
+    const rawBytes = 12 * "identical line".length + 11;
     assert.equal(payload.test!.ok, true);
     assert.ok(payload.test!.output.includes("identical lines collapsed"));
     assert.ok(payload.compacted && payload.compacted.length > 0, "dropped notes must be reported");
     assert.equal(payload.test!.truncated, false, "collapsing is not truncation");
+    // `truncated === false` was the only size assertion here, and it is true
+    // whether the view shrank or quadrupled. A reported collapse has to be a
+    // real saving in BYTES.
+    assert.ok(
+      payload.test!.output.length < rawBytes,
+      `collapsed view must be smaller than the ${rawBytes}-byte capture, got ${payload.test!.output.length}`
+    );
   } finally {
     resetFullOutputArtifacts();
     await rm(dir, { recursive: true, force: true });
@@ -436,6 +445,208 @@ test("an npm failure with package.json but no node_modules is deps_not_installed
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+// --- D2 through the tool: compaction must not inflate the view -------------
+//
+// This suite's compaction coverage asserted `truncated === false`, which is
+// true of a view four times the size of its capture. Blank-line runs are the
+// most common repeated-line pattern in real lint and test output, so this is
+// the shape the tool actually meets.
+
+test("caller-supplied collapse never returns more bytes than the capture", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-edit-tool-"));
+  resetFullOutputArtifacts();
+  try {
+    // Exactly "PASS\n\n\n\nPASS\n\n\n\nPASS" — 20 bytes, no trailing newline
+    // for `.trim()` to remove. Pre-fix the view came back at 80 bytes with two
+    // phantom "collapsed 3 consecutive identical lines" savings reported.
+    await writeFile(
+      join(dir, "blanks.js"),
+      'process.stdout.write("PASS\\n\\n\\n\\nPASS\\n\\n\\n\\nPASS");\n'
+    );
+
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({
+      cwd: dir,
+      testCmd: "node blanks.js",
+      compactOptions: { collapseRepeats: true },
+    });
+
+    assert.equal(payload.test!.ok, true);
+    assert.equal(
+      payload.test!.output.length,
+      20,
+      `the view must not exceed the 20-byte capture, got ${payload.test!.output.length}`
+    );
+    assert.equal(payload.test!.output, "PASS\n\n\n\nPASS\n\n\n\nPASS");
+    assert.equal(payload.compacted, undefined, "no saving happened, so none may be reported");
+  } finally {
+    resetFullOutputArtifacts();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- D3: the returned view is redacted, the on-disk capture is not ---------
+//
+// MANUAL §5 — secrets are redacted from rendered lines, credential locations
+// survive, values never do. It was enforced on supervisor prompts and on the
+// review diff but not on verify_edit, whose output is arbitrary lint and
+// test-runner stdout and is embedded in continuation prompts that travel to
+// other lanes. A failing DB test printing its DSN is the ordinary case.
+
+/** A realistic jest failure with a DSN printed by the failing test. */
+const JEST_FAILURE_WITH_DSN = [
+  "FAIL  src/db/pool.test.ts",
+  "  ● PoolManager › connects with the configured DSN",
+  "",
+  "    expect(received).toEqual(expected) // deep equality",
+  "",
+  "    - Expected  - 1",
+  "    + Received  + 1",
+  "",
+  "      Object {",
+  '    -   "database": "app_prod",',
+  '    +   "database": "app_dev",',
+  '        "host": "db.internal",',
+  "      }",
+  "",
+  "      at Object.<anonymous> (src/db/pool.test.ts:42:31)",
+  "",
+  "    console.error",
+  "      connection failed: postgres://user:pw@host/db",
+  "",
+  "Tests:       1 failed, 12 passed, 13 total",
+].join("\n");
+
+test("verify_edit redacts secrets from the view without damaging the failure diff", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-redact-"));
+  try {
+    await writeFile(
+      join(dir, "jest-like.js"),
+      `console.error(${JSON.stringify(JEST_FAILURE_WITH_DSN)});\nprocess.exit(1);\n`
+    );
+
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: "node jest-like.js" });
+    const view = payload.test!.output;
+
+    assert.equal(payload.test!.outcome, "fail");
+    assert.ok(!view.includes("user:pw@host"), "the DSN password must not travel");
+    assert.ok(
+      view.includes("postgres://user:[redacted-secret]@host/db"),
+      "the credential LOCATION survives — scheme, user, host — the value does not"
+    );
+
+    // The repair-critical half: everything the agent needs to fix the test is
+    // byte-intact. Redacting a test failure into uselessness would be its own
+    // defect, which is why the raw capture also stays on disk.
+    for (const fragment of [
+      "● PoolManager › connects with the configured DSN",
+      "expect(received).toEqual(expected)",
+      '-   "database": "app_prod",',
+      '+   "database": "app_dev",',
+      "at Object.<anonymous> (src/db/pool.test.ts:42:31)",
+      "Tests:       1 failed, 12 passed, 13 total",
+    ]) {
+      assert.ok(view.includes(fragment), `redaction must not touch: ${fragment}`);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("the on-disk full capture stays raw while the travelling view is redacted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-redact-"));
+  resetFullOutputArtifacts();
+  try {
+    await writeFile(
+      join(dir, "big-secret.js"),
+      `console.error(${JSON.stringify(JEST_FAILURE_WITH_DSN)});\n` +
+        'for (let i = 0; i < 300; i++) console.error("noise " + i + " " + "z".repeat(40));\n' +
+        "process.exit(1);\n"
+    );
+
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: "node big-secret.js" });
+
+    assert.equal(payload.test!.truncated, true);
+    assert.ok(!payload.test!.output.includes("user:pw@host"), "the view never carries the value");
+
+    const fullPath = payload.test!.fullOutputPath!;
+    assert.ok(fullPath, "a truncated result must point at the full capture");
+    const full = await readFile(fullPath, "utf8");
+    assert.ok(
+      full.includes("postgres://user:pw@host/db"),
+      "the local capture stays raw — it is the same trust level as the working tree, and the agent needs it greppable"
+    );
+  } finally {
+    resetFullOutputArtifacts();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test(
+  "the scratch dir and its captures are owner-only on disk",
+  { skip: process.platform === "win32" },
+  () => {
+    // The capture is raw by design, so the predictable world-readable path under
+    // os.tmpdir() was the whole exposure: any other user on a shared machine
+    // could read the last 8 full captures.
+    resetFullOutputArtifacts();
+    try {
+      const path = writeFullOutputArtifact("lint", "postgres://user:pw@host/db");
+      assert.ok(path);
+
+      assert.equal(
+        statSync(path!).mode & 0o777,
+        0o600,
+        "a raw capture must be readable only by its owner"
+      );
+      assert.equal(
+        statSync(getVerifyEditScratchDir()).mode & 0o777,
+        0o700,
+        "the scratch dir must not be listable by other users"
+      );
+    } finally {
+      resetFullOutputArtifacts();
+    }
+  }
+);
+
+// --- D5: a quoted argument cannot be expressed, and now says so -------------
+
+test("an argv-pattern denial names quoting as the limitation", async () => {
+  // `npx jest -t "my test"` splits on whitespace into -t, "my, test" — and the
+  // leading quote fails SAFE_HOOK_ARG_PATTERN. The denial was correct and loud
+  // but anonymous: the caller got `hook_arg_pattern_blocked` and no hint.
+  // goalContract.validationCmd flows through here, so that cost a whole cycle.
+  const verifyEdit = captureVerifyEditTool(["node"]);
+  const payload = await verifyEdit({ cwd: tmpdir(), testCmd: 'node -t "my test"' });
+
+  assert.equal(payload.test!.outcome, "denied");
+  assert.equal(payload.test!.reasonCode, "hook_arg_pattern_blocked");
+  assert.ok(
+    typeof payload.test!.remediation === "string" && payload.test!.remediation.length > 0,
+    "an argv-charset denial must explain itself"
+  );
+  const remediation = payload.test!.remediation!;
+  assert.ok(remediation.includes("quot"), "the remediation must name quoting as the cause");
+  assert.ok(
+    remediation.includes("no shell"),
+    "and must say why — argv-only is deliberate, not a missing feature"
+  );
+  assert.ok(remediation.includes('"my'), "naming the rejected fragment saves a guess");
+});
+
+test("a non-argv denial still carries no remediation", async () => {
+  // The remediation is specific to the argv charset. A command the allowlist
+  // simply does not carry is a policy judgement, not a caller-side limitation.
+  const verifyEdit = captureVerifyEditTool([]);
+  const payload = await verifyEdit({ cwd: tmpdir(), testCmd: "forbidden-tool --flag" });
+
+  assert.equal(payload.test!.reasonCode, "hook_command_not_allowlisted");
+  assert.equal(payload.test!.remediation, undefined);
 });
 
 test("ok is exactly outcome === pass on every path", async () => {

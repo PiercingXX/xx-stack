@@ -1,11 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { buildRepoMap } from "./repo_map_runtime.js";
+import {
+  buildRepoMap,
+  BINARY_SNIFF_BYTES,
+  MAX_FILE_BYTES,
+  OMISSION_EXAMPLE_LIMIT,
+} from "./repo_map_runtime.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -302,5 +308,359 @@ test("git timestamps still rank a recently touched file above an older one", asy
       byPath.get("new.ts")! >= byPath.get("old.ts")!,
       "argv-style git log must still produce a usable recency signal"
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared helper for the fixtures below, which stage many files at once.
+// ---------------------------------------------------------------------------
+
+async function commitAll(root: string, message: string): Promise<void> {
+  const { execFileSync } = await import("node:child_process");
+  execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", message], { cwd: root, stdio: "ignore" });
+}
+
+// ---------------------------------------------------------------------------
+// D2: every path from `git ls-files` went straight into
+// `readFileSync(fullPath, "utf8")` with no `stat` and no binary sniff. On a
+// 2-file repo holding a 20 MB random binary the measured result was:
+//
+//     files returned: ["main.ts","blob.bin"]     RSS 77 MB -> 131 MB
+//
+// The blob was not merely read — it was ranked, selected, and returned as code
+// context, so an agent asking for a repo map received random bytes presented
+// as source.
+// ---------------------------------------------------------------------------
+
+test("a random binary is never returned as code context", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await writeFile(join(root, "blob.bin"), randomBytes(20 * 1024 * 1024));
+    await commitAll(root, "binary blob");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = result.files.map((f) => f.path);
+
+    assert.deepEqual(paths, ["main.ts"], "the binary must not be presented as source");
+    // At 20 MB the size cap fires before the sniff ever runs, which is the
+    // point: the guard that protects the process is the one in front of the
+    // read. The sniff's own job is the next test.
+    assert.equal(result.omissions.oversized.count, 1);
+    assert.deepEqual(result.omissions.oversized.examples, ["blob.bin"]);
+    assert.equal(result.omissions.binary.count, 0);
+  });
+});
+
+test("the binary sniff reads a bounded prefix, matching git's 8000-byte rule", async () => {
+  await withTempRepo(async (root) => {
+    // NUL inside the sniff window: binary, same verdict as `git diff`.
+    const early = Buffer.alloc(BINARY_SNIFF_BYTES + 100, 0x61);
+    early[BINARY_SNIFF_BYTES - 1] = 0x00;
+    await writeFile(join(root, "early-nul.txt"), early);
+
+    // NUL past the sniff window: git calls this text, and so do we. This is
+    // the assertion that proves the guard is a prefix sniff and not a full
+    // scan of the file.
+    const late = Buffer.alloc(BINARY_SNIFF_BYTES + 100, 0x61);
+    late[BINARY_SNIFF_BYTES + 50] = 0x00;
+    await writeFile(join(root, "late-nul.txt"), late);
+
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "nul placement");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.equal(paths.has("early-nul.txt"), false, "NUL within 8000 bytes is binary");
+    assert.deepEqual(result.omissions.binary.examples, ["early-nul.txt"]);
+    assert.ok(paths.has("late-nul.txt"), "NUL past 8000 bytes is text, as git has it");
+  });
+});
+
+test("a file over the size cap is excluded before it is read", async () => {
+  await withTempRepo(async (root) => {
+    // Over the cap, pure ASCII so nothing but the size guard can reject it,
+    // and line-broken so that before the fix its head really was returned as
+    // the budget-remainder entry rather than being skipped by accident.
+    const line = "a".repeat(79) + "\n";
+    const huge = line.repeat(Math.ceil((MAX_FILE_BYTES + 1) / line.length));
+    assert.ok(Buffer.byteLength(huge) > MAX_FILE_BYTES, "fixture must exceed the cap");
+    await writeFile(join(root, "huge.txt"), huge, "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "oversized");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = result.files.map((f) => f.path);
+
+    assert.deepEqual(paths, ["main.ts"]);
+    assert.equal(result.omissions.oversized.count, 1);
+    assert.deepEqual(result.omissions.oversized.examples, ["huge.txt"]);
+  });
+});
+
+test("a file just under the size cap is still read", async () => {
+  await withTempRepo(async (root) => {
+    // Boundary guard in the other direction: the cap must never cost the
+    // caller real code. This file is one byte under it and is read normally;
+    // only the token budget decides how much of it comes back.
+    const line = "// x\n";
+    const body = line.repeat(Math.floor((MAX_FILE_BYTES - 1) / line.length));
+    assert.ok(Buffer.byteLength(body) <= MAX_FILE_BYTES - 1, "fixture must sit under the cap");
+    await writeFile(join(root, "big.ts"), body, "utf8");
+    await commitAll(root, "under cap");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    assert.deepEqual(
+      result.files.map((f) => f.path),
+      ["big.ts"],
+      "a file under the cap is read, and here comes back as the truncated head"
+    );
+    assert.equal(result.omissions.oversized.count, 0);
+    assert.deepEqual(result.omissions.truncated.examples, ["big.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D3: `loadIgnorePatterns` pushed `!keep.log` verbatim as a POSITIVE pattern
+// and `isIgnored` had no negation handling and no last-match-wins ordering.
+// Because we re-applied `.gitignore` on top of git's already-correct output, a
+// file git deliberately re-included was re-excluded by our second pass:
+//
+//     .gitignore = "*.log\n!keep.log"
+//     git ls-files --exclude-standard  -> [.gitignore, keep.log, main.ts]
+//     build_repo_map                   -> [.gitignore, main.ts]
+//
+// keep.log was gone, and nothing said so.
+// ---------------------------------------------------------------------------
+
+test("a file .gitignore re-includes with ! is not re-excluded by the repo map", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, ".gitignore"), "*.log\n!keep.log\n", "utf8");
+    await writeFile(join(root, "keep.log"), "keep me\n", "utf8");
+    await writeFile(join(root, "drop.log"), "drop me\n", "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "negated gitignore");
+
+    // Prove the premise: git itself re-includes keep.log and excludes drop.log.
+    const { execFileSync } = await import("node:child_process");
+    const listed = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+      .split("\n")
+      .filter(Boolean)
+      .sort();
+    assert.deepEqual(listed, [".gitignore", "keep.log", "main.ts"]);
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.ok(paths.has("keep.log"), "git re-included keep.log; we must not take it back out");
+    assert.ok(paths.has("main.ts"));
+    assert.equal(paths.has("drop.log"), false, "drop.log was never in git's output");
+    assert.equal(result.omissions.ignored.count, 0, "nothing here is ours to ignore");
+  });
+});
+
+test(".xxignore honours ! negation, with no git safety net behind it", async () => {
+  await withTempRepo(async (root) => {
+    // git knows nothing about .xxignore, so this matcher is the only thing
+    // standing between `!README.md` and a silently missing file.
+    await writeFile(join(root, ".xxignore"), "*.md\n!README.md\n", "utf8");
+    await writeFile(join(root, "README.md"), "# readme\n", "utf8");
+    await writeFile(join(root, "NOTES.md"), "# notes\n", "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "negated xxignore");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.ok(paths.has("README.md"), "!README.md must re-include it");
+    assert.ok(paths.has("main.ts"));
+    assert.equal(paths.has("NOTES.md"), false);
+    assert.deepEqual(result.omissions.ignored.examples, ["NOTES.md"]);
+  });
+});
+
+test("ignore rules resolve last-match-wins in both directions", async () => {
+  await withTempRepo(async (root) => {
+    // Exclude, re-include, exclude again — the third line must win over the
+    // second for the one file it names, and only that file.
+    await writeFile(join(root, ".xxignore"), "*.md\n!docs/*.md\ndocs/secret.md\n", "utf8");
+    await writeFile(join(root, "top.md"), "top\n", "utf8");
+    await mkdir(join(root, "docs"), { recursive: true });
+    await writeFile(join(root, "docs/keep.md"), "keep\n", "utf8");
+    await writeFile(join(root, "docs/secret.md"), "secret\n", "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "layered rules");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.ok(paths.has("docs/keep.md"), "re-included by the later negation");
+    assert.ok(paths.has("main.ts"));
+    assert.equal(paths.has("top.md"), false, "never re-included");
+    assert.equal(paths.has("docs/secret.md"), false, "re-excluded by the last rule");
+    assert.deepEqual(result.omissions.ignored.examples, ["docs/secret.md", "top.md"]);
+  });
+});
+
+test("character classes and mid-pattern ** are honoured in ignore rules", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, ".xxignore"), "*.[oa]\nsrc/**/gen.ts\n", "utf8");
+    await writeFile(join(root, "obj.o"), "o\n", "utf8");
+    await writeFile(join(root, "lib.a"), "a\n", "utf8");
+    await writeFile(join(root, "keep.c"), "int main(void){return 0;}\n", "utf8");
+    await mkdir(join(root, "src/deep/nest"), { recursive: true });
+    await writeFile(join(root, "src/gen.ts"), "export const gen = 0;\n", "utf8");
+    await writeFile(join(root, "src/deep/nest/gen.ts"), "export const gen = 1;\n", "utf8");
+    await writeFile(join(root, "src/keep.ts"), "export const keep = 1;\n", "utf8");
+    await commitAll(root, "classes and globstars");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.equal(paths.has("obj.o"), false, "[oa] class");
+    assert.equal(paths.has("lib.a"), false, "[oa] class");
+    assert.ok(paths.has("keep.c"), "outside the class");
+    assert.equal(paths.has("src/gen.ts"), false, "mid-pattern ** matches zero segments");
+    assert.equal(paths.has("src/deep/nest/gen.ts"), false, "mid-pattern ** matches many");
+    assert.ok(paths.has("src/keep.ts"));
+  });
+});
+
+test("a bare directory name in .xxignore excludes everything beneath it", async () => {
+  await withTempRepo(async (root) => {
+    // `vendor` with no trailing slash: the old basename-only matcher compared
+    // it against `lib.ts` and let the whole tree through.
+    await writeFile(join(root, ".xxignore"), "vendor\n", "utf8");
+    await mkdir(join(root, "vendor/sub"), { recursive: true });
+    await writeFile(join(root, "vendor/lib.ts"), "export const v = 1;\n", "utf8");
+    await writeFile(join(root, "vendor/sub/deep.ts"), "export const d = 1;\n", "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "bare dir name");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const paths = new Set(result.files.map((f) => f.path));
+
+    assert.ok(paths.has("main.ts"));
+    assert.equal(paths.has("vendor/lib.ts"), false);
+    assert.equal(paths.has("vendor/sub/deep.ts"), false);
+    assert.deepEqual(result.omissions.ignored.examples, ["vendor/lib.ts", "vendor/sub/deep.ts"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D-report: `repo_map_runtime.ts` had a bare `catch { continue; }` and reported
+// nothing, which is why two separate causes of "files missing from the map"
+// both shipped invisibly. `output_compaction.ts` already states the contract
+// this now meets: never drop anything without saying so.
+// ---------------------------------------------------------------------------
+
+test("omissions report an unreadable path rather than dropping it in silence", async () => {
+  await withTempRepo(async (root) => {
+    const { symlink } = await import("node:fs/promises");
+    // git tracks a dangling symlink; `statSync` on it throws ENOENT. Before
+    // the fix this hit `catch { continue; }` and left no trace anywhere.
+    await symlink("nowhere-at-all", join(root, "dangling.ts"));
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "dangling symlink");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+
+    assert.deepEqual(
+      result.files.map((f) => f.path),
+      ["main.ts"]
+    );
+    assert.equal(result.omissions.unreadable.count, 1);
+    assert.deepEqual(result.omissions.unreadable.examples, ["dangling.ts"]);
+  });
+});
+
+test("omissions report an empty file rather than dropping it in silence", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "blank.ts"), "", "utf8");
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "empty file");
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+
+    assert.deepEqual(
+      result.files.map((f) => f.path),
+      ["main.ts"]
+    );
+    assert.equal(result.omissions.empty.count, 1);
+    assert.deepEqual(result.omissions.empty.examples, ["blank.ts"]);
+  });
+});
+
+test("omissions report files dropped for budget, and the head-truncated file", async () => {
+  await withTempRepo(async (root) => {
+    for (let i = 0; i < 5; i++) {
+      const content =
+        `// file ${i}\nconst x${i} = ${i};\nexport function fn${i}() { return ${i}; }\n`.repeat(10);
+      await writeAndCommit(root, `src/file${i}.ts`, content);
+    }
+
+    const result = await buildRepoMap({ root, tokenBudget: 80 });
+    const returned = new Set(result.files.map((f) => f.path));
+    const { droppedForBudget, truncated } = result.omissions;
+
+    assert.ok(result.files.length < 5, "premise: the budget must actually bite");
+    assert.ok(droppedForBudget.count > 0, "the files that did not fit must be named");
+    // Every discovered file is either returned or accounted for as dropped.
+    assert.equal(returned.size + droppedForBudget.count, 5);
+    for (const path of droppedForBudget.examples) {
+      assert.equal(returned.has(path), false, `${path} is reported dropped but was returned`);
+    }
+    // The head-truncated entry is in `files` AND in `truncated`: `ranges` alone
+    // cannot tell the caller how much of the file is missing.
+    for (const path of truncated.examples) {
+      assert.ok(returned.has(path));
+    }
+  });
+});
+
+test("omission examples are bounded and deterministic", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, ".xxignore"), "junk/\n", "utf8");
+    await mkdir(join(root, "junk"), { recursive: true });
+    const names: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      const name = `junk/f${String(i).padStart(2, "0")}.ts`;
+      names.push(name);
+      await writeFile(join(root, name), `export const n${i} = ${i};\n`, "utf8");
+    }
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "many ignored");
+
+    const first = await buildRepoMap({ root, tokenBudget: 8000 });
+    const second = await buildRepoMap({ root, tokenBudget: 8000 });
+
+    assert.equal(first.omissions.ignored.count, 25, "the count is never truncated");
+    assert.equal(first.omissions.ignored.examples.length, OMISSION_EXAMPLE_LIMIT);
+    assert.deepEqual(
+      first.omissions.ignored.examples,
+      names.sort().slice(0, OMISSION_EXAMPLE_LIMIT),
+      "the sample is the lexicographically first N, not whatever discovery emitted first"
+    );
+    assert.deepEqual(first.omissions.ignored.examples, second.omissions.ignored.examples);
+    assert.equal(first.omissions.considered, 27, ".xxignore + main.ts + 25 junk files");
+  });
+});
+
+test("an empty repo still reports the shape of what it considered", async () => {
+  await withTempRepo(async (root) => {
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    assert.deepEqual(result.files, []);
+    assert.equal(result.omissions.considered, 0);
+    assert.deepEqual(result.omissions.ignored, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.binary, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.oversized, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.unreadable, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.empty, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.droppedForBudget, { count: 0, examples: [] });
+    assert.deepEqual(result.omissions.truncated, { count: 0, examples: [] });
   });
 });

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { compactOutput } from "./output_compaction.js";
+import { compactOutput, inflationGuardTrips } from "./output_compaction.js";
 
 test("compactOutput with cap keeps both head and tail when input exceeds cap", () => {
   // Build input: 100 lines of "header line", then a unique middle marker,
@@ -68,10 +68,18 @@ test("compactOutput with cap and collapseRepeats reports accurate dropped counts
   const collapseDrops = result.dropped.filter((d) => d.startsWith("collapsed"));
   assert.ok(collapseDrops.length > 0, "should report collapsed lines");
 
-  // The collapsed output should have fewer lines than input.
+  // The collapsed output should have fewer lines than input...
   const inputLines = input.split("\n").length;
   const outputLines = result.output.split("\n").length;
   assert.ok(outputLines < inputLines, "output should have fewer lines than input");
+
+  // ...and, the part that actually matters, fewer BYTES. Line counting was the
+  // whole reason D2 stayed green: 4 lines can collapse into 2 lines that are
+  // four times the size, and this assertion is the one that notices.
+  assert.ok(
+    result.output.length < input.length,
+    `output must be smaller in bytes: ${result.output.length} vs ${input.length}`
+  );
 });
 
 test("compactOutput collapseRepeats dropped line count equals input lines minus output lines", () => {
@@ -108,6 +116,166 @@ test("compactOutput collapseRepeats dropped line count equals input lines minus 
     reportedDroppedLines,
     linesDropped,
     "reported dropped count should match actual lines dropped"
+  );
+
+  // A reported saving must be a saving in bytes too, not only in lines.
+  assert.ok(
+    result.output.length < input.length,
+    `output must be smaller in bytes: ${result.output.length} vs ${input.length}`
+  );
+});
+
+// ---------------------------------------------------------------------------
+// D2: the collapse step inflated its own output and reported the inflation as
+// a saving. The marker `  [N identical lines collapsed]` is 31 characters, so
+// any run shorter than that grew — and runs of 3-4 BLANK lines are the most
+// common repeated-line pattern in real lint and test output. Measured against
+// the shipped build before the fix:
+//
+//   compactOutput("PASS\n\n\n\nPASS\n\n\n\nPASS", {collapseRepeats:true})
+//     raw=20  out=80  dropped=["collapsed 3 ...", "collapsed 3 ..."]
+//   compactOutput("\n\n\n\n", {collapseRepeats:true})            raw=4 out=32
+//   compactOutput("\n\n\n\n", {collapseRepeats:true, cap:10})    raw=4 out=10
+//     dropped=[..., "truncated 22 bytes (kept 10 head + 0 tail; ...)"]
+//
+// The last one reports truncating 22 bytes out of a 4-byte input and severs
+// the marker mid-word. The old tests passed throughout: they asserted output
+// LINES < input LINES, which is true while the output is four times the size.
+// ---------------------------------------------------------------------------
+
+test("compactOutput does not inflate a run of blank lines between real ones", () => {
+  const input = "PASS\n\n\n\nPASS\n\n\n\nPASS";
+  const result = compactOutput(input, { collapseRepeats: true });
+
+  assert.equal(
+    result.output.length,
+    20,
+    "the pre-fix build returned 80 bytes for this 20-byte input"
+  );
+  assert.equal(result.output, input, "a run that cannot be shrunk passes through verbatim");
+  assert.deepEqual(
+    result.dropped,
+    [],
+    "a saving that did not happen must not be reported — the pre-fix build claimed two"
+  );
+});
+
+test("compactOutput leaves a bare run of blank lines alone", () => {
+  const input = "\n\n\n\n";
+  const result = compactOutput(input, { collapseRepeats: true });
+
+  assert.equal(result.output, input, "pre-fix this 4-byte input became 32 bytes");
+  assert.deepEqual(result.dropped, []);
+});
+
+test("collapse that would inflate never reaches the cap branch (ordering)", () => {
+  // Pre-fix, collapse grew "\n\n\n\n" to 32 bytes, which then EXCEEDED cap 10
+  // and entered truncation — reporting "truncated 22 bytes" against a 4-byte
+  // input and cutting the collapse marker mid-word. With the collapse
+  // conditional, the working string is never longer than the input, so a cap
+  // above the input length can no longer be reached from below.
+  const input = "\n\n\n\n";
+  const result = compactOutput(input, { collapseRepeats: true, cap: 10 });
+
+  assert.equal(result.output, input);
+  assert.deepEqual(result.dropped, [], "nothing was truncated, so nothing may be reported");
+});
+
+test("collapse still fires when the run is genuinely bigger than the marker", () => {
+  // The fix must not disable collapsing — only decline it when it does not pay.
+  const line = "  at Object.<anonymous> (src/thing.test.ts:42:31)";
+  const input = `${line}\n${line}\n${line}`;
+  const result = compactOutput(input, { collapseRepeats: true });
+
+  assert.ok(result.output.includes("[3 identical lines collapsed]"));
+  assert.ok(
+    result.output.length < input.length,
+    `a reported collapse must be a real saving: ${result.output.length} vs ${input.length}`
+  );
+  assert.deepEqual(result.dropped, ["collapsed 3 consecutive identical lines"]);
+});
+
+test("every reported collapse corresponds to a real byte saving", () => {
+  // Mixed input: one run that pays for the marker, one that does not.
+  const long = "x".repeat(40);
+  const input = [long, long, long, "", "", "", "tail"].join("\n");
+  const result = compactOutput(input, { collapseRepeats: true });
+
+  assert.equal(result.dropped.length, 1, "only the long run may be reported");
+  assert.ok(result.output.includes("[3 identical lines collapsed]"));
+  assert.ok(result.output.includes("\n\n\n"), "the blank run survives verbatim");
+  assert.ok(result.output.length < input.length);
+});
+
+test("compactOutput never returns more bytes than it was given (property sweep)", () => {
+  // Every run length 1-8 x every line length 0-40 x every option combination.
+  // `output.length <= input.length` is the invariant the old line-counting
+  // tests could not see. The guard trip count must stay at zero throughout:
+  // the postcondition is a backstop, and a backstop that fires means the
+  // per-run collapse decision regressed.
+  const tripsBefore = inflationGuardTrips();
+  const caps = [undefined, 1, 10, 33, 200, 4096];
+  let sawCollapse = false;
+  let sawPassthrough = false;
+
+  for (let runLen = 1; runLen <= 8; runLen++) {
+    for (let lineLen = 0; lineLen <= 40; lineLen++) {
+      const line = "y".repeat(lineLen);
+      const input = Array.from({ length: runLen }, () => line).join("\n");
+
+      for (const cap of caps) {
+        for (const stripAnsi of [false, true]) {
+          for (const collapseRepeats of [false, true]) {
+            const result = compactOutput(input, { cap, stripAnsi, collapseRepeats });
+            const label = `runLen=${runLen} lineLen=${lineLen} cap=${String(cap)} stripAnsi=${stripAnsi} collapse=${collapseRepeats}`;
+
+            assert.ok(
+              result.output.length <= input.length,
+              `${label}: output ${result.output.length} > input ${input.length}`
+            );
+            if (cap !== undefined) {
+              assert.ok(result.output.length <= cap, `${label}: cap overrun`);
+            }
+            const collapsedReports = result.dropped.filter((d) => d.startsWith("collapsed "));
+            if (collapsedReports.length > 0) {
+              sawCollapse = true;
+              assert.ok(
+                result.output.length < input.length,
+                `${label}: reported a collapse that saved nothing`
+              );
+            } else if (collapseRepeats && runLen >= 3) {
+              sawPassthrough = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(
+    inflationGuardTrips(),
+    tripsBefore,
+    "the inflation postcondition must be unreachable, not load-bearing"
+  );
+  // The sweep must actually exercise both branches, or it proves nothing.
+  assert.ok(sawCollapse, "the sweep must include runs that do collapse");
+  assert.ok(sawPassthrough, "the sweep must include runs that decline to collapse");
+});
+
+test("collapse never inflates ANSI-laden repeated output either", () => {
+  // stripAnsi runs before collapse, so it changes which runs are identical and
+  // how long they are. The invariant has to survive that interaction.
+  const line = "\u001b[31m\u001b[0m";
+  const input = [line, line, line, line].join("\n");
+  const result = compactOutput(input, { stripAnsi: true, collapseRepeats: true });
+
+  assert.ok(
+    result.output.length <= input.length,
+    `output ${result.output.length} > input ${input.length}`
+  );
+  assert.ok(
+    !result.dropped.some((d) => d.startsWith("collapsed ")),
+    "the stripped lines are empty, so collapsing them cannot pay for the marker"
   );
 });
 

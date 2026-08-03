@@ -186,13 +186,42 @@ report compatible with the model qualification matrix schema:
 
 ```bash
 python3 scripts/hermes_orchestrator.py bench \
-  --lane sglang --parallel 4 --iterations 3 \
+  --lane sglang --parallel 4 --iterations 3 --warmup 1 \
   --context-tokens 8000 --max-tokens 256 --profile coding-long
 # → logs/bench/<timestamp>-sglang-<model>.json
 ```
 
-GPU residency still requires on-host `nvidia-smi` telemetry on the rig; run it
-alongside the bench.
+### Output validity gate
+
+`tokens_per_sec` feeds model qualification, so a speed number is only published
+for output the bench can certify. A sample is **excluded** when the reply was
+truncated (`finish_reason == "length"`), finished abnormally, was too short to
+assess, or was degenerate — fewer than 8 distinct word tokens, or a
+repeated-trigram ratio above 0.5. Without this, a model stuck in a repetition
+loop emits many tokens very fast and scores as the *best* lane. Rule borrowed
+as an idea from `drumih/turbo-fieldfare` `docs/COMMUNITY_BENCHMARKS.md`
+(Apache-2.0).
+
+Excluded samples are listed individually in `excluded_samples` and summarized in
+`exclusions_by_reason` — nothing is silently dropped. A run reporting
+`publishable: false` with `publish_blockers` must not be used to qualify a
+model.
+
+Two more things the report is careful about:
+
+- **Estimates never share a field with measurements.** `tokens_per_sec` is
+  provider-reported `usage.completion_tokens` only, and is `null` when the
+  provider sent none; the `len(reply)//4` fallback lands in
+  `tokens_per_sec_estimated` with `tokens_estimated: true`.
+- **Warmup is excluded from timing but not discarded.** `--warmup` (default 1)
+  runs before timing starts so cold model load — seconds on the sglang lane —
+  stays out of `total_wall_seconds`, and its cost is still reported in
+  `warmup_seconds`.
+
+`gpu_residency_pass` and `lane_classification` are emitted as `null`: the bench
+is an HTTP client and cannot see the remote rig's GPUs, and classification needs
+lane thresholds that are not yet set. See `model-qualification-matrix.md` for
+both, and collect on-host `nvidia-smi` telemetry alongside the bench.
 
 ## Routing telemetry
 

@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
@@ -16,10 +16,64 @@ export interface RepoMapFile {
   symbols?: string[];
 }
 
+/** One exclusion class: how many paths left the map this way, and a few of them. */
+export interface RepoMapOmission {
+  count: number;
+  /**
+   * At most {@link OMISSION_EXAMPLE_LIMIT} paths. Deterministic: every class
+   * except `droppedForBudget` and `truncated` keeps the lexicographically
+   * first paths, so the sample does not depend on filesystem or `git ls-files`
+   * ordering. Those two keep the highest-*ranked* paths instead, because
+   * "the next best file you did not get" is the useful sample there and rank
+   * order is itself deterministic.
+   */
+  examples: string[];
+}
+
+/**
+ * The negative space of the repo map: everything discovery saw and the map does
+ * not contain.
+ *
+ * `repo_map_runtime.ts` used to have a bare `catch { continue; }` and reported
+ * nothing, which is how two separate causes of the same symptom — files
+ * missing from the map with nothing saying so — both shipped. The first was
+ * `git ls-files` C-quoting (fixed with `-z`, see `discoverFiles`); the cause
+ * was fixed and the *reporting* was not, so the next cause (unreadable,
+ * oversized, and binary files) reproduced the same invisible holes.
+ *
+ * Read this as a lower bound, not a ledger. It reports the exclusions this
+ * module makes; it cannot report a file that never reached discovery at all
+ * (an unreadable parent directory in the walk fallback, a path `git ls-files`
+ * does not emit). The absence of an omission is not a completeness guarantee.
+ */
+export interface RepoMapOmissions {
+  /**
+   * Paths discovery produced, before this module's ignore filtering. Exact for
+   * the `git ls-files` path. For the filesystem-walk fallback a pruned
+   * directory counts as one entry, not as the files beneath it.
+   */
+  considered: number;
+  /** Excluded by `.xxignore` (and, on the walk fallback, `.gitignore`). */
+  ignored: RepoMapOmission;
+  /** `stat`/`read` failed, or the path is not a regular file. */
+  unreadable: RepoMapOmission;
+  /** Larger than {@link MAX_FILE_BYTES}. */
+  oversized: RepoMapOmission;
+  /** A NUL byte in the first {@link BINARY_SNIFF_BYTES} bytes. */
+  binary: RepoMapOmission;
+  /** Zero-length; carries no context and was already being dropped in silence. */
+  empty: RepoMapOmission;
+  /** Readable source that simply did not fit `tokenBudget`. */
+  droppedForBudget: RepoMapOmission;
+  /** Included, but only a head of it — the tail is not in `ranges`. */
+  truncated: RepoMapOmission;
+}
+
 export interface RepoMapResult {
   files: RepoMapFile[];
   tokensEstimated: number;
   method: "heuristic" | "treesitter";
+  omissions: RepoMapOmissions;
 }
 
 export interface BuildRepoMapOptions {
@@ -30,97 +84,364 @@ export interface BuildRepoMapOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Read guards
+// ---------------------------------------------------------------------------
+
+/**
+ * Refuse to read any file larger than 2 MiB.
+ *
+ * Every path from `git ls-files` used to go straight into
+ * `readFileSync(fullPath, "utf8")` with no `stat` in front of it. A 20 MB
+ * random binary was not merely read, it was ranked, selected, and returned as
+ * code context; a file in the 0.5-2 GB range fails inside V8 with an
+ * uncatchable heap or max-string-length error and takes the MCP server process
+ * down with it.
+ *
+ * 2 MiB is chosen to be far too generous to ever drop real code:
+ *
+ * - The largest text file tracked in this repo is 108 KB
+ *   (`UPSTREAM-BORROW-TODO.md`); the largest source file is 82 KB. The cap is
+ *   ~19x the former.
+ * - It cannot cost the caller a file they could have used. At the ~4 chars per
+ *   token this module already estimates with, 2 MiB is ~524,000 tokens. The
+ *   default `tokenBudget` is 8,000 (~32 KB) and even an implausibly large
+ *   budget is orders of magnitude short, so a file at the cap could never be
+ *   selected whole — only as the truncated head, which is exactly the case
+ *   where reading the whole file was pure waste.
+ *
+ * Deliberately NOT added: an extension allowlist. Any such list drops real
+ * code — extensionless scripts, `Makefile`, `Dockerfile`, and every language
+ * nobody thought to enumerate — and the NUL sniff below already excludes the
+ * actual hazard without guessing at filenames.
+ */
+export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Bytes sniffed for a NUL before treating a file as binary.
+ *
+ * 8000 is git's own `FIRST_FEW_BYTES` constant (`xdiff-interface.c`), so our
+ * verdict agrees with `git diff`'s "Binary files ... differ" on the same file
+ * rather than inventing a second definition of binary.
+ */
+export const BINARY_SNIFF_BYTES = 8000;
+
+/** Maximum paths reported per omission class. */
+export const OMISSION_EXAMPLE_LIMIT = 10;
+
+type OmissionClass = Exclude<keyof RepoMapOmissions, "considered">;
+
+const OMISSION_CLASSES: OmissionClass[] = [
+  "ignored",
+  "unreadable",
+  "oversized",
+  "binary",
+  "empty",
+  "droppedForBudget",
+  "truncated",
+];
+
+/** Classes whose examples are kept in rank order rather than sorted. */
+const RANK_ORDERED: ReadonlySet<OmissionClass> = new Set<OmissionClass>([
+  "droppedForBudget",
+  "truncated",
+]);
+
+interface OmissionAccumulator {
+  considered: number;
+  counts: Record<OmissionClass, number>;
+  examples: Record<OmissionClass, string[]>;
+}
+
+function newOmissions(): OmissionAccumulator {
+  const counts = {} as Record<OmissionClass, number>;
+  const examples = {} as Record<OmissionClass, string[]>;
+  for (const cls of OMISSION_CLASSES) {
+    counts[cls] = 0;
+    examples[cls] = [];
+  }
+  return { considered: 0, counts, examples };
+}
+
+function noteOmission(acc: OmissionAccumulator, cls: OmissionClass, path: string): void {
+  acc.counts[cls] += 1;
+  const list = acc.examples[cls];
+  if (RANK_ORDERED.has(cls)) {
+    if (list.length < OMISSION_EXAMPLE_LIMIT) list.push(path);
+    return;
+  }
+  // Bounded sorted insert: keeps the lexicographically first N without ever
+  // holding more than N paths.
+  let i = 0;
+  while (i < list.length && list[i] < path) i++;
+  if (i >= OMISSION_EXAMPLE_LIMIT) return;
+  list.splice(i, 0, path);
+  if (list.length > OMISSION_EXAMPLE_LIMIT) list.pop();
+}
+
+function finalizeOmissions(acc: OmissionAccumulator): RepoMapOmissions {
+  const out = { considered: acc.considered } as RepoMapOmissions;
+  for (const cls of OMISSION_CLASSES) {
+    out[cls] = { count: acc.counts[cls], examples: acc.examples[cls] };
+  }
+  return out;
+}
+
+type ReadOutcome =
+  | { ok: true; content: string }
+  | { ok: false; reason: "unreadable" | "oversized" | "binary" | "empty" };
+
+/**
+ * Read a file as text, or say why not. Both guards run before the full read:
+ * `statSync` rejects on size without opening, and the NUL sniff runs against a
+ * bounded prefix of a buffer that is already known to be under the cap.
+ */
+function readTextFile(fullPath: string): ReadOutcome {
+  let size: number;
+  try {
+    const st = statSync(fullPath);
+    if (!st.isFile()) return { ok: false, reason: "unreadable" };
+    size = st.size;
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  }
+
+  if (size > MAX_FILE_BYTES) return { ok: false, reason: "oversized" };
+  if (size === 0) return { ok: false, reason: "empty" };
+
+  let buf: Buffer;
+  try {
+    buf = readFileSync(fullPath);
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  }
+
+  const prefix = buf.subarray(0, Math.min(buf.length, BINARY_SNIFF_BYTES));
+  if (prefix.indexOf(0) >= 0) return { ok: false, reason: "binary" };
+
+  const content = buf.toString("utf8");
+  if (content.length === 0) return { ok: false, reason: "empty" };
+  return { ok: true, content };
+}
+
+// ---------------------------------------------------------------------------
 // Ignore-file helpers
 // ---------------------------------------------------------------------------
 
-function parseIgnoreFile(filePath: string): string[] {
-  const content = readFileSync(filePath, "utf8");
-  const patterns: string[] = [];
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    patterns.push(trimmed);
-  }
-  return patterns;
+/**
+ * One parsed ignore line.
+ *
+ * `loadIgnorePatterns` used to return bare strings, which pushed `!keep.log`
+ * verbatim as a *positive* pattern: a negation re-included a file and we
+ * excluded it under the very name that was supposed to save it. Rules carry
+ * their polarity now, and `isIgnored` resolves them last-match-wins.
+ */
+interface IgnoreRule {
+  /** `!pattern` — a match re-includes rather than excludes. */
+  negated: boolean;
+  /** Trailing `/` — matches directories only, never a file of that name. */
+  dirOnly: boolean;
+  /** Compiled from the pattern body; already carries any `**\/` prefix. */
+  regex: RegExp;
+  /** Which file the rule came from, for diagnostics. */
+  source: string;
 }
 
-function loadIgnorePatterns(root: string): string[] {
-  const patterns: string[] = [];
-  // Always exclude .git directory
-  patterns.push(".git/");
-  for (const name of [".xxignore", ".gitignore"]) {
-    const p = join(root, name);
-    if (existsSync(p)) {
-      patterns.push(...parseIgnoreFile(p));
-    }
-  }
-  return patterns;
-}
-
-function isIgnored(relPath: string, patterns: string[]): boolean {
-  for (const pattern of patterns) {
-    const anchored = pattern.startsWith("/");
-    const p = anchored ? pattern.slice(1) : pattern;
-    const dirOnly = p.endsWith("/");
-    const base = dirOnly ? p.slice(0, -1) : p;
-
-    if (matchGlobLike(relPath, base, anchored)) return true;
-    if (dirOnly && relPath.startsWith(base + "/")) return true;
-  }
-  return false;
-}
-
-function matchGlobLike(path: string, pattern: string, anchored: boolean): boolean {
-  if (pattern === "**") return true;
-
-  if (pattern.startsWith("**/")) {
-    const rest = pattern.slice(3);
-    let p = path;
-    for (;;) {
-      if (simpleMatch(p, rest)) return true;
-      const idx = p.indexOf("/");
-      if (idx < 0) break;
-      p = p.slice(idx + 1);
-    }
-    return false;
-  }
-
-  if (pattern.endsWith("/**")) {
-    const prefix = pattern.slice(0, -3);
-    return path === prefix || path.startsWith(prefix + "/");
-  }
-
-  if (anchored) {
-    return simpleMatch(path, pattern);
-  }
-
-  if (simpleMatch(path, pattern)) return true;
-  const basename = path.split("/").pop() ?? path;
-  if (simpleMatch(basename, pattern)) return true;
-
-  return false;
-}
-
-function simpleMatch(path: string, pattern: string): boolean {
-  if (!pattern.includes("*") && !pattern.includes("?")) {
-    return path === pattern;
-  }
-
-  // Escape regex special characters except * and ?
-  const special = /[.+^${}()|[\]\\-]/g;
-  const escaped = pattern.replace(special, "\\$&");
-  // Then turn * and ? into regex tokens
-  const regexStr = "^" + escaped.replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]") + "$";
+function parseIgnoreFile(filePath: string, source: string): IgnoreRule[] {
+  let content: string;
   try {
-    return new RegExp(regexStr).test(path);
+    content = readFileSync(filePath, "utf8");
   } catch {
-    return false;
+    return [];
   }
+  const rules: IgnoreRule[] = [];
+  for (const line of content.split("\n")) {
+    const rule = parseIgnoreLine(line, source);
+    if (rule) rules.push(rule);
+  }
+  return rules;
+}
+
+function parseIgnoreLine(line: string, source: string): IgnoreRule | null {
+  let text = line.trim();
+  if (!text) return null;
+  if (text.startsWith("#")) return null;
+
+  let negated = false;
+  if (text.startsWith("!")) {
+    negated = true;
+    text = text.slice(1);
+  } else if (text.startsWith("\\#") || text.startsWith("\\!")) {
+    // gitignore escapes for a literal leading `#` or `!`.
+    text = text.slice(1);
+  }
+  if (!text) return null;
+
+  const dirOnly = text.endsWith("/");
+  if (dirOnly) text = text.slice(0, -1);
+
+  const leadingSlash = text.startsWith("/");
+  if (leadingSlash) text = text.slice(1);
+  if (!text) return null;
+
+  // gitignore: a separator anywhere but the end anchors the pattern to the
+  // ignore file's directory. Otherwise it matches at any depth, which is the
+  // same thing as an implicit `**/` prefix.
+  const anchored = leadingSlash || text.includes("/");
+  const body = globToRegExpSource(text);
+  const regex = new RegExp(anchored ? `^${body}$` : `^(?:.*/)?${body}$`);
+
+  return { negated, dirOnly, regex, source };
+}
+
+function loadIgnoreRules(root: string, files: string[]): IgnoreRule[] {
+  // `.git/` is never repo content and no ignore file is required to say so.
+  const rules: IgnoreRule[] = [parseIgnoreLine(".git/", "built-in")!];
+  for (const name of files) {
+    const p = join(root, name);
+    if (existsSync(p)) rules.push(...parseIgnoreFile(p, name));
+  }
+  return rules;
+}
+
+/**
+ * Last match wins, exactly as git resolves ignore rules: a later `!pattern`
+ * re-includes a path an earlier pattern excluded, and a later positive pattern
+ * excludes it again.
+ *
+ * One deliberate divergence from git, in the permissive direction: git cannot
+ * re-include a file whose *parent directory* is excluded, so `dist/` followed
+ * by `!dist/keep.txt` keeps nothing. Here the later rule wins and `keep.txt`
+ * comes back. Emulating git's restriction means dropping a file the author
+ * explicitly named, which is the failure mode this whole change exists to
+ * remove, so the divergence is intentional and errs toward including too much.
+ */
+function isIgnored(relPath: string, rules: IgnoreRule[]): boolean {
+  let verdict: IgnoreRule | null = null;
+  for (const rule of rules) {
+    if (ruleMatches(relPath, rule)) verdict = rule;
+  }
+  return verdict !== null && !verdict.negated;
+}
+
+function ruleMatches(relPath: string, rule: IgnoreRule): boolean {
+  // A rule matching an ancestor directory excludes everything beneath it —
+  // `node_modules` without a trailing slash must still exclude
+  // `node_modules/x.ts`, which the previous basename-only matcher did not do.
+  const segments = relPath.split("/");
+  for (let i = 1; i < segments.length; i++) {
+    if (rule.regex.test(segments.slice(0, i).join("/"))) return true;
+  }
+  if (rule.dirOnly) return false;
+  return rule.regex.test(relPath);
+}
+
+/**
+ * Compile a gitignore-style glob to a regex source (no anchors).
+ *
+ * Supported: `*` (within one path segment), `?`, `**` in any position
+ * (leading, trailing, or mid-pattern as `a/**\/b`, which also matches `a/b`),
+ * character classes `[abc]` / `[a-z]` / `[!a-z]`, and `\` escaping.
+ *
+ * Not supported, deliberately: `{a,b}` brace alternation, which gitignore does
+ * not have either.
+ */
+function globToRegExpSource(pattern: string): string {
+  let out = "";
+  let i = 0;
+  while (i < pattern.length) {
+    const c = pattern[i];
+
+    if (c === "*") {
+      let stars = 0;
+      while (pattern[i] === "*") {
+        stars++;
+        i++;
+      }
+      if (stars >= 2) {
+        // `**/` collapses to "zero or more leading segments" so `a/**/b`
+        // matches `a/b` as well as `a/x/y/b`.
+        if (pattern[i] === "/") {
+          i++;
+          out += "(?:.*/)?";
+        } else {
+          out += ".*";
+        }
+      } else {
+        out += "[^/]*";
+      }
+      continue;
+    }
+
+    if (c === "?") {
+      out += "[^/]";
+      i++;
+      continue;
+    }
+
+    if (c === "[") {
+      const cls = parseCharClass(pattern, i);
+      if (cls) {
+        out += cls.source;
+        i = cls.next;
+        continue;
+      }
+      out += "\\[";
+      i++;
+      continue;
+    }
+
+    if (c === "\\" && i + 1 < pattern.length) {
+      out += escapeRegexChar(pattern[i + 1]);
+      i += 2;
+      continue;
+    }
+
+    out += escapeRegexChar(c);
+    i++;
+  }
+  return out;
+}
+
+function parseCharClass(pattern: string, start: number): { source: string; next: number } | null {
+  let i = start + 1;
+  let negate = false;
+  if (pattern[i] === "!" || pattern[i] === "^") {
+    negate = true;
+    i++;
+  }
+  let body = "";
+  // A `]` immediately after the (optional) negation is a literal member.
+  if (pattern[i] === "]") {
+    body += "\\]";
+    i++;
+  }
+  while (i < pattern.length && pattern[i] !== "]") {
+    const ch = pattern[i];
+    // `\` and `[` are the only members needing escaping once inside a class;
+    // `-` is left alone so ranges keep working.
+    body += ch === "\\" || ch === "[" ? `\\${ch}` : ch;
+    i++;
+  }
+  // Unterminated class, or `[]` — treat the `[` as a literal.
+  if (i >= pattern.length || body === "") return null;
+  return { source: `[${negate ? "^" : ""}${body}]`, next: i + 1 };
+}
+
+function escapeRegexChar(ch: string): string {
+  return /[.*+?^${}()|[\]\\]/.test(ch) ? `\\${ch}` : ch;
 }
 
 // ---------------------------------------------------------------------------
 // File discovery (via git ls-files)
 // ---------------------------------------------------------------------------
+
+interface DiscoveryResult {
+  files: string[];
+  /** Paths discovery emitted before our ignore filtering. */
+  considered: number;
+  /** Paths our ignore rules removed, in discovery order. */
+  ignored: string[];
+}
 
 /**
  * Get all tracked files in a git repo, respecting ignore patterns.
@@ -133,8 +454,16 @@ function simpleMatch(path: string, pattern: string): boolean {
  * `readFileSync`/`git log` and were silently dropped from the repo map, so a
  * repo with non-ASCII filenames had holes in it that nothing reported. With
  * `-z` git emits raw NUL-terminated paths and quoting never applies.
+ *
+ * `--exclude-standard` means git has *already* applied `.gitignore` correctly,
+ * including negations. We deliberately do not re-apply it: the second pass was
+ * strictly redundant on everything it got right, and on `!keep.log` it was
+ * wrong — it re-excluded a file git had deliberately re-included, with nothing
+ * reporting the loss. Only `.xxignore`, which git knows nothing about, is
+ * applied here. The walk fallback below has no git safety net and so applies
+ * both, through the same last-match-wins matcher.
  */
-async function discoverFiles(root: string, ignorePatterns: string[]): Promise<string[]> {
+async function discoverFiles(root: string): Promise<DiscoveryResult> {
   let output: string;
   try {
     output = execSync("git ls-files -z --cached --others --exclude-standard", {
@@ -145,22 +474,31 @@ async function discoverFiles(root: string, ignorePatterns: string[]): Promise<st
     });
   } catch {
     // Not a git repo or git unavailable — fall back to filesystem walk
-    return discoverFilesByWalk(root, ignorePatterns);
+    return discoverFilesByWalk(root);
   }
 
   // NUL-separated, so a filename may legally contain a newline.
   const allFiles = output.split("\0").filter(Boolean);
-  // Filter through our ignore patterns (git's --exclude-standard already
-  // handles .gitignore, but we also need .xxignore)
-  return allFiles.filter((f) => !isIgnored(f, ignorePatterns));
+  const rules = loadIgnoreRules(root, [".xxignore"]);
+
+  const files: string[] = [];
+  const ignored: string[] = [];
+  for (const f of allFiles) {
+    if (isIgnored(f, rules)) ignored.push(f);
+    else files.push(f);
+  }
+  return { files, considered: allFiles.length, ignored };
 }
 
 /**
  * Fallback: walk the filesystem to discover files.
  * Used when git is not available.
  */
-async function discoverFilesByWalk(root: string, ignorePatterns: string[]): Promise<string[]> {
+async function discoverFilesByWalk(root: string): Promise<DiscoveryResult> {
+  const rules = loadIgnoreRules(root, [".xxignore", ".gitignore"]);
   const results: string[] = [];
+  const ignored: string[] = [];
+  let considered = 0;
 
   async function walk(dir: string): Promise<void> {
     let entries;
@@ -169,22 +507,32 @@ async function discoverFilesByWalk(root: string, ignorePatterns: string[]): Prom
     } catch {
       return;
     }
+    // readdir order is filesystem-dependent; sort so the walk — and therefore
+    // every omission sample derived from it — is reproducible.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
       const relPath = relative(root, fullPath);
 
-      if (isIgnored(relPath, ignorePatterns)) continue;
+      if (isIgnored(relPath, rules)) {
+        // A pruned directory counts as one considered entry, not as the files
+        // beneath it — see `RepoMapOmissions.considered`.
+        considered++;
+        ignored.push(relPath);
+        continue;
+      }
 
       if (entry.isDirectory()) {
         await walk(fullPath);
       } else if (entry.isFile()) {
+        considered++;
         results.push(relPath);
       }
     }
   }
 
   await walk(root);
-  return results;
+  return { files: results, considered, ignored };
 }
 
 // ---------------------------------------------------------------------------
@@ -219,19 +567,21 @@ function getGitTimestamp(filePath: string, cwd: string): number {
   }
 }
 
-function countReferences(filePath: string): number {
-  try {
-    const content = readFileSync(filePath, "utf8");
-    const importPatterns = [/(?:import|export)\s+/g, /require\s*\(/g, /from\s+['"]/g];
-    let count = 0;
-    for (const re of importPatterns) {
-      const matches = content.match(re);
-      if (matches) count += matches.length;
-    }
-    return count;
-  } catch {
-    return 0;
+/**
+ * Count import-ish references in already-read content.
+ *
+ * This used to do its own unguarded `readFileSync(fullPath, "utf8")`, which
+ * made it the second place a 2 GB blob could kill the process and meant every
+ * file was read twice per map. It takes the content the caller already has.
+ */
+function countReferences(content: string): number {
+  const importPatterns = [/(?:import|export)\s+/g, /require\s*\(/g, /from\s+['"]/g];
+  let count = 0;
+  for (const re of importPatterns) {
+    const matches = content.match(re);
+    if (matches) count += matches.length;
   }
+  return count;
 }
 
 function computeProximityScore(relPath: string, focusPaths: string[]): number {
@@ -271,19 +621,48 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
     throw new Error(`Repo root not found: ${resolvedRoot}`);
   }
 
-  const ignorePatterns = loadIgnorePatterns(resolvedRoot);
-  const allFiles = await discoverFiles(resolvedRoot, ignorePatterns);
+  const omissions = newOmissions();
+  const discovery = await discoverFiles(resolvedRoot);
+  omissions.considered = discovery.considered;
+  for (const path of discovery.ignored) noteOmission(omissions, "ignored", path);
+
+  const allFiles = discovery.files;
   if (allFiles.length === 0) {
-    return { files: [], tokensEstimated: 0, method: "heuristic" };
+    return {
+      files: [],
+      tokensEstimated: 0,
+      method: "heuristic",
+      omissions: finalizeOmissions(omissions),
+    };
   }
 
+  // Each file is read exactly once, behind the size and binary guards, and the
+  // content is carried through scoring and selection.
+  const contents = new Map<string, string>();
   const signals: FileSignals[] = [];
   for (const relPath of allFiles) {
     const fullPath = join(resolvedRoot, relPath);
-    const gitTimestamp = getGitTimestamp(fullPath, resolvedRoot);
-    const proximityScore = computeProximityScore(relPath, focusPaths);
-    const refCount = countReferences(fullPath);
-    signals.push({ path: relPath, gitTimestamp, proximityScore, refCount });
+    const outcome = readTextFile(fullPath);
+    if (!outcome.ok) {
+      noteOmission(omissions, outcome.reason, relPath);
+      continue;
+    }
+    contents.set(relPath, outcome.content);
+    signals.push({
+      path: relPath,
+      gitTimestamp: getGitTimestamp(fullPath, resolvedRoot),
+      proximityScore: computeProximityScore(relPath, focusPaths),
+      refCount: countReferences(outcome.content),
+    });
+  }
+
+  if (signals.length === 0) {
+    return {
+      files: [],
+      tokensEstimated: 0,
+      method: "heuristic",
+      omissions: finalizeOmissions(omissions),
+    };
   }
 
   const maxTs = Math.max(...signals.map((s) => s.gitTimestamp), 1);
@@ -306,25 +685,10 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
   // than stop at the first non-positive marginal gain.
   // -------------------------------------------------------------------------
 
-  const contents = new Map<string, string>();
-  const candidates: ContextCandidate[] = [];
-  for (const s of signals) {
-    const fullPath = join(resolvedRoot, s.path);
-    let fileContent = "";
-    try {
-      fileContent = readFileSync(fullPath, "utf8");
-    } catch {
-      continue;
-    }
-    if (fileContent.length === 0) continue;
-    contents.set(s.path, fileContent);
-    candidates.push({
-      id: s.path,
-      text: fileContent,
-      tokens: estimateTokens(fileContent),
-      relevance: s.proximityScore,
-    });
-  }
+  const candidates: ContextCandidate[] = signals.map((s) => {
+    const text = contents.get(s.path) ?? "";
+    return { id: s.path, text, tokens: estimateTokens(text), relevance: s.proximityScore };
+  });
 
   const selection = selectContext({
     candidates,
@@ -357,9 +721,10 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
 
   // Existing contract: when budget remains but the best-ranked unselected
   // file is too large to fit whole, include a truncated head of it.
+  let truncatedPath: string | null = null;
   const remaining = tokenBudget - runningTokens;
   if (remaining > 0) {
-    const next = signals.find((s) => !chosen.has(s.path) && contents.has(s.path));
+    const next = signals.find((s) => !chosen.has(s.path));
     if (next) {
       const fileContent = contents.get(next.path) ?? "";
       const lines = fileContent.split("\n");
@@ -392,14 +757,28 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
         });
 
         runningTokens += truncatedTokens;
+        // Included, but not whole: `ranges` alone cannot tell the caller how
+        // much of the file it is missing, so say so.
+        if (lineBudget < lines.length) {
+          truncatedPath = next.path;
+          noteOmission(omissions, "truncated", next.path);
+        } else {
+          chosen.add(next.path);
+        }
       }
     }
+  }
+
+  for (const s of signals) {
+    if (chosen.has(s.path) || s.path === truncatedPath) continue;
+    noteOmission(omissions, "droppedForBudget", s.path);
   }
 
   return {
     files: selected,
     tokensEstimated: runningTokens,
     method: "heuristic",
+    omissions: finalizeOmissions(omissions),
   };
 }
 

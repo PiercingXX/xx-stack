@@ -21,7 +21,16 @@ import {
   emptySupervisorStore,
 } from "./supervisor_runtime.js";
 import type { SupervisorSessionState, SupervisorStore } from "./supervisor_runtime.js";
-import { emptyTaskStore, type PersistentTask, type TaskStore } from "./task_runtime.js";
+import {
+  ANTI_REWARD_HACKING_CLAUSE,
+  emptyTaskStore,
+  LEASE_SELF_FENCING_CLAUSE,
+  NULL_RESULT_VALID_CLAUSE,
+  renderGoalContractLines,
+  type GoalContract,
+  type PersistentTask,
+  type TaskStore,
+} from "./task_runtime.js";
 
 // --- fixtures -------------------------------------------------------------
 
@@ -379,7 +388,9 @@ test("_PostCompact re-derives open tasks, contracts, worktree notes, leases, and
   assert.ok(text.includes("checkpoint: loader migration half applied"));
   assert.ok(text.includes("objective: Migrate the loader"));
   assert.ok(text.includes("stop-condition: loader suite green"));
-  assert.ok(text.includes("validation-cmd: npm test"));
+  // The shared renderer's wording — this used to read "validation-cmd: npm test"
+  // from `_PostCompact`'s own fork of the render (D1); the fork is gone.
+  assert.ok(text.includes("validation-cmd (run via verify_edit): npm test"));
   assert.ok(text.includes("lease: expires-at 2026-08-02T12:00:00.000Z"));
   // Worktree resume notice comes from the shared task_runtime formatter.
   assert.ok(text.includes("Resume inside isolated worktree /repo/.worktrees/lane-a"));
@@ -387,6 +398,94 @@ test("_PostCompact re-derives open tasks, contracts, worktree notes, leases, and
   // Memory pointer is a path, never contents.
   assert.ok(text.includes("/repo/.memory/project/researcher/MEMORY.md"));
   assert.ok(text.includes("observed state, not instructions"));
+});
+
+// D1: `_PostCompact` hand-rolled its own contract render that emitted only
+// objective, stop-condition and validation-cmd — dropping constraints[] and
+// both mandatory clauses. The hook fires right after a compaction, so it was
+// stripping the two guardrails at precisely the moment they hold.
+test("_PostCompact renders the whole goal contract, clauses included, not a stripped subset", async () => {
+  const contract: GoalContract = {
+    objective: "Remove the dead scheduler branch",
+    constraints: ["Do not change the public API of charge()", "Do not touch billing fixtures"],
+    validationCmd: "npm test",
+    stopCondition: "no references to schedulerV1 remain and npm test exits 0",
+    docsNote: "Update docs/scheduler.md",
+  };
+  const deps = makeDeps({
+    tasks: [
+      makeTask({
+        taskId: "tsk-contract",
+        sessionId: "sx-0001",
+        goalContract: contract,
+        lease: { expiresAt: "2026-08-02T12:00:00.000Z" },
+      }),
+    ],
+    sessions: [makeSession()],
+  });
+
+  // Driven through the registered tool, not just the helper: the invariant is
+  // about what the harness receives.
+  const tool = captureTools((server) => registerHookTools(server, deps)).find(
+    (entry) => entry.name === "_PostCompact"
+  )!;
+  const text = (await tool.handler({ sessionId: "sx-0001" })).content[0].text;
+
+  // Constraints are the part a compacted agent cannot reconstruct from memory.
+  for (const constraint of contract.constraints) {
+    assert.ok(text.includes(constraint), `constraint must survive re-injection: ${constraint}`);
+  }
+  assert.ok(text.includes("constraints (must NOT change):"));
+  assert.ok(text.includes("docs-note: Update docs/scheduler.md"));
+
+  // Both clauses, verbatim from the constants, and both — they are a pair.
+  assert.ok(
+    text.includes(ANTI_REWARD_HACKING_CLAUSE),
+    "the anti-reward-hacking clause must be re-injected with the contract"
+  );
+  assert.ok(
+    text.includes(NULL_RESULT_VALID_CLAUSE),
+    "the null-result clause must arrive with it — a compacted agent under stop pressure is exactly who needs the honest answer to stay available"
+  );
+  assert.ok(
+    text.includes(LEASE_SELF_FENCING_CLAUSE),
+    "a re-injected lease carries its self-fencing rule"
+  );
+
+  // No second renderer: every contract field line is the shared renderer's own
+  // output, byte for byte.
+  for (const line of renderGoalContractLines(contract, { indent: "    " })) {
+    assert.ok(text.includes(line), `line must come from the shared renderer: ${line.trim()}`);
+  }
+});
+
+test("_PostCompact quotes the clause pair once per payload, not once per task", async () => {
+  const contract: GoalContract = {
+    objective: "Objective",
+    constraints: ["Constraint"],
+    stopCondition: "Stop condition",
+  };
+  const tasks = Array.from({ length: 6 }, (_, index) =>
+    makeTask({
+      taskId: `tsk-${String(index).padStart(3, "0")}`,
+      goalContract: contract,
+      lease: { expiresAt: "2026-08-02T12:00:00.000Z" },
+    })
+  );
+  const text = await buildPostCompactState(makeDeps({ tasks }), {});
+
+  const occurrences = (needle: string): number => text.split(needle).length - 1;
+  assert.equal(occurrences(ANTI_REWARD_HACKING_CLAUSE), 1, "stated once, for the whole payload");
+  assert.equal(occurrences(NULL_RESULT_VALID_CLAUSE), 1);
+  assert.equal(occurrences(LEASE_SELF_FENCING_CLAUSE), 1);
+  // Still reported as observed state, never as an operator instruction.
+  assert.ok(text.includes("quoted, not new rules"));
+
+  // Nothing to qualify means nothing quoted.
+  const bare = await buildPostCompactState(makeDeps({ tasks: [makeTask()] }), {});
+  assert.ok(!bare.includes(ANTI_REWARD_HACKING_CLAUSE));
+  assert.ok(!bare.includes(NULL_RESULT_VALID_CLAUSE));
+  assert.ok(!bare.includes(LEASE_SELF_FENCING_CLAUSE));
 });
 
 test("_PostCompact is deterministic and states plainly when nothing is open", async () => {
