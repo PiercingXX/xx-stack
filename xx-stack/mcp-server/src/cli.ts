@@ -5,8 +5,11 @@
  *
  * PRESENTATION LAYER ONLY. Every command calls the exact same runtime
  * functions the MCP tools call (routing_runtime.js, platform_runtime.js,
- * task_runtime.js, memory_runtime.js) — zero routing/task/memory logic is
- * forked into this file, so the CLI can never drift from MCP tool behavior.
+ * task_runtime.js, memory_runtime.js, observability_runtime.js,
+ * task_list_runtime.js) — zero routing/task/memory logic is forked into this
+ * file, so the CLI can never drift from MCP tool behavior. The claim was
+ * briefly untrue: `summarizePlatforms`, `diagnoseHosts`, and `filterTasks` were
+ * copy-pasted from the tool handlers (MCP-DUP-3) and are now shared modules.
  *
  * Conventions (unix-composable, agent-friendly):
  *   - stdout carries data; stderr carries diagnostics
@@ -28,18 +31,28 @@ import {
   syncAgentMemorySnapshot,
   type CompletionMemorySyncStatus,
 } from "./memory_runtime.js";
-import type { Host, Registry, RouteRecommendation } from "./platform_types.js";
+import { diagnoseHosts, summarizePlatforms, type DiagnoseResult } from "./observability_runtime.js";
+import type { RouteRecommendation } from "./platform_types.js";
 import { loadRegistry } from "./platform_runtime.js";
-import { endpointFamilyForHost, pingHostEndpoint, routeTask } from "./routing_runtime.js";
+import { routeTask } from "./routing_runtime.js";
+import { StoreAccessError } from "./supervisor_store_runtime.js";
+import { filterTasks, type TaskListFilters, type TaskListResult } from "./task_list_runtime.js";
 import {
   readTaskStore,
   TASK_STATUS_VALUES,
-  TASK_TERMINAL_STATUSES,
   withTaskStoreLock,
-  type PersistentTask,
   type TaskStatus,
-  type TaskStore,
 } from "./task_runtime.js";
+
+/**
+ * Re-exported, not re-implemented. `xx platforms`, `xx diagnose`, and
+ * `xx tasks list` used to carry their own copies of the list_platforms /
+ * check_health / task_list shaping (MCP-DUP-3); the implementations now live in
+ * the runtime modules the MCP tools import, and the CLI keeps a single public
+ * surface by forwarding them.
+ */
+export { diagnoseHosts, filterTasks, summarizePlatforms };
+export type { DiagnoseResult, TaskListFilters, TaskListResult };
 
 // --- Exit codes (per convention) ---
 
@@ -413,115 +426,6 @@ export function commandHelpText(topic: string): string {
   return COMMAND_HELP[topic] ?? helpText();
 }
 
-// --- Output shaping (presentation only) ---
-
-/**
- * Shape the registry into the exact summary the list_platforms MCP tool
- * returns, so `xx platforms --json` and the tool stay interchangeable.
- */
-export function summarizePlatforms(registry: Registry): {
-  selectionPolicy: Registry["selectionPolicy"];
-  tiers: Array<Record<string, unknown>>;
-} {
-  const tiers = registry.tiers.map((tier) => ({
-    id: tier.id,
-    label: tier.label,
-    priority: tier.priority,
-    usageGuidance: tier.usageGuidance,
-    hosts: tier.hosts.map((host) => ({
-      id: host.id,
-      label: host.label,
-      provider: host.provider,
-      endpoint: host.endpoint,
-      enabled: host.enabled !== false,
-      modelCount: (host.models ?? []).length,
-      executionPolicy: host.executionPolicy ?? {},
-      hardware: host.hardware ?? {},
-      preferredTasks: host.delegationPolicy?.preferredTaskTypes ?? [],
-    })),
-  }));
-  return { selectionPolicy: registry.selectionPolicy, tiers };
-}
-
-export interface DiagnoseResult {
-  tier: string;
-  host: string;
-  status: "disabled" | "skipped" | "healthy" | "unreachable";
-  endpoint?: string;
-  provider?: string;
-  endpointFamily?: string;
-  latencyMs?: number;
-  reason?: string;
-}
-
-/**
- * Ping every host in the registry — same disabled/non-HTTP/ping shaping
- * as the check_health MCP tool. `ping` is injectable for tests; the CLI
- * passes the real pingHostEndpoint from routing_runtime.
- */
-export async function diagnoseHosts(
-  registry: Registry,
-  ping: (host: Host) => Promise<{ ok: boolean; latencyMs: number }> = pingHostEndpoint
-): Promise<DiagnoseResult[]> {
-  const allHosts = registry.tiers.flatMap((tier) => tier.hosts.map((host) => ({ tier, host })));
-  return Promise.all(
-    allHosts.map(async ({ tier, host }): Promise<DiagnoseResult> => {
-      if (host.enabled === false) {
-        return { tier: tier.id, host: host.id, status: "disabled" };
-      }
-      if (!host.endpoint.startsWith("http://") && !host.endpoint.startsWith("https://")) {
-        return { tier: tier.id, host: host.id, status: "skipped", reason: "not an HTTP endpoint" };
-      }
-      const result = await ping(host);
-      return {
-        tier: tier.id,
-        host: host.id,
-        endpoint: host.endpoint,
-        provider: host.provider,
-        endpointFamily: endpointFamilyForHost(host),
-        status: result.ok ? "healthy" : "unreachable",
-        latencyMs: result.latencyMs,
-      };
-    })
-  );
-}
-
-export interface TaskListFilters {
-  status?: TaskStatus;
-  tag?: string;
-  owner?: string;
-  includeCompleted?: boolean;
-  limit?: number;
-}
-
-export interface TaskListResult {
-  total: number;
-  returned: number;
-  tasks: PersistentTask[];
-}
-
-/**
- * Filter/sort the task store — exact mirror of the task_list MCP tool's
- * shaping (status/tag/owner filters, terminal statuses hidden by default,
- * newest-updated first, default cap 100).
- */
-export function filterTasks(store: TaskStore, filters: TaskListFilters): TaskListResult {
-  const tagFilter = filters.tag?.trim().toLowerCase();
-  const ownerFilter = filters.owner?.trim().toLowerCase();
-
-  const tasks = Object.values(store.tasks)
-    .filter((task) => !filters.status || task.status === filters.status)
-    .filter((task) => filters.includeCompleted === true || !TASK_TERMINAL_STATUSES.has(task.status))
-    .filter(
-      (task) => !tagFilter || task.tags.some((taskTag) => taskTag.toLowerCase() === tagFilter)
-    )
-    .filter((task) => !ownerFilter || (task.owner ?? "").toLowerCase() === ownerFilter)
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-
-  const capped = tasks.slice(0, filters.limit ?? 100);
-  return { total: tasks.length, returned: capped.length, tasks: capped };
-}
-
 // --- Text formatters (human-readable; --json bypasses these) ---
 
 export function formatRouteText(result: RouteRecommendation): string {
@@ -733,6 +637,16 @@ export async function runCli(
     if (error instanceof CliWriteConflictError) {
       err.write(JSON.stringify(error.conflict, null, 2) + "\n");
       return EXIT_CONFLICT;
+    }
+    // A state file that exists but cannot be read or parsed (MCP-1). The store
+    // readers throw rather than presenting themselves as empty, so without this
+    // branch `xx tasks list` dumped a raw error through the generic handler
+    // instead of the structured diagnostic the MCP tools return. Same payload
+    // as the tools' `store_unavailable` result, on stderr so stdout stays clean
+    // for the caller's pipeline, at the server-error exit code.
+    if (error instanceof StoreAccessError) {
+      err.write(JSON.stringify(error.toToolPayload(), null, 2) + "\n");
+      return EXIT_SERVER;
     }
     const message = error instanceof Error ? error.message : String(error);
     err.write(`xx: server error: ${message}\n`);

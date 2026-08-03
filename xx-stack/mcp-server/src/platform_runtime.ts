@@ -1,19 +1,23 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
 
 import { guardedExecFile, INTERNAL_VRAM_PROBE } from "./execution_policy.js";
 import type { Registry } from "./platform_types.js";
-import { PATH_CONSTANTS, liveRegistryPath, repoFileCandidates } from "./runtime_constants.js";
+import {
+  PATH_CONSTANTS,
+  liveRegistryPath,
+  repoFileCandidates,
+  xxStackRepoRoot,
+} from "./runtime_constants.js";
 
 let registryCache: { value: Registry; expiresAt: number } | null = null;
 const REGISTRY_CACHE_TTL_MS = 10_000;
 
+// Deliberately has no invalidation path: hardware does not change while the
+// process lives, and the probes shell out. `invalidateRegistryCache` used to sit
+// here as the counterpart for the registry cache and was never called by
+// anything (MCP-DEAD-1); it is gone rather than kept as a decoy, since the
+// registry cache expires on its own after REGISTRY_CACHE_TTL_MS.
 let hardwareCache: Record<string, unknown> | null = null;
-
-export function invalidateRegistryCache(): void {
-  registryCache = null;
-}
 
 function validateRegistry(value: unknown): Registry {
   if (!value || typeof value !== "object") {
@@ -35,9 +39,7 @@ function validateRegistry(value: unknown): Registry {
 
 async function loadRegistryFromDisk(): Promise<Registry> {
   const livePath = liveRegistryPath();
-  const repoRoot = resolve(
-    process.env.XX_STACK_REPO || resolve(homedir(), ".config/opencode/skills/xx-stack")
-  );
+  const repoRoot = xxStackRepoRoot();
   // Search every known stack-source layout (runtime/, opencode/, .opencode/)
   // rather than assuming the legacy compat directory.
   const repoPaths = repoFileCandidates(repoRoot, PATH_CONSTANTS.platformsFile);
@@ -137,6 +139,10 @@ export interface ModelRatesFile {
 let modelRatesCache: { value: ModelRatesFile; expiresAt: number } | null = null;
 const MODEL_RATES_CACHE_TTL_MS = 30_000;
 
+function isRateTable(value: unknown): value is ModelRates {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Load the per-model rate table from xx-stack/runtime/model-rates.json.
  * Returns { rates: {} } on failure so callers always get a valid shape.
@@ -145,16 +151,17 @@ export async function loadModelRates(): Promise<ModelRatesFile> {
   const now = Date.now();
   if (modelRatesCache && now < modelRatesCache.expiresAt) return modelRatesCache.value;
 
-  const repoRoot = resolve(
-    process.env.XX_STACK_REPO || resolve(homedir(), ".config/opencode/skills/xx-stack")
-  );
-  const candidates = repoFileCandidates(repoRoot, "model-rates.json");
+  const candidates = repoFileCandidates(xxStackRepoRoot(), "model-rates.json");
 
   for (const path of candidates) {
     try {
       const raw = await readFile(path, "utf-8");
       const parsed = JSON.parse(raw) as ModelRatesFile;
-      if (parsed && typeof parsed.rates === "object") {
+      // `typeof null === "object"`, so the old check accepted `"rates": null`
+      // and handed it to lookupModelCost, which then threw on property access —
+      // the one thing the comment below promises never happens (MCP-6). An
+      // array is rejected for the same reason: it indexes but carries no rates.
+      if (isRateTable(parsed?.rates)) {
         modelRatesCache = { value: parsed, expiresAt: now + MODEL_RATES_CACHE_TTL_MS };
         return parsed;
       }
@@ -170,6 +177,55 @@ export async function loadModelRates(): Promise<ModelRatesFile> {
 }
 
 /**
+ * Compile a rate-table key into an anchored matcher. `*` is the only wildcard —
+ * every other character is matched literally, so a model name containing `.`,
+ * `+` or `(` cannot be turned into a regex metacharacter by the rate file.
+ */
+function globToRegExp(pattern: string): RegExp {
+  const source = pattern
+    .split("*")
+    .map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return new RegExp(`^${source}$`);
+}
+
+/**
+ * Resolve a dispatch model name against the rate table's keys (MCP-6).
+ *
+ * The table is documented as `[modelPattern: string]` and the shipped file keys
+ * local lanes as globs (`ollama/*`, `sglang/*`, `vllm/*`), while real dispatch
+ * names are `"${provider}/${model}"`. An exact-key lookup therefore never
+ * matched a single local lane, and every zero-cost local call reported
+ * `costSource: "unknown-model"`.
+ *
+ * Resolution order, deterministic and independent of key insertion order:
+ *   1. an exact key always wins over any wildcard;
+ *   2. otherwise the most specific matching glob wins — most literal
+ *      (non-wildcard) characters, then fewest wildcards, then lowest key.
+ */
+export function matchModelRateKey(rates: ModelRates, modelName: string): string | null {
+  if (!isRateTable(rates)) return null;
+  if (Object.prototype.hasOwnProperty.call(rates, modelName)) return modelName;
+
+  let best: { key: string; literals: number; wildcards: number } | null = null;
+  for (const key of Object.keys(rates)) {
+    if (!key.includes("*")) continue;
+    if (!globToRegExp(key).test(modelName)) continue;
+    const wildcards = key.length - key.replace(/\*/g, "").length;
+    const literals = key.length - wildcards;
+    if (
+      best === null ||
+      literals > best.literals ||
+      (literals === best.literals &&
+        (wildcards < best.wildcards || (wildcards === best.wildcards && key < best.key)))
+    ) {
+      best = { key, literals, wildcards };
+    }
+  }
+  return best?.key ?? null;
+}
+
+/**
  * Look up cost for a model name. Returns null for unknown models.
  */
 export function lookupModelCost(
@@ -179,7 +235,8 @@ export function lookupModelCost(
   tokensOut: number
 ): number | null {
   if (!modelName) return null;
-  const entry = rates[modelName];
+  const key = matchModelRateKey(rates, modelName);
+  const entry = key === null ? undefined : rates[key];
   if (!entry) return null;
   const costIn = (tokensIn / 1000) * entry.costPer1kInputTokens;
   const costOut = (tokensOut / 1000) * entry.costPer1kOutputTokens;

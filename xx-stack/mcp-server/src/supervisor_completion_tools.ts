@@ -41,14 +41,21 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
 ];
 const SECRET_ASSIGNMENT_PATTERN =
   /\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|secret|token|password|passwd|credentials?|authorization))\b(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi;
-const BEARER_PATTERN = /\b(bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+const AUTH_SCHEME_PATTERN = /\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
 export function redactSecrets(text: string): string {
-  let out = text.replace(
+  // Auth schemes are matched FIRST. `SECRET_ASSIGNMENT_PATTERN` treats
+  // `authorization` as a secret-bearing key and its `\S+` value capture stops
+  // at the first space — so on `Authorization: Bearer <token>` it consumed only
+  // the literal word "Bearer" and left the token in the clear, which is exactly
+  // the value a handoff prompt must never carry. Redacting the scheme+token
+  // pair before the assignment pass closes that hole; the assignment pass then
+  // harmlessly re-redacts the placeholder.
+  let out = text.replace(AUTH_SCHEME_PATTERN, "$1 [redacted-secret]");
+  out = out.replace(
     SECRET_ASSIGNMENT_PATTERN,
     (_match, key: string, sep: string) => `${key}${sep}[redacted-secret]`
   );
-  out = out.replace(BEARER_PATTERN, "$1 [redacted-secret]");
   for (const pattern of SECRET_VALUE_PATTERNS) {
     out = out.replace(pattern, "[redacted-secret]");
   }

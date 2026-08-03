@@ -1,13 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { diagnoseHosts, summarizePlatforms } from "./observability_runtime.js";
 import type { Host, Registry } from "./platform_types.js";
 import type { ModelRatesFile } from "./platform_runtime.js";
 import { lookupModelCost } from "./platform_runtime.js";
 import {
   endpointFamilyForHost,
   fetchHostModels,
-  pingHostEndpoint,
   probeHostEndpointCompatibility,
 } from "./routing_runtime.js";
 
@@ -23,14 +23,28 @@ interface ObservabilityToolDeps {
   loadModelRates: () => Promise<ModelRatesFile>;
 }
 
-interface ToolCatalogEntry {
+export interface ToolCatalogEntry {
   name: string;
   category: "routing" | "supervisor" | "observability" | "tasks" | "agents";
   description: string;
   keywords: string[];
 }
 
-const TOOL_CATALOG: ToolCatalogEntry[] = [
+/**
+ * The `search_tools` catalog — the discovery surface for every registered tool.
+ *
+ * This is a hand-maintained mirror of what `index.ts` registers, and it drifted
+ * 11 tools behind (MCP-13): an agent searching for `build_repo_map`,
+ * `verify_edit`, or any of the review/competitive routing tools was told they
+ * did not exist. `observability_tools.test.ts` now derives the registered set by
+ * driving the real `register*` functions and fails on any tool missing here or
+ * any entry here naming a tool nobody registers, so it cannot drift again.
+ *
+ * The only permitted omissions are the deliberately hidden lifecycle hooks
+ * (`_Stop`, `_PostCompact`), which are named as an explicit exemption in that
+ * test — they are called by a hook-aware harness, never discovered by an agent.
+ */
+export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "list_platforms",
     category: "routing",
@@ -235,6 +249,83 @@ const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: "Record a telemetry event with lane, tokensIn, tokensOut, and costUsd",
     keywords: ["telemetry", "cost", "tokens", "lane", "usage"],
   },
+  {
+    name: "route_architect_editor",
+    category: "routing",
+    description:
+      "Recommend two lanes for a task: an architect lane for deep reasoning and an editor lane for fast execution",
+    keywords: ["architect", "editor", "split", "deep", "fast", "pair"],
+  },
+  {
+    name: "route_competitive_task",
+    category: "routing",
+    description:
+      "Produce up to N distinct host/model lanes for competitive fan-out, one git worktree per lane",
+    keywords: ["competitive", "fanout", "worktree", "lanes", "diversity"],
+  },
+  {
+    name: "route_review",
+    category: "routing",
+    description:
+      "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity)",
+    keywords: ["review", "reviewer", "diversity", "second-opinion"],
+  },
+  {
+    name: "score_candidates",
+    category: "routing",
+    description:
+      "Score candidate task descriptions against the tier keyword matcher and return a deterministic ranking with rationale",
+    keywords: ["score", "rank", "candidates", "compare", "selection"],
+  },
+  {
+    name: "supervisor_emit_handoff_prompt",
+    category: "supervisor",
+    description:
+      "Emit a structured failover handoff prompt for the lane taking over: goal, state, decisions, traps, files, open work",
+    keywords: ["handoff", "failover", "takeover", "prompt", "continuity"],
+  },
+  {
+    name: "supervisor_force_synthesis",
+    category: "supervisor",
+    description:
+      "Mark a session force_synthesized and demand a best-effort answer from existing evidence with explicit gaps and confidence",
+    keywords: ["synthesis", "forced", "budget", "terminal", "partial"],
+  },
+  {
+    name: "review_to_continuation",
+    category: "supervisor",
+    description:
+      "Review uncommitted changes and emit a bounded continuation prompt with a mustAddress item for every review note",
+    keywords: ["review", "continuation", "diff", "notes", "mustaddress"],
+  },
+  {
+    name: "agent_memory_mark_superseded",
+    category: "agents",
+    description:
+      "Mark memory entries as superseded by abstracted rules, annotated in place and never deleted (compare-and-swap on expectedHash)",
+    keywords: ["agent", "memory", "superseded", "compaction", "rules"],
+  },
+  {
+    name: "agent_memory_compaction_prompt",
+    category: "agents",
+    description:
+      "Emit a deterministic distillation prompt plus candidate memory entries for rule abstraction",
+    keywords: ["agent", "memory", "compaction", "distill", "prompt"],
+  },
+  {
+    name: "build_repo_map",
+    category: "observability",
+    description:
+      "Return the most relevant slice of a codebase for a token budget, ranked by git recency, path proximity, and reference counts",
+    keywords: ["repo", "map", "context", "budget", "files", "codebase"],
+  },
+  {
+    name: "verify_edit",
+    category: "observability",
+    description:
+      "Run the project's linter and/or tests after an edit and return structured pass/fail with a bounded failure payload",
+    keywords: ["verify", "lint", "test", "check", "edit", "gate"],
+  },
 ];
 
 export function registerObservabilityTools(server: McpServer, deps: ObservabilityToolDeps): void {
@@ -242,67 +333,16 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
     "list_platforms",
     "List all platform tiers, hosts, and their configuration from the xx-stack registry",
     {},
-    async () => {
-      const registry = await deps.loadRegistry();
-      const summary = registry.tiers.map((tier) => ({
-        id: tier.id,
-        label: tier.label,
-        priority: tier.priority,
-        usageGuidance: tier.usageGuidance,
-        hosts: tier.hosts.map((host) => ({
-          id: host.id,
-          label: host.label,
-          provider: host.provider,
-          endpoint: host.endpoint,
-          enabled: host.enabled !== false,
-          modelCount: (host.models ?? []).length,
-          executionPolicy: host.executionPolicy ?? {},
-          hardware: host.hardware ?? {},
-          preferredTasks: host.delegationPolicy?.preferredTaskTypes ?? [],
-        })),
-      }));
-
-      return jsonContent({
-        selectionPolicy: registry.selectionPolicy,
-        tiers: summary,
-      });
-    }
+    // MCP-DUP-3: the same shaping `xx platforms` renders, from one module.
+    async () => jsonContent(summarizePlatforms(await deps.loadRegistry()))
   );
 
   server.tool(
     "check_health",
     "Check health and latency of all configured model endpoints in the platform registry",
     {},
-    async () => {
-      const registry = await deps.loadRegistry();
-      const allHosts = registry.tiers.flatMap((tier) => tier.hosts.map((host) => ({ tier, host })));
-      const results = await Promise.all(
-        allHosts.map(async ({ tier, host }) => {
-          if (host.enabled === false) {
-            return { tier: tier.id, host: host.id, status: "disabled" };
-          }
-          if (!host.endpoint.startsWith("http://") && !host.endpoint.startsWith("https://")) {
-            return {
-              tier: tier.id,
-              host: host.id,
-              status: "skipped",
-              reason: "not an HTTP endpoint",
-            };
-          }
-          const ping = await pingHostEndpoint(host);
-          return {
-            tier: tier.id,
-            host: host.id,
-            endpoint: host.endpoint,
-            provider: host.provider,
-            endpointFamily: endpointFamilyForHost(host),
-            status: ping.ok ? "healthy" : "unreachable",
-            latencyMs: ping.latencyMs,
-          };
-        })
-      );
-      return jsonContent(results);
-    }
+    // MCP-DUP-3: the same shaping `xx diagnose` renders, from one module.
+    async () => jsonContent(await diagnoseHosts(await deps.loadRegistry()))
   );
 
   server.tool(
@@ -394,7 +434,11 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
 
   server.tool(
     "record_telemetry",
-    "Record a telemetry event with token usage and cost. Persists to the JSONL telemetry stream.",
+    "Record a telemetry event with token usage and cost. Appends to the JSONL telemetry stream " +
+      "and awaits that append before returning, so the event is on its way to disk before the " +
+      "caller proceeds. Durability is best-effort: the telemetry writer treats I/O errors as " +
+      'non-fatal, so status "accepted" means the append call completed, not that bytes are ' +
+      'durable. A write that actively rejects is reported as status "error".',
     {
       skill: z.string().describe("Skill or operation name"),
       outcome: z
@@ -452,14 +496,30 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
       if (finalCostUsd !== null) payload.costUsd = finalCostUsd;
       if (model !== undefined) payload.model = model;
 
-      void deps.logEvent(
-        sessionId ? { session: sessionId } : "server",
-        "telemetry.record",
-        payload
-      );
+      // MCP-16: this used to be `void deps.logEvent(...)` followed by an
+      // unconditional "recorded". Nothing ordered the append against shutdown,
+      // so a server that exited right after the call lost the event outright,
+      // and a rejected write became an unhandled rejection. Awaiting costs
+      // nothing — logEvent is already Promise<void>.
+      let writeError: string | null = null;
+      try {
+        await deps.logEvent(
+          sessionId ? { session: sessionId } : "server",
+          "telemetry.record",
+          payload
+        );
+      } catch (error) {
+        writeError = error instanceof Error ? error.message : String(error);
+      }
 
       return jsonContent({
-        status: "recorded",
+        // "accepted", not "recorded": the append was awaited, but the telemetry
+        // writer swallows I/O errors by design, so this tool cannot honestly
+        // claim the bytes reached disk. `durability` says so out loud rather
+        // than letting the status imply a guarantee nothing provides.
+        status: writeError === null ? "accepted" : "error",
+        durability: writeError === null ? "best-effort" : "none",
+        ...(writeError === null ? {} : { error: writeError }),
         fields: Object.keys(payload),
         costUsd: finalCostUsd,
         costSource:

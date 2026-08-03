@@ -127,7 +127,7 @@ export const __testExports = {
 
 // Sourced from package.json so the version reported over MCP cannot drift from
 // the version actually published.
-const SERVER_VERSION: string = (() => {
+const SERVER_VERSION: string = ((): string => {
   for (const rel of ["../package.json", "../../package.json"]) {
     try {
       const url = new URL(rel, import.meta.url);

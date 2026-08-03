@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,12 @@ import {
   summarizePlatforms,
 } from "./cli.js";
 import { getAgentMemoryEntrypoint, hashMemoryContent } from "./memory_runtime.js";
+import {
+  diagnoseHosts as runtimeDiagnoseHosts,
+  summarizePlatforms as runtimeSummarizePlatforms,
+} from "./observability_runtime.js";
 import type { Registry, RouteRecommendation } from "./platform_types.js";
+import { filterTasks as runtimeFilterTasks } from "./task_list_runtime.js";
 import type { PersistentTask, TaskStore } from "./task_runtime.js";
 
 // --- Fixtures ---
@@ -261,6 +266,16 @@ test("commandHelpText falls back to top-level help for unknown topics", () => {
 });
 
 // --- Output shaping ---
+
+test("MCP-DUP-3: the CLI forwards the shared runtime rather than forking it", () => {
+  // The CLI header promises "zero routing/task/memory logic is forked into this
+  // file", but these three were copy-pasted from the tool handlers and only the
+  // CLI copies had tests. Identity, not equivalence: there is one function, so
+  // no behavior change can land on one side alone.
+  assert.equal(summarizePlatforms, runtimeSummarizePlatforms);
+  assert.equal(diagnoseHosts, runtimeDiagnoseHosts);
+  assert.equal(filterTasks, runtimeFilterTasks);
+});
 
 test("summarizePlatforms mirrors the list_platforms tool shape", () => {
   const summary = summarizePlatforms(buildRegistry());
@@ -550,6 +565,48 @@ test("xx memory apply: stale --expect-hash exits 5 with JSON on stderr and write
     assert.equal(okPayload.status, "ok");
     assert.equal(okPayload.direction, "apply");
   } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("xx tasks list: a corrupt task store exits 2 with a structured diagnostic, not a stack trace", async () => {
+  // The store readers stopped treating an unreadable file as an empty store
+  // (MCP-1) and now throw StoreAccessError. The MCP tools convert that into a
+  // `store_unavailable` result via guardStoreAccess; the CLI inherited the raw
+  // throw and had no equivalent, so `xx tasks list` reported it as an
+  // undifferentiated server error.
+  const originalHome = process.env.HOME;
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-cli-store-"));
+  try {
+    process.env.HOME = dir;
+    const statePath = join(dir, ".config/opencode/xx-stack-task-state.json");
+    await mkdir(join(dir, ".config/opencode"), { recursive: true });
+    await writeFile(statePath, "{ this is not json", "utf-8");
+
+    const run = await runCaptured(["tasks", "list", "--json"]);
+
+    assert.equal(run.code, EXIT_SERVER, "an unreadable store is a server error, exit 2");
+    assert.equal(run.stdout, "", "stdout stays clean so a pipeline never eats a diagnostic");
+
+    const payload = JSON.parse(run.stderr) as Record<string, unknown>;
+    assert.equal(payload.status, "error");
+    assert.equal(payload.reasonCode, "store_unavailable");
+    assert.equal(payload.store, "task");
+    assert.equal(payload.path, statePath);
+    assert.ok(
+      typeof payload.remediation === "string" && payload.remediation.length > 0,
+      "the diagnostic tells the operator what to do"
+    );
+    assert.ok(!run.stderr.includes("    at "), "no raw stack frames leak to stderr");
+
+    // A genuinely absent store is still the empty-list case, not an error.
+    await rm(statePath, { force: true });
+    const empty = await runCaptured(["tasks", "list", "--json"]);
+    assert.equal(empty.code, EXIT_OK);
+    assert.deepEqual(JSON.parse(empty.stdout), { total: 0, returned: 0, tasks: [] });
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -118,8 +118,18 @@ export function liveConfigPath(homeDir = homedir()): string {
   return join(homeDir, ".config", "opencode", PATH_CONSTANTS.configFile);
 }
 
-export function repoRegistryPath(homeDir = homedir()): string {
-  const repoRoot =
-    process.env.XX_STACK_REPO || resolve(homeDir, ".config/opencode/skills/xx-stack");
-  return resolveRepoFilePath(repoRoot, PATH_CONSTANTS.platformsFile);
+/**
+ * The single source of truth for "where is the xx-stack repo?" (MCP-DUP-2).
+ *
+ * This expression used to be copy-pasted at four call sites, two of which wrapped
+ * the result in `resolve(...)` and two of which did not — so a relative
+ * `XX_STACK_REPO` normalized in one half of the server and not the other. Every
+ * site now goes through here, and the result is always absolute.
+ *
+ * Note it deliberately resolves the env var too, not just the default: a repo
+ * root is a path the process will `join()` against for the life of the process,
+ * and a relative one silently re-points whenever anything changes `cwd`.
+ */
+export function xxStackRepoRoot(homeDir = homedir()): string {
+  return resolve(process.env.XX_STACK_REPO || resolve(homeDir, ".config/opencode/skills/xx-stack"));
 }

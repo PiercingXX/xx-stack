@@ -14,7 +14,11 @@ import {
   type HookScope,
   type HookToolDeps,
 } from "./hook_tools.js";
-import { DEFAULT_RELIABILITY, emptySupervisorStore } from "./supervisor_runtime.js";
+import {
+  DEFAULT_RELIABILITY,
+  StoreAccessError,
+  emptySupervisorStore,
+} from "./supervisor_runtime.js";
 import type { SupervisorSessionState, SupervisorStore } from "./supervisor_runtime.js";
 import { emptyTaskStore, type PersistentTask, type TaskStore } from "./task_runtime.js";
 
@@ -494,6 +498,78 @@ test("_Stop asks for the non-mutating memory status check", async () => {
     { ensureFiles: false },
     "_Stop must never scaffold memory files as a side effect of checking drift"
   );
+});
+
+// ---------------------------------------------------------------------------
+// MCP-1 follow-up: the store readers now THROW `StoreAccessError` on a store
+// that exists but cannot be parsed. An uncaught throw out of a lifecycle hook
+// becomes an SDK `isError` result, and a hook-aware harness may read an
+// errored `_Stop` as a blocking objection the agent can never satisfy.
+// ---------------------------------------------------------------------------
+
+function corruptStoreDeps(which: "supervisor" | "task"): HookToolDeps {
+  const base = makeDeps({ tasks: [makeTask()], sessions: [makeSession()] });
+  const boom = async (): Promise<never> => {
+    throw new StoreAccessError(which, `/tmp/${which}-state.json`, new Error("unexpected token }"));
+  };
+  return which === "supervisor"
+    ? { ...base, readSupervisorStore: boom }
+    : { ...base, readTaskStore: boom };
+}
+
+test("_Stop answers the no-objection empty string when a store is unreadable", async () => {
+  for (const which of ["supervisor", "task"] as const) {
+    const stop = captureTools((server) => registerHookTools(server, corruptStoreDeps(which))).find(
+      (tool) => tool.name === "_Stop"
+    )!;
+
+    const result = await stop.handler({});
+    assert.equal(result.content.length, 1);
+    assert.equal(
+      result.content[0]!.text,
+      "",
+      `an unreadable ${which} store must allow the stop, not raise an unsatisfiable objection`
+    );
+  }
+});
+
+test("_Stop documents the unreadable-store answer so a hook-aware caller can rely on it", () => {
+  const stop = captureTools((server) => registerHookTools(server, makeDeps())).find(
+    (tool) => tool.name === "_Stop"
+  )!;
+  assert.ok(
+    stop.description.includes("cannot be read"),
+    "the contract for an unreadable store belongs in the tool description"
+  );
+  assert.ok(stop.description.includes("empty no-objection string"));
+});
+
+test("_PostCompact states an unreadable store instead of reporting an empty fleet", async () => {
+  const postCompact = captureTools((server) =>
+    registerHookTools(server, corruptStoreDeps("supervisor"))
+  ).find((tool) => tool.name === "_PostCompact")!;
+
+  const result = await postCompact.handler({});
+  const text = result.content[0]!.text;
+  assert.ok(text.includes("could not be re-derived"), "the failure is named, not hidden");
+  assert.ok(text.includes("/tmp/supervisor-state.json"), "the unreadable path is named");
+  assert.ok(
+    !text.includes("no open supervised tasks or sessions are recorded."),
+    "an unreadable store must never be reported as an empty fleet"
+  );
+});
+
+test("a non-store error still escapes the hooks rather than being swallowed", async () => {
+  const deps: HookToolDeps = {
+    ...makeDeps(),
+    readTaskStore: async () => {
+      throw new TypeError("a genuine bug");
+    },
+  };
+  const tools = captureTools((server) => registerHookTools(server, deps));
+  for (const tool of tools) {
+    await assert.rejects(() => tool.handler({}), /a genuine bug/, `${tool.name} must not swallow`);
+  }
 });
 
 test("_Stop passes ensureFiles:false for every guarded session it checks", async () => {
