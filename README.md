@@ -204,7 +204,7 @@ Most people only need the first one.
 
 | Folder | What it is |
 |---|---|
-| **[`xx-stack/`](xx-stack/)** | The core: the MCP server, agent contracts, skills, and a design pack with 137 design systems. |
+| **[`xx-stack/`](xx-stack/)** | The core: the MCP server, agent contracts, skills, a design pack with 137 design systems, and a rules pack of context-tiered rule books. |
 | **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode / VS Code. Only needed if you use those. |
 | **[`hermes-orchestration/`](hermes-orchestration/)** | Standalone Python service for routing raw inference across GPU boxes. Optional. |
 
@@ -241,5 +241,6 @@ it exists, and the stack falls back to running everything locally.
 
 ## License
 
-[MIT](LICENSE). The design pack includes material from upstream projects that
-carry their own licenses — see the `LICENSE` files in those skill directories.
+[MIT](LICENSE). The design and rules packs include material from upstream
+projects that carry their own licenses — see the `LICENSE` files in those
+pack directories.
