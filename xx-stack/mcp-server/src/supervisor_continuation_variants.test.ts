@@ -470,9 +470,22 @@ test("redactSecrets with no path is byte-identical to the value-pattern behavior
       "a non-dotenv path must not engage the structural pass"
     );
   }
-  // And the pathless call still leaves these three alone — that is the
-  // documented, pinned behavior; the file-shape pass is what closes the hole.
-  assert.equal(redactSecrets(CONFIRMED_LEAKS.join("\n")), CONFIRMED_LEAKS.join("\n"));
+  // This assertion used to pin that the pathless call left ALL THREE confirmed
+  // leaks alone, which encoded a limitation as if it were intended behavior.
+  // The URL-userinfo pass since closed one of them on the pathless path — the
+  // production callers (handoff/continuation lines, reviewed diffs) pass no
+  // path, so a connection URL was reaching another lane with its password
+  // intact. What the pathless call still cannot do is redact a value whose key
+  // carries no secret-ish noun and whose value matches no vendor format; that
+  // is what the file-shape pass is for, and it is pinned precisely below.
+  const pathless = redactSecrets(CONFIRMED_LEAKS.join("\n"));
+  assert.ok(!pathless.includes("hunter2@"), "a URL password must not survive the pathless call");
+  assert.match(pathless, /postgres:\/\/admin:\[redacted-secret\]@db\.internal/);
+  // Still opaque without the file-shape pass: STRIPE_KEY's value is not a
+  // recognised vendor format (sk_ with an underscore), and SMTP_PASS's key is
+  // `pass`, not `password`.
+  assert.ok(pathless.includes("sk_live_51ABCdefGHI"), "value-pattern gap is still real");
+  assert.ok(pathless.includes("SMTP_PASS=hunter2"), "key-name gap is still real");
 });
 
 test("redactSecrets redacts every dotenv value when the path is dotenv-shaped", () => {
@@ -538,4 +551,37 @@ test("a multi-line quoted value collapses to one redaction per line", () => {
   assert.ok(!out.includes("secretmaterial"));
   assert.ok(!out.includes("moresecret"));
   assert.ok(!out.includes("after"));
+});
+
+test("redactSecrets scrubs credentials embedded in a URL's userinfo", () => {
+  // Found by reviewing an external repo, not by a test: none of the value,
+  // key-name or auth-scheme passes match `postgres://admin:hunter2@host`.
+  // DATABASE_URL carries no secret-ish noun, so even the key-name pass skips
+  // it. The structural dotenv pass does catch it — but only when the caller
+  // names a dotenv path, and the production callers (handoff/continuation
+  // lines, reviewed diffs) pass no path at all. So this leaked verbatim into
+  // prompts the supervisor sends to another lane.
+  const leaky = [
+    "DATABASE_URL=postgres://admin:hunter2@db.internal:5432/prod",
+    "connect to https://user:s3cr3t@api.internal/v1",
+    "mongodb://root:let@me@in@10.0.0.5/db", // password containing '@'
+    "https://ghp_TOKENLIKEVALUE123456@github.com/org/repo",
+  ];
+  for (const line of leaky) {
+    const out = redactSecrets(line);
+    assert.ok(
+      !/hunter2|s3cr3t|let@me@in|TOKENLIKEVALUE/.test(out),
+      `credential survived redaction: ${out}`
+    );
+    assert.match(out, /\[redacted-secret\]/);
+  }
+
+  // Where a user is named, it survives — a handoff must still be able to say
+  // which user on which host, exactly as key names survive the dotenv pass.
+  assert.match(redactSecrets(leaky[0]!), /postgres:\/\/admin:\[redacted-secret\]@db\.internal/);
+
+  // A URL carrying no credentials is left completely alone.
+  for (const clean of ["https://example.com/no-creds", "http://localhost:3000/health"]) {
+    assert.equal(redactSecrets(clean), clean);
+  }
 });
