@@ -7,9 +7,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-75 commits since 1.63.0, most of them the UPSTREAM-BORROW backlog (tasks 1–29,
-now fully cleared). The tool surface grew from 33 to 45 always-registered tools
-plus 2 optional hook tools.
+A large release. The tool surface grew from 33 to 45 always-registered tools
+plus 2 optional lifecycle hooks, and every tool now declares its safety
+annotations. Supervision gained goal contracts, task leases, a dependency
+graph, and three distinguished terminal states. A repo-wide audit and the
+fixes that followed are recorded in `MANUAL.md` §11.
 
 ### Added
 
