@@ -68,6 +68,56 @@ When the supervisor fails a task over to another lane (`fallback_applied`), or a
 - It ends with the verify-don't-trust preamble: treat every claim as context to verify against the code, not facts to accept.
 - Secrets are never echoed: reference where credentials live, never values. The formatter also redacts secret-shaped values defensively.
 
+## Remote Lifecycle Invariants (Self-Enforced Task Leases)
+
+The control plane routes and supervises lanes on other machines but holds **no channel to kill one**. Three invariants make that situation safe without inventing one.
+
+### 1. Presence is status
+
+Silence past a bound is a terminal observation, not a pending state. The supervisor never assumes a kill worked, because it cannot kill. `staleSessionTtlMs` already implements the supervisor's half: when to stop waiting.
+
+**Lease expiry plus silence is a terminal observation, not a retry trigger.** When a leased lane's deadline passes and nothing has been heard from it, the supervisor records that lane as done-by-decision and moves on — it does not re-poke the lane, and it does not hold the task open waiting for a late write-back. If that lane later wakes up, invariant 3 handles it.
+
+### 2. Liveness bounds are enforced by the agent itself
+
+Task registration (`task_create` / `task_update`) accepts an optional lease:
+
+```json
+{ "lease": { "expiresAt": "<ISO-8601>", "revoked": false } }
+```
+
+- The lease is **optional metadata**. A task registered without one behaves exactly as before — same record, same prompts, same write-back path. This is the guardrail.
+- `expiresAt` is compared against **the server's own clock at write-back**. There is deliberately no clock reconciliation across machines: the prompt clause tells the agent to stop *early*, not precisely.
+- Continuation prompts for leased tasks carry the self-fencing clause:
+
+  > before writing back any result, re-check this task's lease; if it is expired or revoked, emit your final state and stop — do not write
+
+  The same clause appears in the `task_resume` directive for a leased task.
+
+### 3. At most one live instance per task
+
+After a failover, a returning "dead" lane must detect it lost the claim rather than duplicate work.
+
+- `supervisor_tick` revokes the prior lane's lease on every open task linked to the session at the moment it applies a fallback (`fallback_applied` reports the revoked task ids in `revokedLeases`). Tasks with no lease take a pure no-op path — nothing is written.
+- `supervisor_emit_handoff_prompt` states the revocation to the receiving lane: the prior lane's claim on those tasks is revoked, only this lane may write results, and the prior lane's silence is terminal rather than work in flight.
+- Server-side enforcement is exactly **one** check, on the task-result write-back path. `task_update` against a task whose lease is revoked or expired returns a structured rejection instead of silently accepting:
+
+  ```json
+  {
+    "status": "rejected",
+    "reasonCode": "lease_revoked",
+    "taskId": "...",
+    "lease": { "expiresAt": "...", "revoked": true },
+    "serverTime": "...",
+    "selfFencingClause": "..."
+  }
+  ```
+
+  `reasonCode` is `lease_revoked` for a revoked claim and `lease_expired` for a passed deadline (an unparseable `expiresAt` counts as expired — a lease nobody can evaluate never authorizes a write). Nothing is written when the rejection fires.
+- A `task_update` that carries a **replacement** lease is the supervisor re-leasing the task for a new lane, not a lane writing results back, so it is not fenced. That is how a failed-over task is handed to a live lane.
+
+Everything else is prompt-layer: the agent self-fences, and termination by decision is final even if the process lingers.
+
 ## Heartbeat Pattern
 
 Recurring supervision runs as one cheap tick, not many timers:

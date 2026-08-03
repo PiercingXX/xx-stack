@@ -6,6 +6,7 @@ import { emitLifecycleHooks } from "./execution_policy.js";
 import { logEvent } from "./log_worker.js";
 import type { SupervisorRoute, SupervisorSessionState } from "./supervisor_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
+import { revokeSessionTaskLeases } from "./task_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
 export function registerSupervisorSessionTools(server: McpServer, deps: SupervisorToolDeps): void {
@@ -574,6 +575,13 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
 
         await deps.writeSupervisorStore(store);
 
+        // At-most-one-live-instance (UPSTREAM-BORROW task 27): the supervisor
+        // has no kill channel to the stalled lane, so failover revokes its
+        // claim instead. A returning lane's write-back is then rejected rather
+        // than landing on top of the fallback lane's work. Tasks with no lease
+        // take a pure no-op path — nothing is written.
+        const revokedLeases = await revokeSessionTaskLeases(sessionId, new Date(now).toISOString());
+
         return jsonContent({
           status: "recovering",
           reasonCode: "fallback_applied",
@@ -584,6 +592,7 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
           cooldownUntil: new Date(state.cooldownUntil).toISOString(),
           attemptCount: state.attemptCount,
           failureCount: state.failureCount,
+          revokedLeases,
           handoffDirective:
             "Failover applied. Call supervisor_emit_handoff_prompt with goal, current state (DONE/PARTIAL/NOT STARTED), key decisions, traps & dead ends, relevant files, and open work so the fallback lane does not repeat the stalled lane's mistakes.",
         });

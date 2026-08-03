@@ -125,6 +125,108 @@ export function evaluateGoalContractCompletion(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Self-enforced task leases (UPSTREAM-BORROW task 27)
+// ---------------------------------------------------------------------------
+
+/**
+ * Self-fencing clause carried by continuation prompts for leased tasks.
+ * The control plane holds no kill channel to a lane on another machine, so the
+ * agent enforces its own liveness bound: it re-checks the lease before writing
+ * anything back and stops instead of writing when the lease is dead.
+ */
+export const LEASE_SELF_FENCING_CLAUSE =
+  "before writing back any result, re-check this task's lease; if it is expired or revoked, " +
+  "emit your final state and stop — do not write";
+
+/**
+ * Optional lease on task registration. `expiresAt` is an ISO-8601 instant
+ * compared against the server's own clock at write-back — there is deliberately
+ * no clock reconciliation across machines. `revoked` is flipped by the failover
+ * flow so a returning "dead" lane detects it lost the claim.
+ */
+export const TASK_LEASE_SCHEMA = z.object({
+  expiresAt: z
+    .string()
+    .min(1)
+    .max(64)
+    .describe(
+      "ISO-8601 instant after which this lease is dead (compared against the server clock)"
+    ),
+  revoked: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set once the supervisor revoked this claim (failover); a revoked lease never writes"
+    ),
+});
+export type TaskLease = z.infer<typeof TASK_LEASE_SCHEMA>;
+
+export function sanitizeTaskLease(lease: TaskLease | undefined): TaskLease | undefined {
+  if (!lease) return undefined;
+  const expiresAt = lease.expiresAt.trim();
+  if (!expiresAt) return undefined;
+  return lease.revoked === true ? { expiresAt, revoked: true } : { expiresAt };
+}
+
+export type TaskLeaseReasonCode =
+  "lease_absent" | "lease_valid" | "lease_revoked" | "lease_expired";
+
+export interface TaskLeaseCheck {
+  /** True when a write-back is allowed: no lease at all, or a live lease. */
+  ok: boolean;
+  reasonCode: TaskLeaseReasonCode;
+  expiresAt?: string;
+  revoked?: boolean;
+}
+
+/**
+ * The single server-side lease check. Revocation beats expiry (a revoked lease
+ * is dead regardless of its deadline). An unparseable `expiresAt` is treated as
+ * expired: a lease nobody can evaluate must not authorize a write.
+ */
+export function evaluateTaskLease(lease: TaskLease | undefined, nowMs: number): TaskLeaseCheck {
+  if (!lease) return { ok: true, reasonCode: "lease_absent" };
+  if (lease.revoked === true) {
+    return { ok: false, reasonCode: "lease_revoked", expiresAt: lease.expiresAt, revoked: true };
+  }
+  const expiresAtMs = Date.parse(lease.expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= nowMs) {
+    return { ok: false, reasonCode: "lease_expired", expiresAt: lease.expiresAt };
+  }
+  return { ok: true, reasonCode: "lease_valid", expiresAt: lease.expiresAt };
+}
+
+/** Flip a task's lease to revoked. Returns true when this call changed state. */
+export function revokeTaskLease(task: PersistentTask, at: string): boolean {
+  if (!task.lease || task.lease.revoked === true) return false;
+  task.lease = { expiresAt: task.lease.expiresAt, revoked: true };
+  task.updatedAt = at;
+  return true;
+}
+
+/**
+ * At-most-one-live-instance: when the supervisor fails a session over to
+ * another lane, the prior lane's claim on every linked open task is revoked.
+ * Writes only when something actually changed, so a fleet with no leases takes
+ * the byte-identical no-op path.
+ */
+export async function revokeSessionTaskLeases(sessionId: string, at: string): Promise<string[]> {
+  return withTaskStoreLock(async () => {
+    const store = await readTaskStore();
+    const revoked: string[] = [];
+    for (const task of Object.values(store.tasks)) {
+      if (task.sessionId !== sessionId) continue;
+      if (TASK_TERMINAL_STATUSES.has(task.status)) continue;
+      if (revokeTaskLease(task, at)) revoked.push(task.taskId);
+    }
+    if (revoked.length > 0) {
+      await writeTaskStore(store);
+    }
+    return revoked.sort();
+  });
+}
+
 /**
  * Mark a task as force_synthesized (UPSTREAM-BORROW task 14): the supervisor
  * exhausted budget/steps/stall allowance and demanded a best-effort synthesis
@@ -155,6 +257,7 @@ export interface PersistentTask {
   worktreePath?: string;
   parentCwd?: string;
   goalContract?: GoalContract;
+  lease?: TaskLease;
   priority?: TaskPriority;
   tags: string[];
   owner?: string;
@@ -199,7 +302,7 @@ function getTaskStatePath(): string {
   return resolve(homedir(), ".config/opencode/xx-stack-task-state.json");
 }
 
-function buildWorktreeResumeNotice(
+export function buildWorktreeResumeNotice(
   parentCwd: string | undefined,
   worktreePath: string | undefined
 ): string {
@@ -253,6 +356,12 @@ export function buildResumeDirective(
       lines.push(`  - docs-note: ${contract.docsNote}`);
     }
     lines.push(`  - anti-reward-hacking: ${ANTI_REWARD_HACKING_CLAUSE}`);
+  }
+  if (task.lease) {
+    lines.push("- lease:");
+    lines.push(`  - expires-at: ${task.lease.expiresAt}`);
+    lines.push(`  - revoked: ${task.lease.revoked === true ? "yes" : "no"}`);
+    lines.push(`  - self-fencing: ${LEASE_SELF_FENCING_CLAUSE}`);
   }
   lines.push("- requirements:");
   lines.push("  - continue from existing artifacts, do not restart from scratch");

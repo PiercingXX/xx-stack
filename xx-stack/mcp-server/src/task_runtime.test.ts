@@ -6,8 +6,13 @@ import {
   applyForceSynthesisOutcome,
   buildResumeDirective,
   evaluateGoalContractCompletion,
+  evaluateTaskLease,
   GOAL_CONTRACT_SCHEMA,
+  LEASE_SELF_FENCING_CLAUSE,
+  revokeTaskLease,
+  sanitizeTaskLease,
   sanitizeGoalContract,
+  TASK_LEASE_SCHEMA,
   TASK_STATUS_VALUES,
   TASK_TERMINAL_STATUSES,
   type GoalContract,
@@ -175,4 +180,104 @@ test("force_synthesized is a distinct terminal task status, never a normal compl
   assert.notEqual(task.status, "canceled");
   assert.equal(task.updatedAt, "2026-08-02T00:00:00.000Z");
   assert.ok(task.lastCheckpoint?.includes("forced synthesis"));
+});
+
+// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ------------------
+
+test("lease schema keeps expiresAt required and revoked optional", () => {
+  assert.deepEqual(TASK_LEASE_SCHEMA.parse({ expiresAt: "2026-08-02T12:00:00.000Z" }), {
+    expiresAt: "2026-08-02T12:00:00.000Z",
+  });
+  assert.deepEqual(
+    TASK_LEASE_SCHEMA.parse({ expiresAt: "2026-08-02T12:00:00.000Z", revoked: true }),
+    { expiresAt: "2026-08-02T12:00:00.000Z", revoked: true }
+  );
+  assert.throws(() => TASK_LEASE_SCHEMA.parse({ revoked: true }));
+  assert.throws(() => TASK_LEASE_SCHEMA.parse({ expiresAt: "" }));
+});
+
+test("sanitizeTaskLease trims, drops empty leases, and normalizes revoked=false away", () => {
+  assert.equal(sanitizeTaskLease(undefined), undefined);
+  assert.equal(sanitizeTaskLease({ expiresAt: "   " }), undefined);
+  assert.deepEqual(sanitizeTaskLease({ expiresAt: "  2026-08-02T12:00:00.000Z  " }), {
+    expiresAt: "2026-08-02T12:00:00.000Z",
+  });
+  assert.deepEqual(sanitizeTaskLease({ expiresAt: "2026-08-02T12:00:00.000Z", revoked: false }), {
+    expiresAt: "2026-08-02T12:00:00.000Z",
+  });
+  assert.deepEqual(sanitizeTaskLease({ expiresAt: "2026-08-02T12:00:00.000Z", revoked: true }), {
+    expiresAt: "2026-08-02T12:00:00.000Z",
+    revoked: true,
+  });
+});
+
+test("evaluateTaskLease: absent lease allows the write, revocation beats expiry, garbage is dead", () => {
+  const now = Date.parse("2026-08-02T12:00:00.000Z");
+
+  // No lease at all — the default path stays open.
+  assert.deepEqual(evaluateTaskLease(undefined, now), { ok: true, reasonCode: "lease_absent" });
+
+  const live = evaluateTaskLease({ expiresAt: "2026-08-02T12:00:01.000Z" }, now);
+  assert.equal(live.ok, true);
+  assert.equal(live.reasonCode, "lease_valid");
+
+  const expired = evaluateTaskLease({ expiresAt: "2026-08-02T11:59:59.000Z" }, now);
+  assert.equal(expired.ok, false);
+  assert.equal(expired.reasonCode, "lease_expired");
+
+  // Exactly at the deadline is dead — the deadline is not a grace period.
+  assert.equal(
+    evaluateTaskLease({ expiresAt: "2026-08-02T12:00:00.000Z" }, now).reasonCode,
+    "lease_expired"
+  );
+
+  // Revoked wins even when the deadline is still in the future.
+  const revoked = evaluateTaskLease({ expiresAt: "2099-01-01T00:00:00.000Z", revoked: true }, now);
+  assert.equal(revoked.ok, false);
+  assert.equal(revoked.reasonCode, "lease_revoked");
+
+  // An unevaluable deadline must never authorize a write.
+  assert.equal(evaluateTaskLease({ expiresAt: "whenever" }, now).reasonCode, "lease_expired");
+});
+
+test("revokeTaskLease flips the claim once and is idempotent", () => {
+  const unleased = makeTask();
+  assert.equal(revokeTaskLease(unleased, "2026-08-02T09:00:00.000Z"), false);
+  assert.equal(unleased.lease, undefined);
+  assert.equal(unleased.updatedAt, "2026-08-01T00:00:00.000Z", "no lease means no write");
+
+  const leased = makeTask({ lease: { expiresAt: "2099-01-01T00:00:00.000Z" } });
+  assert.equal(revokeTaskLease(leased, "2026-08-02T09:00:00.000Z"), true);
+  assert.deepEqual(leased.lease, { expiresAt: "2099-01-01T00:00:00.000Z", revoked: true });
+  assert.equal(leased.updatedAt, "2026-08-02T09:00:00.000Z");
+
+  assert.equal(revokeTaskLease(leased, "2026-08-02T10:00:00.000Z"), false, "already revoked");
+  assert.equal(leased.updatedAt, "2026-08-02T09:00:00.000Z", "idempotent revoke does not re-stamp");
+});
+
+test("buildResumeDirective adds the lease and self-fencing clause only when a lease exists", () => {
+  const plain = buildResumeDirective(makeTask(), undefined);
+  assert.ok(!plain.includes("- lease:"));
+  assert.ok(!plain.includes("self-fencing"));
+
+  const leased = buildResumeDirective(
+    makeTask({ lease: { expiresAt: "2099-01-01T00:00:00.000Z" } }),
+    undefined
+  );
+  assert.ok(leased.includes("- lease:"));
+  assert.ok(leased.includes("  - expires-at: 2099-01-01T00:00:00.000Z"));
+  assert.ok(leased.includes("  - revoked: no"));
+  assert.ok(leased.includes(`  - self-fencing: ${LEASE_SELF_FENCING_CLAUSE}`));
+
+  const revoked = buildResumeDirective(
+    makeTask({ lease: { expiresAt: "2099-01-01T00:00:00.000Z", revoked: true } }),
+    undefined
+  );
+  assert.ok(revoked.includes("  - revoked: yes"));
+
+  assert.ok(
+    LEASE_SELF_FENCING_CLAUSE.includes("re-check this task's lease"),
+    "the clause tells the agent to re-check before writing"
+  );
+  assert.ok(LEASE_SELF_FENCING_CLAUSE.includes("do not write"));
 });

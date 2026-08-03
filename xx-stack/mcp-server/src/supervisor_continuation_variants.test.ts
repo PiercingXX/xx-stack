@@ -6,10 +6,14 @@ import {
   buildForceSynthesisPrompt,
   buildHandoffPrompt,
   buildHandoffSections,
+  buildLeaseFenceSections,
+  buildRevokedClaimSections,
   redactSecrets,
   VERIFY_DONT_TRUST_PREAMBLE,
   type HandoffInput,
+  type LeasedTaskFence,
 } from "./supervisor_completion_tools.js";
+import { LEASE_SELF_FENCING_CLAUSE } from "./task_runtime.js";
 import {
   buildCompletionRepairChecklist,
   DEFAULT_RELIABILITY,
@@ -290,4 +294,86 @@ test("goal contract failure reason maps to a verify_edit-centric repair checklis
       item.includes("do not delete, skip, weaken, or narrow tests to make the goal pass")
     )
   );
+});
+
+// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ------------------
+
+const LIVE_LEASE: LeasedTaskFence = {
+  taskId: "tsk-lease-001",
+  expiresAt: "2026-08-02T12:00:00.000Z",
+};
+const REVOKED_LEASE: LeasedTaskFence = {
+  taskId: "tsk-lease-002",
+  expiresAt: "2026-08-02T12:00:00.000Z",
+  revoked: true,
+};
+
+test("continuation prompt is byte-identical with no leases and gains the self-fencing clause with one", () => {
+  const build = (extra?: string[]) =>
+    buildContinuationPrompt(
+      "sx-lease-001",
+      1,
+      ROUTE,
+      undefined,
+      null,
+      "completion_evidence_missing",
+      ["Capture one deterministic artifact."],
+      ["Finish the migration"],
+      extra
+    );
+
+  // Guardrail: a session with no leased tasks passes no extra sections at all.
+  assert.equal(buildLeaseFenceSections([]).length, 0);
+  assert.equal(build(), build(undefined));
+  assert.equal(build(buildLeaseFenceSections([]).length > 0 ? [] : undefined), build());
+
+  const leased = build(buildLeaseFenceSections([LIVE_LEASE, REVOKED_LEASE]));
+  assert.ok(
+    leased.includes("- task leases (self-enforced; the control plane has no kill channel):")
+  );
+  assert.ok(leased.includes("  - tsk-lease-001: expires-at 2026-08-02T12:00:00.000Z"));
+  assert.ok(leased.includes("  - tsk-lease-002: expires-at 2026-08-02T12:00:00.000Z (REVOKED)"));
+  assert.ok(leased.includes(`  - self-fencing rule: ${LEASE_SELF_FENCING_CLAUSE}`));
+  assert.ok(leased.includes("rejected by the server"));
+
+  // The clause states the exact behavior: re-check, then stop instead of write.
+  assert.ok(LEASE_SELF_FENCING_CLAUSE.includes("re-check this task's lease"));
+  assert.ok(LEASE_SELF_FENCING_CLAUSE.includes("emit your final state and stop"));
+  assert.ok(LEASE_SELF_FENCING_CLAUSE.includes("do not write"));
+});
+
+test("handoff sections are unchanged without revoked leases and state the revoked claim with them", () => {
+  const plain = buildHandoffSections(HANDOFF_INPUT);
+  assert.deepEqual(plain, buildHandoffSections(HANDOFF_INPUT, []), "no leases means no new lines");
+  assert.equal(buildRevokedClaimSections([]).length, 0);
+
+  const withRevocation = buildHandoffSections(HANDOFF_INPUT, [REVOKED_LEASE]);
+  assert.equal(
+    withRevocation.length,
+    plain.length + buildRevokedClaimSections([REVOKED_LEASE]).length
+  );
+  assert.ok(
+    withRevocation.some((line) => line.includes("Prior Lane's Claim (revoked")),
+    "the handoff states that the prior lane's claim is revoked"
+  );
+  assert.ok(withRevocation.some((line) => line.includes("tsk-lease-002")));
+  assert.ok(withRevocation.some((line) => line.includes("only this lane may write results")));
+  assert.ok(
+    withRevocation.some((line) => line.includes("treat its silence as terminal")),
+    "presence-is-status: silence past the bound is terminal, not work in flight"
+  );
+
+  // The verify-don't-trust preamble stays the last line.
+  assert.equal(withRevocation[withRevocation.length - 1], `- ${VERIFY_DONT_TRUST_PREAMBLE}`);
+});
+
+test("handoff prompt with a revoked lease is deterministic and unchanged without one", () => {
+  const plain = buildHandoffPrompt("sx-lease-002", 2, ROUTE, HANDOFF_INPUT);
+  assert.equal(plain, buildHandoffPrompt("sx-lease-002", 2, ROUTE, HANDOFF_INPUT, []));
+
+  const first = buildHandoffPrompt("sx-lease-002", 2, ROUTE, HANDOFF_INPUT, [REVOKED_LEASE]);
+  const second = buildHandoffPrompt("sx-lease-002", 2, ROUTE, HANDOFF_INPUT, [REVOKED_LEASE]);
+  assert.equal(first, second, "identical inputs must produce byte-identical handoffs");
+  assert.ok(first.includes("tsk-lease-002"));
+  assert.ok(!plain.includes("Prior Lane's Claim"));
 });
