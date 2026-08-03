@@ -56,7 +56,7 @@ type Handler = (args: Record<string, unknown>) => Promise<ToolResult>;
 function captureProfileTools(): Record<string, Handler> {
   const handlers: Record<string, Handler> = {};
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    registerTool: (...args: unknown[]) => {
       handlers[args[0] as string] = args[args.length - 1] as Handler;
     },
   } as unknown as McpServer;

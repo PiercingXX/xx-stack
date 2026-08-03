@@ -151,7 +151,7 @@ export interface ForceSynthesisTrigger {
 
 /**
  * Decide whether a session qualifies for budget-exhausted forced synthesis
- * (UPSTREAM-BORROW task 14). Triggered when the budget (attempts/failures),
+ *. Triggered when the budget (attempts/failures),
  * the hard session timeout, or the stall threshold has tripped — the cases
  * where failing over again would discard accumulated partial work.
  */

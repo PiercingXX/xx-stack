@@ -6,15 +6,20 @@ import { guardStoreAccess, storeAccessErrorPayload } from "./supervisor_store_ru
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+import { toolAnnotations } from "./observability_tools.js";
 export function registerSupervisorInspectionTools(
   server: McpServer,
   deps: SupervisorToolDeps
 ): void {
-  server.tool(
+  server.registerTool(
     "supervisor_status",
-    "Inspect active supervisor sessions, reliability settings, and host/model failure breaker state",
     {
-      sessionId: z.string().optional().describe("Optional session ID filter"),
+      description:
+        "Inspect active supervisor sessions, reliability settings, and host/model failure breaker state",
+      inputSchema: {
+        sessionId: z.string().optional().describe("Optional session ID filter"),
+      },
+      annotations: toolAnnotations("supervisor_status"),
     },
     async ({ sessionId }) =>
       guardStoreAccess(() =>
@@ -63,10 +68,14 @@ export function registerSupervisorInspectionTools(
       )
   );
 
-  server.tool(
+  server.registerTool(
     "supervisor_run_self_test",
-    "Run deterministic self-tests for timeout, fallback selection, and session persistence behavior",
-    {},
+    {
+      description:
+        "Run deterministic self-tests for timeout, fallback selection, and session persistence behavior",
+      inputSchema: {},
+      annotations: toolAnnotations("supervisor_run_self_test"),
+    },
     async () => {
       const reliability = await deps.loadReliabilityConfig();
 

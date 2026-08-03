@@ -150,7 +150,7 @@ function captureVerifyEditTool(
     | ((args: VerifyEditArgs) => Promise<{ content: Array<{ type: string; text: string }> }>)
     | undefined;
   const fakeServer = {
-    tool: (...toolArgs: unknown[]) => {
+    registerTool: (...toolArgs: unknown[]) => {
       handler = toolArgs[toolArgs.length - 1] as typeof handler;
     },
   } as unknown as McpServer;

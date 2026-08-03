@@ -5,13 +5,22 @@ import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   buildRepoMap,
+  collectGitTimestamps,
+  findContextWindow,
   BINARY_SNIFF_BYTES,
+  DEFAULT_TOKEN_BUDGET,
   MAX_FILE_BYTES,
+  MAX_SELECTION_CANDIDATES,
+  MIN_DERIVED_TOKEN_BUDGET,
   OMISSION_EXAMPLE_LIMIT,
+  USABLE_CONTEXT_FRACTION,
+  __repoMapIo,
 } from "./repo_map_runtime.js";
+import type { Registry } from "./platform_types.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -662,5 +671,473 @@ test("an empty repo still reports the shape of what it considered", async () => 
     assert.deepEqual(result.omissions.empty, { count: 0, examples: [] });
     assert.deepEqual(result.omissions.droppedForBudget, { count: 0, examples: [] });
     assert.deepEqual(result.omissions.truncated, { count: 0, examples: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared seams for the fixtures below.
+// ---------------------------------------------------------------------------
+
+type SpawnLog = { command: string; args: string[] }[];
+
+/**
+ * Record every process this module spawns while `fn` runs. The spawn count is
+ * the only assertion about the recency walk that cannot be made flaky by a
+ * loaded machine: "one process" and "one per file" differ by an integer, not a
+ * millisecond.
+ */
+async function withSpawnLog<T>(fn: (log: SpawnLog) => Promise<T>): Promise<T> {
+  const log: SpawnLog = [];
+  const real = __repoMapIo.execFileSync;
+  __repoMapIo.execFileSync = ((command: string, args: string[], options: unknown) => {
+    log.push({ command, args });
+    return (real as (c: string, a: string[], o: unknown) => string)(command, args, options);
+  }) as typeof __repoMapIo.execFileSync;
+  try {
+    return await fn(log);
+  } finally {
+    __repoMapIo.execFileSync = real;
+  }
+}
+
+function gitLogSpawns(log: SpawnLog): SpawnLog {
+  return log.filter((entry) => entry.command === "git" && entry.args[0] === "log");
+}
+
+/** Run `fn` with the registry lookup answered by `registry`, or made to throw. */
+async function withRegistry<T>(registry: Registry | Error, fn: () => Promise<T>): Promise<T> {
+  const real = __repoMapIo.loadRegistry;
+  __repoMapIo.loadRegistry = async () => {
+    if (registry instanceof Error) throw registry;
+    return registry;
+  };
+  try {
+    return await fn();
+  } finally {
+    __repoMapIo.loadRegistry = real;
+  }
+}
+
+function registryWith(
+  models: Array<{ host: string; name: string; contextWindow?: number }>
+): Registry {
+  const hosts = new Map<string, { id: string; models: Array<Record<string, unknown>> }>();
+  for (const entry of models) {
+    let host = hosts.get(entry.host);
+    if (!host) {
+      host = { id: entry.host, models: [] };
+      hosts.set(entry.host, host);
+    }
+    host.models.push({ name: entry.name, contextWindow: entry.contextWindow });
+  }
+  return {
+    version: 1,
+    selectionPolicy: { defaultOrder: ["local"], rules: [] },
+    tiers: [{ id: "local", label: "Local", priority: 1, hosts: [...hosts.values()] }],
+  } as unknown as Registry;
+}
+
+/** The xx-stack checkout this suite is running from, or null when it is not one. */
+function realRepoRoot(): string | null {
+  // dist/<file>.test.js -> mcp-server -> xx-stack -> repo root
+  const root = fileURLToPath(new URL("../../..", import.meta.url));
+  return existsSync(join(root, ".git")) ? root : null;
+}
+
+// ---------------------------------------------------------------------------
+// Issue 1: `contextWindow` was parsed into the model descriptor and read by
+// nothing, while the repo map sized every map against a hardcoded 8000 — we
+// routed a task to a model and then built its context with no connection to it.
+// ---------------------------------------------------------------------------
+
+test("an explicit tokenBudget wins over every context-window input", async () => {
+  await withTempRepo(async (root) => {
+    for (let i = 0; i < 6; i++) {
+      await writeFile(join(root, `f${i}.ts`), `export const v${i} = ${i};\n`.repeat(20), "utf8");
+    }
+    await commitAll(root, "files");
+
+    const plain = await buildRepoMap({ root, tokenBudget: 400 });
+    const withWindow = await buildRepoMap({
+      root,
+      tokenBudget: 400,
+      model: "some-model",
+      contextWindow: 262144,
+      reservedTokens: 9000,
+    });
+
+    assert.deepEqual(withWindow.files, plain.files, "an explicit budget is used exactly as given");
+    assert.equal(withWindow.tokensEstimated, plain.tokensEstimated);
+    assert.deepEqual(withWindow.omissions, plain.omissions);
+    assert.deepEqual(plain.budget, {
+      tokenBudget: 400,
+      source: "explicit",
+      contextWindow: null,
+      reservedTokens: 0,
+    });
+    assert.deepEqual(
+      withWindow.budget,
+      plain.budget,
+      "nothing is reserved out of an explicit budget"
+    );
+  });
+});
+
+test("no budget input at all still means exactly 8000", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "main");
+
+    const derived = await buildRepoMap({ root });
+    const explicit = await buildRepoMap({ root, tokenBudget: DEFAULT_TOKEN_BUDGET });
+
+    assert.equal(DEFAULT_TOKEN_BUDGET, 8000, "the historical default is not free to drift");
+    assert.deepEqual(derived.budget, {
+      tokenBudget: 8000,
+      source: "default",
+      contextWindow: null,
+      reservedTokens: 0,
+    });
+    assert.deepEqual(derived.files, explicit.files);
+  });
+});
+
+test("a caller-supplied context window sizes the budget, less the reservation", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "main");
+
+    const result = await buildRepoMap({ root, contextWindow: 262144, reservedTokens: 2048 });
+
+    assert.equal(USABLE_CONTEXT_FRACTION, 0.25);
+    assert.deepEqual(result.budget, {
+      tokenBudget: 262144 * 0.25 - 2048,
+      source: "contextWindow",
+      contextWindow: 262144,
+      reservedTokens: 2048,
+    });
+  });
+});
+
+test("a model's recorded context window sizes the budget", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "main");
+
+    const registry = registryWith([
+      { host: "rig", name: "qwen3-coder-next", contextWindow: 262144 },
+      { host: "laptop", name: "small-local", contextWindow: 8192 },
+    ]);
+
+    const big = await withRegistry(registry, () =>
+      buildRepoMap({ root, model: "qwen3-coder-next" })
+    );
+    const small = await withRegistry(registry, () => buildRepoMap({ root, model: "small-local" }));
+
+    assert.deepEqual(big.budget, {
+      tokenBudget: 65536,
+      source: "model",
+      contextWindow: 262144,
+      reservedTokens: 0,
+    });
+    assert.equal(small.budget.tokenBudget, 2048, "a tight lane gets a tight map, not 8000");
+    assert.equal(small.budget.source, "model");
+  });
+});
+
+test("an unresolvable model falls back to exactly 8000, never to an exception", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n", "utf8");
+    await commitAll(root, "main");
+
+    const unknownModel = await withRegistry(
+      registryWith([{ host: "rig", name: "other-model", contextWindow: 262144 }]),
+      () => buildRepoMap({ root, model: "not-in-the-registry" })
+    );
+    const noWindowRecorded = await withRegistry(
+      registryWith([{ host: "rig", name: "windowless" }]),
+      () => buildRepoMap({ root, model: "windowless" })
+    );
+    const noRegistry = await withRegistry(new Error("no platform registry found"), () =>
+      buildRepoMap({ root, model: "qwen3-coder-next" })
+    );
+
+    for (const result of [unknownModel, noWindowRecorded, noRegistry]) {
+      assert.deepEqual(result.budget, {
+        tokenBudget: 8000,
+        source: "default",
+        contextWindow: null,
+        reservedTokens: 0,
+      });
+      assert.ok(result.files.length > 0, "the map is still built");
+    }
+  });
+});
+
+test("the smallest window wins when one model name is served by several hosts", () => {
+  const registry = registryWith([
+    { host: "rig", name: "shared", contextWindow: 262144 },
+    { host: "laptop", name: "shared", contextWindow: 16384 },
+    { host: "laptop", name: "unrelated", contextWindow: 4096 },
+  ]);
+
+  // A budget has to be honourable wherever the task lands, so the conservative
+  // window wins — unless the caller names the host.
+  assert.equal(findContextWindow(registry, "shared"), 16384);
+  assert.equal(findContextWindow(registry, "shared", "rig"), 262144);
+  assert.equal(findContextWindow(registry, "shared", "nowhere"), null);
+  assert.equal(findContextWindow(registry, "absent"), null);
+});
+
+test("a derived budget never collapses to zero", async () => {
+  await withTempRepo(async (root) => {
+    await writeFile(join(root, "main.ts"), "export const main = 1;\n".repeat(50), "utf8");
+    await commitAll(root, "main");
+
+    // 2048 * 0.25 = 512, minus a reservation larger than the whole window.
+    const result = await buildRepoMap({ root, contextWindow: 2048, reservedTokens: 5000 });
+
+    assert.equal(result.budget.tokenBudget, MIN_DERIVED_TOKEN_BUDGET);
+    assert.ok(result.files.length > 0, "a degenerate reservation must not empty the map");
+  });
+});
+
+test("a derived budget really drives selection, not just the report", async () => {
+  await withTempRepo(async (root) => {
+    for (let i = 0; i < 12; i++) {
+      await writeFile(join(root, `f${i}.ts`), `export const v${i} = ${i};\n`.repeat(40), "utf8");
+    }
+    await commitAll(root, "files");
+
+    const tight = await buildRepoMap({ root, contextWindow: 4096 });
+    const roomy = await buildRepoMap({ root, contextWindow: 262144 });
+
+    assert.ok(
+      roomy.files.length > tight.files.length,
+      `wider window should map more files (${roomy.files.length} vs ${tight.files.length})`
+    );
+    assert.ok(tight.tokensEstimated <= tight.budget.tokenBudget);
+    assert.ok(roomy.tokensEstimated <= roomy.budget.tokenBudget);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue 2: one `execFileSync("git log")` per discovered file. On this repo that
+// was 733 spawns and ~2.5s of a ~3.0s map, against a recorded acceptance
+// criterion of <2s. Measured A/B on the same tree: 3043/3051/3036 ms before,
+// 535/534/538 ms after, with an identical file list.
+// ---------------------------------------------------------------------------
+
+test("git recency costs one process for the whole repo, not one per file", async () => {
+  await withTempRepo(async (root) => {
+    for (let i = 0; i < 12; i++) {
+      await writeAndCommit(root, `src/f${i}.ts`, `export const v${i} = ${i};\n`);
+    }
+
+    const { result, log } = await withSpawnLog(async (log) => {
+      const result = await buildRepoMap({ root, tokenBudget: 8000 });
+      return { result, log };
+    });
+
+    const logs = gitLogSpawns(log);
+    assert.equal(logs.length, 1, `expected one git log, saw ${logs.length}`);
+    assert.ok(logs[0].args.includes("--name-only"), "the one walk is the bulk walk");
+    assert.equal(result.files.length, 12, "and every file still gets a timestamp-backed rank");
+  });
+});
+
+test("the bulk walk reproduces per-file `git log -1` exactly", async () => {
+  await withTempRepo(async (root) => {
+    // A path touched by two commits (newest must win), a path deleted later, a
+    // name git would C-quote, and a file whose name is itself a plausible unix
+    // timestamp — the record that a bare `%ct` parser would read as a header.
+    await writeAndCommit(root, "touched.ts", "export const a = 1;\n");
+    await writeAndCommit(root, "café.ts", "export const b = 2;\n");
+    await writeAndCommit(root, "1785760520", "export const c = 3;\n");
+    await writeAndCommit(root, "doomed.ts", "export const d = 4;\n");
+    await new Promise((r) => setTimeout(r, 1100));
+    await writeAndCommit(root, "touched.ts", "export const a = 11;\n");
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["rm", "-q", "doomed.ts"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "remove doomed"], { cwd: root, stdio: "ignore" });
+
+    const bulk = collectGitTimestamps(root);
+    assert.ok(bulk, "a git repo must yield a walk");
+
+    for (const path of ["touched.ts", "café.ts", "1785760520"]) {
+      const out = execFileSync("git", ["log", "-1", "--format=%ct", "--", path], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+      assert.equal(
+        bulk.get(path),
+        Number(out) * 1000,
+        `${path} must carry the same timestamp the per-file command reported`
+      );
+    }
+    assert.ok(bulk.has("doomed.ts"), "a deleted path is harmless, not a parse break");
+  });
+});
+
+test("a directory outside git degrades without spawning a process per file", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "repo-map-nogit-"));
+  try {
+    for (let i = 0; i < 12; i++) {
+      await writeFile(join(dir, `f${i}.ts`), `export const v${i} = ${i};\n`, "utf8");
+    }
+
+    const { result, log } = await withSpawnLog(async (log) => {
+      const result = await buildRepoMap({ root: dir, tokenBudget: 8000 });
+      return { result, log };
+    });
+
+    assert.equal(result.files.length, 12, "no git means no recency signal, not no map");
+    assert.ok(
+      gitLogSpawns(log).length <= 1,
+      `a non-git directory must not pay a spawn per file (saw ${gitLogSpawns(log).length})`
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a git repo whose bulk walk fails still gets timestamps, the slow way", async () => {
+  await withTempRepo(async (root) => {
+    await writeAndCommit(root, "old.ts", "export const old = 1;\n");
+    await new Promise((r) => setTimeout(r, 1100));
+    await writeAndCommit(root, "new.ts", "export const fresh = 1;\n");
+
+    const real = __repoMapIo.execFileSync;
+    __repoMapIo.execFileSync = ((command: string, args: string[], options: unknown) => {
+      if (args[0] === "log" && args.includes("--name-only")) throw new Error("forced walk failure");
+      return (real as (c: string, a: string[], o: unknown) => string)(command, args, options);
+    }) as typeof __repoMapIo.execFileSync;
+    try {
+      const result = await buildRepoMap({ root, tokenBudget: 4000 });
+      const byPath = new Map(result.files.map((f) => [f.path, f.score]));
+      assert.ok(byPath.has("old.ts") && byPath.has("new.ts"));
+      assert.ok(
+        byPath.get("new.ts")! > byPath.get("old.ts")!,
+        "the per-file fallback must still produce a recency signal"
+      );
+    } finally {
+      __repoMapIo.execFileSync = real;
+    }
+  });
+});
+
+test("acceptance: the whole repo maps in under 2 seconds", async (t) => {
+  const root = realRepoRoot();
+  if (root === null) {
+    t.skip("not running from a git checkout");
+    return;
+  }
+
+  await buildRepoMap({ root, tokenBudget: 8000 }); // warm the page cache
+  const start = performance.now();
+  const result = await buildRepoMap({ root, tokenBudget: 8000 });
+  const elapsed = performance.now() - start;
+
+  // The recorded acceptance criterion. Measured here at ~0.54s against ~3.04s
+  // for the per-file spawns this replaced, so the bound has ~3.7x of headroom
+  // and still fails outright on the old implementation.
+  assert.ok(elapsed < 2000, `buildRepoMap on the repo root took ${elapsed}ms, expected < 2000ms`);
+  assert.ok(result.files.length > 0);
+  assert.ok(result.omissions.considered > 500, "premise: this is the whole repo, not a subtree");
+});
+
+// ---------------------------------------------------------------------------
+// Issue 3: every discovered file went to `selectContext`, which allocates a
+// full n x n similarity matrix. ~6 MB at n=900; ~3.2 GB at n=20,000.
+// ---------------------------------------------------------------------------
+
+test("the candidate cap is reported, never silent", async () => {
+  await withTempRepo(async (root) => {
+    for (let i = 0; i < 30; i++) {
+      await writeFile(
+        join(root, `f${String(i).padStart(2, "0")}.ts`),
+        `export const v${i} = ${i};\n`.repeat(10),
+        "utf8"
+      );
+    }
+    await commitAll(root, "thirty files");
+
+    const uncapped = await buildRepoMap({ root, tokenBudget: 8000 });
+    const capped = await buildRepoMap({ root, tokenBudget: 8000, maxCandidates: 5 });
+
+    assert.equal(uncapped.omissions.droppedForScale.count, 0, "premise: uncapped drops nothing");
+    assert.equal(capped.omissions.droppedForScale.count, 25);
+    assert.equal(capped.files.length, 5, "only the top 5 could be selected");
+
+    // Every discovered file lands in exactly one bucket: returned, dropped for
+    // scale, or dropped for budget.
+    const returned = new Set(capped.files.map((f) => f.path));
+    const scale = new Set(capped.omissions.droppedForScale.examples);
+    for (const path of scale) {
+      assert.equal(returned.has(path), false, `${path} is reported dropped but was returned`);
+    }
+    assert.equal(
+      returned.size +
+        capped.omissions.droppedForScale.count +
+        capped.omissions.droppedForBudget.count,
+      30
+    );
+    // The sample is the best of what was cut, in rank order, bounded.
+    assert.equal(capped.omissions.droppedForScale.examples.length, OMISSION_EXAMPLE_LIMIT);
+    const rank = uncapped.files.map((f) => f.path);
+    assert.deepEqual(
+      capped.files.map((f) => f.path),
+      rank.slice(0, 5),
+      "the cap keeps the top of the heuristic ranking, not an arbitrary slice"
+    );
+  });
+});
+
+test("the default cap is above anything a real repo could select", async (t) => {
+  const root = realRepoRoot();
+  if (root === null) {
+    t.skip("not running from a git checkout");
+    return;
+  }
+
+  // A budget far larger than any this stack can derive: the 262,144-token lane
+  // at the discount yields 65,536, and this asks for twice that.
+  const roomy = await buildRepoMap({ root, tokenBudget: 131072 });
+  assert.ok(
+    roomy.files.length * 10 < MAX_SELECTION_CANDIDATES,
+    `cap ${MAX_SELECTION_CANDIDATES} must sit far above the ${roomy.files.length} files an
+     implausible budget selects`
+  );
+
+  // And on a repo this size the cap changes nothing at all.
+  const capped = await buildRepoMap({ root, tokenBudget: 8000 });
+  const uncapped = await buildRepoMap({ root, tokenBudget: 8000, maxCandidates: 1_000_000 });
+  assert.equal(capped.omissions.droppedForScale.count, 0);
+  assert.deepEqual(capped.files, uncapped.files, "the cap cannot degrade a normal-sized repo");
+});
+
+test("the shipped cap bites on a repo larger than itself", async () => {
+  await withTempRepo(async (root) => {
+    const extra = 40;
+    const total = MAX_SELECTION_CANDIDATES + extra;
+    await mkdir(join(root, "many"), { recursive: true });
+    for (let i = 0; i < total; i++) {
+      await writeFile(
+        join(root, "many", `f${String(i).padStart(5, "0")}.ts`),
+        `export const v${i} = ${i};\n`,
+        "utf8"
+      );
+    }
+    await commitAll(root, "more files than the cap");
+
+    const result = await buildRepoMap({ root, tokenBudget: 2000 });
+
+    assert.equal(
+      result.omissions.droppedForScale.count,
+      extra,
+      "everything past the cap is accounted for by the shipped constant, not a test knob"
+    );
+    assert.ok(result.files.length > 0);
   });
 });

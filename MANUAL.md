@@ -203,9 +203,38 @@ dependencies beyond the MCP SDK and zod.
 - **ESM imports carry `.js` extensions** even in TypeScript source.
   `import { x } from "./foo.js"` resolves `foo.ts`.
 - **Tools register in groups.** A module exports
-  `registerXxxTools(server, deps)`, calls `server.tool(name, description,
-  zodSchema, handler)` inside, and is wired from `src/index.ts`.
-  `routing_tools.ts` is the canonical shape to copy.
+  `registerXxxTools(server, deps)`, calls `server.registerTool(name, config,
+  handler)` inside, and is wired from `src/index.ts`. `routing_tools.ts` is the
+  canonical shape to copy:
+
+  ```ts
+  server.registerTool(
+    "route_task",
+    {
+      description: "…",
+      inputSchema: { description: z.string().describe("…") },
+      annotations: toolAnnotations("route_task"),
+    },
+    async ({ description }) => jsonContent(routeTask(description, registry))
+  );
+  ```
+
+  **Never `server.tool(...)`.** Every one of its overloads is marked
+  `@deprecated Use registerTool instead` in `@modelcontextprotocol/sdk ^1.28`,
+  and it cannot express `title`, `outputSchema`, or the annotations below. A
+  test asserts zero `server.tool(` call sites remain.
+- **Every tool declares all four annotations** — `readOnlyHint`,
+  `destructiveHint`, `idempotentHint`, `openWorldHint` — sourced from
+  `toolAnnotations(name)`, never spelled inline. Clients use these to
+  auto-approve reads and gate writes; undeclared, `list_platforms` (a registry
+  read) and `verify_edit` (a subprocess spawn) look equally dangerous, which is
+  the opposite of the `agent_filter_tools` / `toolPolicy` story. The hints are
+  declared on the tool's `TOOL_CATALOG` entry so there is **one** place per tool
+  — a separate annotation map would be MCP-13 all over again. An undeclared tool
+  falls back to `destructiveHint: true, openWorldHint: true`: the gate fails
+  closed, like `cloudRoutingAllowed()`. `openWorldHint` means *reaches beyond
+  this machine* — health probes and endpoint compatibility checks do; a store
+  read does not.
 - **Runtime logic lives in `*_runtime.ts`; tools are thin wrappers.** The CLI
   imports the same runtime functions the tools call, so behavior cannot fork.
   (Three violations of this rule are recorded in §11, MCP-DUP-3.)
@@ -895,7 +924,7 @@ Four items moved out of §11.1. Each has a test or gate that fails without the f
 | `design-system-pick` prompt: the OpenCode copy listed `ollama` and `opencode` design systems the xx-stack copy omitted — the register's one `OPEN` drift waiver. | Adjudicated as a rotted list, not de-branding, on git evidence. `d458c02` ("dedupe, de-brand, fix CI") touched both copies in one commit: it removed `` from **both** — that was the de-branding, and no `/` directory exists to select anyway — and added `ollama`/`opencode` to the OpenCode copy **only**. The canonical copy was simply missed. De-branding also could not explain it, because both components resolve `packs/design` to the same directory (`opencode-orchestration/packs/design` is a symlink), so there is no per-component brand subset. A brand in the pack but absent from the list is unselectable, which makes this a functional gap. Both copies now list `ollama` and `opencode-ai`. The same pass found the enumerated ids had never been validated against the tree: `mistral`, `runway`, `linear`, `the-verge`, and the newly-added `opencode` resolved to nothing — corrected to `mistral-ai`, `runwayml`, `linear-app`, `theverge`, `opencode-ai`. Every id in both copies now resolves to a directory. The dead `KNOWN_DELTAS` entry was deleted rather than left to rot, and `drift:check` prints no `OPEN` line. |
 | `log_worker.logEvent` swallowed every write error. | The policy question is answered: **telemetry never fails a caller's operation** — it is an observability sink, and a metrics failure taking down routing would be absurd. Silence is the part that was wrong. `logEvent` still never throws, but it now returns a `LogEventResult`, counts failures in `telemetryHealth()`, and announces each distinct failure once on stderr (stdout is the MCP channel). `record_telemetry` reports `durability: "failed"` with the reason instead of always claiming `best-effort`, and surfaces the process-lifetime counter — the only trace the 24 fire-and-forget `void logEvent(...)` call sites ever leave. The `dirEnsured` latch is cleared on failure, so a deleted log directory is re-created instead of killing telemetry for the life of the process. |
 | `hardwareCache` cached partial probe results permanently. | Per-probe memoization. A probe that succeeds never runs again; a probe that fails is retried on the next call until it has failed 3 times, then treated as genuinely absent. A fully-successful call is still cached wholesale, so the common path is unchanged at three `execFile`s once. An unavailable probe still leaves its field unset rather than throwing. |
-| `search_tools` categories were a stretch for some tools. | The enum was widened with `context` and `verification`, and `build_repo_map` / `verify_edit` were re-filed out of `observability`. It is a schema change, but an additive one on a *discovery* surface: the five original values still validate and the filter is optional. `TOOL_CATALOG` stays curated — see the comment above it for the measured reasons derivation from `server.tool(...)` was rejected. |
+| `search_tools` categories were a stretch for some tools. | The enum was widened with `context` and `verification`, and `build_repo_map` / `verify_edit` were re-filed out of `observability`. It is a schema change, but an additive one on a *discovery* surface: the five original values still validate and the filter is optional. `TOOL_CATALOG` stays curated — see the comment above it for the measured reasons derivation from the registrations was rejected. |
 
 ---
 
@@ -905,12 +934,24 @@ Four items moved out of §11.1. Each has a test or gate that fails without the f
 
 1. Put pure logic in `<area>_runtime.ts` with a `*.test.ts` beside it.
 2. Register the tool in `<area>_tools.ts` inside the existing
-   `registerXxxTools`, using `server.tool(name, description, zodSchema, handler)`.
+   `registerXxxTools`, using
+   `server.registerTool(name, {description, inputSchema, annotations}, handler)`.
+   Never `server.tool(...)` — every overload of it is `@deprecated` in the SDK
+   we ship, and a test fails on any remaining call site.
 3. Wire the group in `index.ts` only if it is a new group.
 4. Add the tool to `TOOL_CATALOG` in `observability_tools.ts` — deliberately
    manual (see §13 for why), and gated by a drift test since MCP-13. Pick a
    category from `TOOL_CATEGORIES`, or add one; do not mis-file it.
-5. `npm run verify`.
+5. Declare all four annotations **on that same catalog entry**, and pass them at
+   the registration site as `annotations: toolAnnotations("<name>")`. One place
+   per tool: a parallel annotations map is exactly the second registry MCP-13
+   was. Decide each hint rather than copying a neighbour's — `readOnlyHint`
+   (does it change anything?), `destructiveHint` (does it overwrite, or only
+   append?), `idempotentHint` (is a repeat call a no-op?), `openWorldHint` (does
+   it reach off this machine?). The drift test fails if a registered tool has no
+   declaration, and a tool with no declaration is treated as destructive and
+   open-world — the gate fails closed.
+6. `npm run verify`.
 
 ### Adding a skill
 
@@ -971,7 +1012,7 @@ here; noise is the fix.
 
 **A tool is registered but `search_tools` can't find it.** Add it to
 `TOOL_CATALOG` in `observability_tools.ts`. The catalog is hand-written on
-purpose: deriving it from the `server.tool(name, description, ...)`
+purpose: deriving it from the `registerTool(name, config, ...)`
 registrations was measured and rejected — 30% of the search keywords appear
 nowhere in the registration prose, nothing there names a category, and the
 registration text is 2.6x the bytes because it is written for a model about to
@@ -982,6 +1023,13 @@ before CI does. Deliberately hidden tools (`_Stop`, `_PostCompact`) belong in
 the test's exemption set, not the catalog. If the tool is not observability,
 routing, supervision, a task, or an agent, add a category to `TOOL_CATEGORIES`
 rather than mis-filing it — the zod filter is derived from that list.
+
+**A client prompts for approval on a tool that only reads.** Its `TOOL_CATALOG`
+entry is missing `readOnlyHint: true`, or the tool has no declaration at all and
+picked up `FAIL_SAFE_TOOL_HINTS` (`destructiveHint: true, openWorldHint: true`).
+The default is deliberate — an unannotated tool must not be auto-approved — but
+shipping on it is not, and the annotation drift test fails on it. Fix the entry,
+not the client.
 
 **A store tool returns `store_unavailable`.** The state file exists but could
 not be read or parsed. The payload carries the exact path and errno. This is

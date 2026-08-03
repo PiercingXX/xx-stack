@@ -105,7 +105,7 @@ one reason: it is the **theory** behind `anti-ai-slop-rules.json`, which encodes
 
 One of its three arguments **argues against work this repo has queued**. Upstream
 holds that token values are context and not rendering instructions, which is the
-premise of `UPSTREAM-BORROW-TODO.md` task 33 (vendor per-brand `tokens.css` so a
+premise of the repository history task 33 (vendor per-brand `tokens.css` so a
 brand becomes a checkable `:root` contract). That dissent is recorded in
 `../manifest.json` under source `design-md` (`dissentNote` /
 `dissentDisposition`), the same way the `picsum.photos` disagreement between

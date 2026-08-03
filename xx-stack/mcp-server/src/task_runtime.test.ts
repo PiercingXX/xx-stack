@@ -182,7 +182,7 @@ test("force_synthesized is a distinct terminal task status, never a normal compl
   assert.ok(task.lastCheckpoint?.includes("forced synthesis"));
 });
 
-// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ------------------
+// --- Self-enforced task leases ------------------
 
 test("lease schema keeps expiresAt required and revoked optional", () => {
   assert.deepEqual(TASK_LEASE_SCHEMA.parse({ expiresAt: "2026-08-02T12:00:00.000Z" }), {

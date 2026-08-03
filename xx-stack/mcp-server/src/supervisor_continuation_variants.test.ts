@@ -4,18 +4,21 @@ import assert from "node:assert/strict";
 import {
   buildContinuationPrompt,
   buildForceSynthesisPrompt,
+  buildForceSynthesisSections,
   buildHandoffPrompt,
   buildHandoffSections,
   buildLeaseFenceSections,
   buildRevokedClaimSections,
+  collectForceSynthesisRecordedFacts,
   isDotenvPath,
   redactDotenvAssignments,
   redactSecrets,
   VERIFY_DONT_TRUST_PREAMBLE,
+  type ForceSynthesisRecordedFacts,
   type HandoffInput,
   type LeasedTaskFence,
 } from "./supervisor_completion_tools.js";
-import { LEASE_SELF_FENCING_CLAUSE } from "./task_runtime.js";
+import { LEASE_SELF_FENCING_CLAUSE, type GoalContract } from "./task_runtime.js";
 import {
   buildCompletionRepairChecklist,
   DEFAULT_RELIABILITY,
@@ -174,6 +177,26 @@ test("redactSecrets scrubs assignment-style secrets deterministically", () => {
   assert.ok(!once.includes("sk-proj-abcdef123456789"));
 });
 
+/** A recorded-fact block with something in every field, for prompt shape tests. */
+const RECORDED_FACTS: ForceSynthesisRecordedFacts = {
+  continuationCount: 4,
+  elapsedMs: 121_000,
+  recordedEventCount: 17,
+  checks: [
+    {
+      label: "completion evidence recorded via supervisor_record_completion_check",
+      command: null,
+      outcome: "not_recorded",
+    },
+    { label: "completion judge verdict", command: null, outcome: "fail" },
+    {
+      label: "goal-contract validation for task tsk-0001",
+      command: "npm test",
+      outcome: "fail",
+    },
+  ],
+};
+
 test("force synthesis prompt is deterministic and demands evidence-only synthesis with confidence and gaps", () => {
   const evidence = [
     "verify_edit output: 12/14 suites passing, payment suite red",
@@ -187,7 +210,8 @@ test("force synthesis prompt is deterministic and demands evidence-only synthesi
     ROUTE,
     "attempt_budget_exhausted",
     evidence,
-    gaps
+    gaps,
+    RECORDED_FACTS
   );
   const second = buildForceSynthesisPrompt(
     "sx-forced-001",
@@ -195,7 +219,8 @@ test("force synthesis prompt is deterministic and demands evidence-only synthesi
     ROUTE,
     "attempt_budget_exhausted",
     evidence,
-    gaps
+    gaps,
+    RECORDED_FACTS
   );
   assert.equal(first, second, "identical inputs must produce byte-identical synthesis prompts");
 
@@ -212,6 +237,153 @@ test("force synthesis prompt is deterministic and demands evidence-only synthesi
     "forced synthesis must never present itself as a normal completion"
   );
   assert.ok(first.includes("budget-trigger: attempt_budget_exhausted"));
+});
+
+// ---------------------------------------------------------------------------
+// Forced synthesis ran on agent-authored evidence only.
+//
+// `supervisor_force_synthesis` takes `evidence: z.array(z.string())` straight
+// from the caller and the prompt then said "cite only these items" and "cite the
+// specific evidence item supporting every claim" — so an agent that invents its
+// evidence list cites it perfectly and the citation requirement proves nothing.
+// This is the salvage path, reached exactly when the budget is exhausted and the
+// incentive to inflate is at its peak. The strict path is grounded (it checks
+// the store for a real verify_edit result matching the contract's validationCmd
+// and refuses with goal_contract_validation_evidence_missing); this one was not.
+// ---------------------------------------------------------------------------
+
+const CONTRACT_WITH_CMD: GoalContract = {
+  objective: "Migrate the loader",
+  constraints: ["existing installs keep working"],
+  validationCmd: "npm test",
+  stopCondition: "loader suite green",
+};
+
+test("forced synthesis grounds the prompt in facts the agent did not author", () => {
+  const sections = buildForceSynthesisSections(
+    "attempt_budget_exhausted",
+    ["all 14 suites pass and the migration is complete"], // the inflated claim
+    [],
+    RECORDED_FACTS
+  );
+  const text = sections.join("\n");
+
+  // The grounded block exists, is labelled as harness-recorded, and precedes
+  // the agent's list so the claims are read against it.
+  const factsIndex = text.indexOf("- harness-recorded facts");
+  const claimIndex = text.indexOf("- evidence claimed by the agent");
+  assert.ok(factsIndex >= 0, "the recorded-fact block must be rendered");
+  assert.ok(claimIndex >= 0, "the caller's evidence must be under its own heading");
+  assert.ok(factsIndex < claimIndex, "recorded facts must precede the agent's claims");
+  assert.ok(text.includes("not authored by the agent"));
+
+  // Every fact named in the fix, from state the server already persists.
+  assert.ok(text.includes("  - continuation-attempts: 4"));
+  assert.ok(text.includes("  - session-elapsed-ms: 121000"));
+  assert.ok(text.includes("  - recorded-events: 17"));
+
+  // Completion checks carry their command and their pass/fail.
+  assert.ok(text.includes("completion judge verdict: fail"));
+  assert.ok(text.includes("goal-contract validation for task tsk-0001 [command: npm test]: fail"));
+  // The single most useful contradiction of an inflated list.
+  assert.ok(text.includes("completion evidence recorded via"));
+  assert.ok(text.includes(": not_recorded"));
+
+  // The caller's items are still cited as [E#], but marked unverified.
+  assert.ok(text.includes("(UNVERIFIED"));
+  assert.ok(text.includes("[E1] all 14 suites pass and the migration is complete"));
+
+  // And the tie-break rule: the recorded fact wins, and the conflict is a gap.
+  assert.ok(
+    text.includes(
+      "  5) where a claim conflicts with a harness-recorded fact above, the recorded fact wins; name the conflict in the unresolved gaps list"
+    )
+  );
+});
+
+test("the recorded-fact block is deterministic for identical store state", () => {
+  const state = makeSessionState({
+    sessionId: "sx-facts-001",
+    startedAt: 1_000,
+    lastProgressAt: 9_000,
+    forceSynthesisAt: 121_000,
+    continuationCount: 3,
+    completionJudgeVerdict: "fail",
+    events: [
+      { at: "2026-08-02T00:00:00.000Z", type: "session.started", detail: "" },
+      { at: "2026-08-02T00:00:01.000Z", type: "continuation.injected", detail: "attempt 1" },
+    ],
+  });
+  // Deliberately reversed so a store-iteration-order leak would show up.
+  const contractTasks = [
+    { taskId: "tsk-b", goalContract: CONTRACT_WITH_CMD },
+    { taskId: "tsk-a", goalContract: CONTRACT_WITH_CMD },
+  ];
+
+  const first = collectForceSynthesisRecordedFacts(state, contractTasks);
+  const second = collectForceSynthesisRecordedFacts(state, [...contractTasks].reverse());
+  assert.deepEqual(first, second, "task order in the store must not reach the block");
+
+  // Elapsed time is derived from persisted stamps, not a live clock read: it is
+  // the same on every call, which is what makes the block byte-stable.
+  assert.equal(first.elapsedMs, 120_000);
+  assert.equal(first.continuationCount, 3);
+  assert.equal(first.recordedEventCount, 2);
+  assert.equal(first.checks[2]!.label, "goal-contract validation for task tsk-a");
+  assert.equal(first.checks[3]!.label, "goal-contract validation for task tsk-b");
+
+  const render = (facts: ForceSynthesisRecordedFacts): string =>
+    buildForceSynthesisSections("stall_threshold_tripped", ["claim"], ["gap"], facts).join("\n");
+  assert.equal(render(first), render(second));
+  assert.equal(render(first), render(collectForceSynthesisRecordedFacts(state, contractTasks)));
+  // The collected facts must actually reach the rendered prompt — a block that
+  // is computed and then dropped is deterministic and useless.
+  assert.ok(render(first).includes("  - session-elapsed-ms: 120000"));
+  assert.ok(render(first).includes("goal-contract validation for task tsk-a [command: npm test]"));
+});
+
+test("a session with no recorded checks says so instead of rendering an empty list", () => {
+  const empty: ForceSynthesisRecordedFacts = {
+    continuationCount: 0,
+    elapsedMs: 0,
+    recordedEventCount: 0,
+    checks: [],
+  };
+  const text = buildForceSynthesisSections("session_blocked", [], [], empty).join("\n");
+  assert.ok(text.includes("    - none: no completion check was recorded in this session"));
+  assert.ok(!/recorded completion checks:\n\s*- (?!none)/.test(text));
+
+  // The pre-existing no-evidence behavior is untouched.
+  assert.ok(
+    text.includes("(no evidence recorded — state this explicitly and mark confidence low)")
+  );
+});
+
+test("a contract whose validation evidence is missing is recorded as a failing check", () => {
+  // The exact condition `supervisor_complete_session` refuses on. Forced
+  // synthesis cannot refuse — the budget is gone — so it states the fact.
+  const missing = collectForceSynthesisRecordedFacts(
+    makeSessionState({ completionEvidenceSummary: undefined }),
+    [{ taskId: "tsk-0001", goalContract: CONTRACT_WITH_CMD }]
+  );
+  assert.deepEqual(missing.checks[2], {
+    label: "goal-contract validation for task tsk-0001",
+    command: "npm test",
+    outcome: "fail",
+  });
+
+  // Recorded evidence that actually names the command passes the same check.
+  const present = collectForceSynthesisRecordedFacts(
+    makeSessionState({
+      completionEvidenceAt: 5_000,
+      completionEvidenceSummary: "verify_edit ran `npm test`: 14/14 green",
+      completionJudgeVerdict: "pass",
+    }),
+    [{ taskId: "tsk-0001", goalContract: CONTRACT_WITH_CMD }]
+  );
+  assert.equal(present.checks[0]!.outcome, "recorded");
+  assert.equal(present.checks[1]!.outcome, "pass");
+  assert.equal(present.checks[2]!.outcome, "pass");
 });
 
 function makeSessionState(overrides: Partial<SupervisorSessionState> = {}): SupervisorSessionState {
@@ -298,7 +470,7 @@ test("goal contract failure reason maps to a verify_edit-centric repair checklis
   );
 });
 
-// --- Self-enforced task leases (UPSTREAM-BORROW task 27) ------------------
+// --- Self-enforced task leases ------------------
 
 const LIVE_LEASE: LeasedTaskFence = {
   taskId: "tsk-lease-001",

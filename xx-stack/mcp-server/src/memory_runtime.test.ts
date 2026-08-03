@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -217,7 +217,7 @@ type ToolHandler = (args: Record<string, unknown>) => Promise<{
 function captureMemoryTools(): Map<string, ToolHandler> {
   const handlers = new Map<string, ToolHandler>();
   const fakeServer = {
-    tool: (...toolArgs: unknown[]) => {
+    registerTool: (...toolArgs: unknown[]) => {
       handlers.set(toolArgs[0] as string, toolArgs[toolArgs.length - 1] as ToolHandler);
     },
   } as unknown as McpServer;
@@ -854,6 +854,80 @@ test("concurrent agent_memory_append calls never lose an entry", async () => {
     assert.equal(entries.length, total);
     assert.ok(content.startsWith("# Agent Memory\n\n"), "the preamble must survive");
     assert.ok(content.endsWith("\n"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// A torn write concatenates with the next entry.
+//
+// `parseMemoryEntries` is line-based: one entry is one `- <iso> <note>` line.
+// `agent_memory_append` wrote a `\n`-terminated entry without checking that the
+// file already ended in one, so a write torn by ENOSPC, a killed process, or a
+// hand edit that dropped the trailing newline left the file mid-record — and
+// the next append glued itself onto that line, merging two entries into one
+// record that no longer parses as either.
+// ---------------------------------------------------------------------------
+
+test("an append onto a memory file with no trailing newline does not merge two entries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-torn-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "torn";
+    const path = getAgentMemoryEntrypoint(agentId, "project", dir);
+    await mkdir(dirname(path), { recursive: true });
+    // The exact shape a torn write leaves: a complete entry, then a partial one
+    // with no newline after it. `ensureMemoryEntrypoint` opens `wx`, so this
+    // file survives the tool's scaffolding step untouched.
+    await writeFile(path, "# Agent Memory\n\n- 2026-01-01T00:00:00.000Z first observation\n- 2026");
+
+    await callTool(handlers, "agent_memory_append", {
+      agentId,
+      scope: "project",
+      cwd: dir,
+      note: "landed after the tear",
+    });
+
+    const content = await readFile(path, "utf-8");
+    // Pre-fix this line read `- 2026- 2026-...Z landed after the tear`: the
+    // partial record absorbed the new one and both were lost.
+    assert.ok(
+      content.includes("\n- 2026\n"),
+      `the torn record must stay its own line: ${JSON.stringify(content)}`
+    );
+    const entries = parseMemoryEntries(content).entries;
+    assert.equal(entries.length, 3, "torn record, prior entry, and the new one — three lines");
+    assert.ok(entries[2].text.endsWith("landed after the tear"));
+    assert.ok(content.endsWith("\n"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a well-formed memory file gains no blank line and stays byte-clean", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-clean-"));
+  try {
+    const handlers = captureMemoryTools();
+    const agentId = "clean";
+    for (const note of ["first note", "second note", "third note"]) {
+      await callTool(handlers, "agent_memory_append", {
+        agentId,
+        scope: "project",
+        cwd: dir,
+        note,
+      });
+    }
+
+    const content = await readFile(getAgentMemoryEntrypoint(agentId, "project", dir), "utf-8");
+    assert.equal(parseMemoryEntries(content).entries.length, 3);
+    // The scaffold's own "# Agent Memory\n\n" is the only blank line there is.
+    assert.equal(
+      content.split("\n\n").length,
+      2,
+      `no spurious blank line: ${JSON.stringify(content)}`
+    );
+    assert.ok(content.startsWith("# Agent Memory\n\n"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

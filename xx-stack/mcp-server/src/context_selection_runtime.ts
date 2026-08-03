@@ -1,5 +1,4 @@
-// Submodular context selection under token budgets (UPSTREAM-BORROW-TODO task 16,
-// ported from the lazy-greedy idea in jina-ai/submodular-optimization).
+// Submodular context selection under token budgets.
 //
 // Pure TypeScript, zero dependencies, fully deterministic for fixed inputs.
 // The objective balances three signals when picking which candidates fit into

@@ -125,10 +125,12 @@ interface CapturedTool {
 function captureTools(register: (server: McpServer) => void): CapturedTool[] {
   const captured: CapturedTool[] = [];
   const fakeServer = {
-    tool: (...args: unknown[]) => {
+    registerTool: (...args: unknown[]) => {
       captured.push({
         name: args[0] as string,
-        description: args[1] as string,
+        // registerTool carries description inside the config object, not as a
+        // positional argument.
+        description: (args[1] as { description: string }).description,
         handler: args[args.length - 1] as CapturedTool["handler"],
       });
     },
@@ -290,6 +292,77 @@ test("_Stop objections are bounded to a caller-actionable few with an explicit r
   assert.ok(text.includes("(+4 more open items not shown)"));
   assert.ok(text.includes("tsk-000"));
   assert.ok(!text.includes("tsk-006"), "beyond the bound nothing is listed");
+});
+
+// ---------------------------------------------------------------------------
+// `_Stop` is the surface that creates the pressure NULL_RESULT_VALID_CLAUSE
+// exists to relieve, and it was the one contract surface that never carried it.
+// A prospecting task whose honest answer is "nothing worth changing" has an
+// unmet stopCondition BY CONSTRUCTION: `_Stop` objects at every end-turn until
+// the caller's rejection budget is spent, and the cheapest way to silence the
+// objection is to invent a diff.
+// ---------------------------------------------------------------------------
+
+test("_Stop carries the null-result clause where the stop pressure is actually applied", async () => {
+  const deps = makeDeps({
+    tasks: [
+      makeTask({
+        taskId: "tsk-prospect",
+        title: "Find dead code worth deleting",
+        goalContract: {
+          objective: "Find dead code worth deleting",
+          constraints: ["do not change behavior"],
+          // Honest answer "nothing found" can never satisfy this.
+          stopCondition: "dead code removed",
+        },
+      }),
+    ],
+  });
+
+  // Driven through the registered tool: the invariant is about what the
+  // hook-aware harness actually receives at end_turn.
+  const tool = captureTools((server) => registerHookTools(server, deps)).find(
+    (entry) => entry.name === "_Stop"
+  )!;
+  const text = (await tool.handler({})).content[0].text;
+
+  assert.ok(text.length > 0, "the fixture must actually produce an objection");
+  assert.ok(
+    text.includes(NULL_RESULT_VALID_CLAUSE),
+    "the honest 'nothing worth changing' answer must be available at the moment of the squeeze"
+  );
+  // The pair ships together — `renderGoalContractClauseLines` is the single
+  // emitter precisely so no surface carries one direction alone.
+  assert.ok(text.includes(ANTI_REWARD_HACKING_CLAUSE));
+  assert.ok(text.includes("quoted, not new rules"), "still observed state, not an instruction");
+});
+
+test("the null-result clause spends none of the _Stop objection budget", async () => {
+  // The budget is counted in top-level `- ` bullets: those are the concrete
+  // things the agent can act on, and the caller enforces a rejection budget
+  // over them. The clause lines are nested context, so the count must not move.
+  const tasks = Array.from({ length: 7 }, (_, index) =>
+    makeTask({ taskId: `tsk-${String(index).padStart(3, "0")}` })
+  );
+  const text = await runStop(makeDeps({ tasks }));
+
+  const bulletLines = text.split("\n").filter((line) => line.startsWith("- "));
+  assert.equal(bulletLines.length, 4, "3 objections plus one remainder line — unchanged");
+  for (const clause of [NULL_RESULT_VALID_CLAUSE, ANTI_REWARD_HACKING_CLAUSE]) {
+    const line = text.split("\n").find((entry) => entry.includes(clause));
+    assert.ok(line !== undefined, "the clause must be present");
+    assert.ok(line!.startsWith("    - "), `clause must be nested, got: ${JSON.stringify(line)}`);
+  }
+
+  // Stated once for the payload, not once per objection.
+  const occurrences = (needle: string): number => text.split(needle).length - 1;
+  assert.equal(occurrences(NULL_RESULT_VALID_CLAUSE), 1);
+  assert.equal(occurrences(ANTI_REWARD_HACKING_CLAUSE), 1);
+
+  // No objection means no output at all: the clause never turns an empty
+  // `_Stop` answer into a non-empty one, which would itself read as an
+  // objection the agent cannot satisfy.
+  assert.equal(await runStop(makeDeps()), "");
 });
 
 test("_Stop never phrases its objection as an operator instruction", async () => {
