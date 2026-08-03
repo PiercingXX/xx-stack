@@ -4,10 +4,13 @@ import { z } from "zod";
 import { logEvent } from "./log_worker.js";
 import type { Registry } from "./platform_types.js";
 import {
+  BATCH_ROUTE_CONCURRENCY,
   buildWatchdogRouteCandidates,
+  mapWithConcurrency,
   routeArchitectEditor,
   routeCompetitiveTask,
   routeParallelTasks,
+  routeReview,
   routeTask,
   scoreCandidates,
 } from "./routing_runtime.js";
@@ -20,10 +23,29 @@ interface RoutingToolDeps {
 export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): void {
   server.tool(
     "route_task",
-    "Given a task description, recommend which platform tier, host, and model to use",
-    { description: z.string().describe("Description of the task to route") },
+    "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend which platform tier, host, and model to use",
+    {
+      description: z
+        .union([z.string(), z.array(z.string()).min(1).max(64)])
+        .describe(
+          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+        ),
+    },
     async ({ description }) => {
       const registry = await deps.loadRegistry();
+      if (Array.isArray(description)) {
+        const results = await mapWithConcurrency(
+          description,
+          BATCH_ROUTE_CONCURRENCY,
+          async (item) => routeTask(item, registry)
+        );
+        void logEvent("server", "route_task.batch_result", {
+          count: description.length,
+          hosts: results.map((r) => r.recommendedHost),
+          models: results.map((r) => r.recommendedModel),
+        });
+        return jsonContent({ results });
+      }
       const result = routeTask(description, registry);
       void logEvent("server", "route_task.result", {
         description: description.slice(0, 200),
@@ -117,7 +139,7 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
         fallbackCount: candidates.candidates.length,
       });
 
-return jsonContent({
+      return jsonContent({
         status,
         reason,
         baseRoute,
@@ -137,9 +159,13 @@ return jsonContent({
 
   server.tool(
     "route_architect_editor",
-    "Given a task description, recommend two lanes: an architect (deep reasoning) and an editor (fast execution). Reuses the existing tier-selection mechanism — the architect lane targets the coder-deep alias and the editor lane targets the coder-fast alias. Cloud hosts excluded by default.",
+    "Given a task description (or an array of descriptions for a batched, position-aligned result), recommend two lanes: an architect (deep reasoning) and an editor (fast execution). Reuses the existing tier-selection mechanism — the architect lane targets the coder-deep alias and the editor lane targets the coder-fast alias. Cloud hosts excluded by default.",
     {
-      description: z.string().describe("Description of the task to route"),
+      description: z
+        .union([z.string(), z.array(z.string()).min(1).max(64)])
+        .describe(
+          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+        ),
       preferArchitectHost: z
         .string()
         .optional()
@@ -151,6 +177,25 @@ return jsonContent({
     },
     async ({ description, preferArchitectHost, preferEditorHost }) => {
       const registry = await deps.loadRegistry();
+      if (Array.isArray(description)) {
+        const results = await mapWithConcurrency(
+          description,
+          BATCH_ROUTE_CONCURRENCY,
+          async (item) =>
+            routeArchitectEditor(
+              item,
+              registry,
+              preferArchitectHost ?? undefined,
+              preferEditorHost ?? undefined
+            )
+        );
+        void logEvent("server", "route_architect_editor.batch_result", {
+          count: description.length,
+          architectHosts: results.map((r) => r.architect.host),
+          editorHosts: results.map((r) => r.editor.host),
+        });
+        return jsonContent({ results });
+      }
       const result = routeArchitectEditor(
         description,
         registry,
@@ -171,9 +216,13 @@ return jsonContent({
 
   server.tool(
     "route_competitive_task",
-    "Given a task description, produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default.",
+    "Given a task description (or an array of descriptions for a batched, position-aligned result), produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default.",
     {
-      description: z.string().describe("Description of the task to route"),
+      description: z
+        .union([z.string(), z.array(z.string()).min(1).max(64)])
+        .describe(
+          "Description of the task to route, or an array of descriptions to route in one call (results are position-aligned with the input)"
+        ),
       laneCount: z
         .number()
         .int()
@@ -183,6 +232,19 @@ return jsonContent({
     },
     async ({ description, laneCount }) => {
       const registry = await deps.loadRegistry();
+      if (Array.isArray(description)) {
+        const results = await mapWithConcurrency(
+          description,
+          BATCH_ROUTE_CONCURRENCY,
+          async (item) => routeCompetitiveTask(item, registry, laneCount)
+        );
+        void logEvent("server", "route_competitive_task.batch_result", {
+          count: description.length,
+          returnedLanes: results.map((r) => r.returnedLanes),
+          shortfalls: results.map((r) => r.shortfall),
+        });
+        return jsonContent({ results });
+      }
       const result = routeCompetitiveTask(description, registry, laneCount);
       void logEvent("server", "route_competitive_task.result", {
         description: description.slice(0, 200),
@@ -215,6 +277,55 @@ return jsonContent({
         topCandidate: ranked[0]?.description.slice(0, 100) ?? "",
       });
       return jsonContent({ ranked });
+    }
+  );
+
+  server.tool(
+    "route_review",
+    "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity — a different model family catches what the authoring model is systematically blind to). Collapses gracefully to same-model review with explicit reasoning when the registry offers no alternative. Cloud hosts excluded by default.",
+    {
+      description: z.string().describe("Description of the work to be reviewed"),
+      authoredByModel: z
+        .string()
+        .optional()
+        .describe(
+          "Model that authored the work — the reviewer lane avoids this model where the registry allows"
+        ),
+      authoredByHost: z
+        .string()
+        .optional()
+        .describe(
+          "Host that authored the work — a different host is preferred for the reviewer lane"
+        ),
+    },
+    async ({ description, authoredByModel, authoredByHost }) => {
+      const registry = await deps.loadRegistry();
+      const result = routeReview(
+        description,
+        registry,
+        authoredByModel ?? undefined,
+        authoredByHost ?? undefined
+      );
+      if (result.shortfall !== null) {
+        // No silent degradation: the shortfall gets its own log line.
+        void logEvent("server", "route_review.shortfall", {
+          description: description.slice(0, 200),
+          authoredByModel: result.authoredByModel,
+          authoredByHost: result.authoredByHost,
+          shortfall: result.shortfall,
+        });
+      }
+      void logEvent("server", "route_review.result", {
+        description: description.slice(0, 200),
+        reviewerHost: result.reviewer.host,
+        reviewerModel: result.reviewer.model,
+        modelDiversity: result.modelDiversity,
+        authoredByModel: result.authoredByModel,
+        authoredByHost: result.authoredByHost,
+        shortfall: result.shortfall,
+        fallback: result.fallback,
+      });
+      return jsonContent(result);
     }
   );
 }
