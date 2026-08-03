@@ -401,17 +401,28 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
         .enum(["success", "failure", "error", "timeout", "cancelled"])
         .describe("Outcome of the operation"),
       durationMs: z.number().int().min(0).describe("Duration in milliseconds"),
-      lane: z
-        .string()
-        .optional()
-        .describe("Routing lane (e.g. local, cloud, tailscale-ollama)"),
+      lane: z.string().optional().describe("Routing lane (e.g. local, cloud, tailscale-ollama)"),
       tokensIn: z.number().int().min(0).optional().describe("Input tokens consumed"),
       tokensOut: z.number().int().min(0).optional().describe("Output tokens generated"),
       model: z.string().optional().describe("Model name for cost estimation"),
-      costUsd: z.number().min(0).optional().describe("Override cost in USD. If omitted, estimated from model-rates.json"),
+      costUsd: z
+        .number()
+        .min(0)
+        .optional()
+        .describe("Override cost in USD. If omitted, estimated from model-rates.json"),
       sessionId: z.string().optional().describe("Optional session ID for per-session log stream"),
     },
-    async ({ skill, outcome, durationMs, lane, tokensIn, tokensOut, model, costUsd, sessionId }) => {
+    async ({
+      skill,
+      outcome,
+      durationMs,
+      lane,
+      tokensIn,
+      tokensOut,
+      model,
+      costUsd,
+      sessionId,
+    }) => {
       let finalCostUsd: number | null = costUsd ?? null;
 
       // Auto-estimate cost from model rates if not explicitly provided
@@ -451,7 +462,12 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
         status: "recorded",
         fields: Object.keys(payload),
         costUsd: finalCostUsd,
-        costSource: costUsd !== undefined ? "explicit" : finalCostUsd !== null ? "estimated" : "unknown-model",
+        costSource:
+          costUsd !== undefined
+            ? "explicit"
+            : finalCostUsd !== null
+              ? "estimated"
+              : "unknown-model",
       });
     }
   );
