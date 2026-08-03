@@ -5,12 +5,16 @@ import { emitLifecycleHooks } from "./execution_policy.js";
 import {
   ANTI_REWARD_HACKING_CLAUSE,
   buildResumeDirective,
+  evaluateTaskLease,
   generateTaskId,
   GOAL_CONTRACT_SCHEMA,
+  LEASE_SELF_FENCING_CLAUSE,
   readTaskStore,
   sanitizeGoalContract,
   sanitizeIdList,
   sanitizeTags,
+  sanitizeTaskLease,
+  TASK_LEASE_SCHEMA,
   TASK_PRIORITY_SCHEMA,
   TASK_STATUS_SCHEMA,
   TASK_TERMINAL_STATUSES,
@@ -123,6 +127,13 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       })
   );
 
+  const LEASE_INPUT = TASK_LEASE_SCHEMA.optional().describe(
+    "Optional self-enforced liveness lease for a lane on another machine. The control plane has " +
+      "no kill channel, so the lane enforces its own deadline: " +
+      `${LEASE_SELF_FENCING_CLAUSE}. expiresAt is compared against the server's clock at ` +
+      "write-back; a task-result write-back against a revoked or expired lease is rejected."
+  );
+
   const GOAL_CONTRACT_INPUT = GOAL_CONTRACT_SCHEMA.optional().describe(
     "Optional five-part goal contract for supervised autonomous execution. " +
       "Meta-prompting rule: before writing this contract, inspect the repo and surface hidden " +
@@ -162,6 +173,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         .optional()
         .describe("Optional initial checkpoint summary"),
       goalContract: GOAL_CONTRACT_INPUT,
+      lease: LEASE_INPUT,
       priority: TASK_PRIORITY_SCHEMA.optional().describe("Optional priority"),
       tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Optional tags"),
       owner: z.string().max(120).optional().describe("Optional owner hint"),
@@ -182,6 +194,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       parentCwd,
       lastCheckpoint,
       goalContract,
+      lease,
       priority,
       tags,
       owner,
@@ -206,6 +219,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
           parentCwd: trimOptional(parentCwd),
           lastCheckpoint: trimOptional(lastCheckpoint),
           goalContract: sanitizeGoalContract(goalContract),
+          lease: sanitizeTaskLease(lease),
           priority,
           tags: sanitizeTags(tags),
           owner: trimOptional(owner),
@@ -246,7 +260,10 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
 
   server.tool(
     "task_update",
-    "Update persistent task fields including status and blockers",
+    "Update persistent task fields including status and blockers. This is the task-result " +
+      "write-back path: when the task carries a lease that is revoked or expired against the " +
+      "server clock, the write is rejected (reasonCode lease_revoked / lease_expired) rather " +
+      "than landing on top of the lane that took over",
     {
       taskId: z.string().min(1).describe("Task ID"),
       title: z.string().min(1).max(200).optional().describe("Updated title"),
@@ -262,6 +279,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       lastCheckpoint: z.string().max(4000).optional().describe("Updated checkpoint summary"),
       lastError: z.string().max(4000).optional().describe("Updated error summary"),
       goalContract: GOAL_CONTRACT_INPUT,
+      lease: LEASE_INPUT,
       priority: TASK_PRIORITY_SCHEMA.optional().describe("Updated priority"),
       tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Updated tags"),
       owner: z.string().max(120).optional().describe("Updated owner"),
@@ -284,6 +302,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       lastCheckpoint,
       lastError,
       goalContract,
+      lease,
       priority,
       tags,
       owner,
@@ -297,6 +316,32 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
           return missingTask(taskId);
         }
 
+        // Self-enforced lease invariant (UPSTREAM-BORROW task 27). Exactly one
+        // server-side check, on the task-result write-back path: a lane whose
+        // lease was revoked by failover — or whose deadline passed against the
+        // server's own clock — is rejected instead of silently overwriting the
+        // lane that took over. A request that carries a replacement lease is
+        // the supervisor re-leasing the task for a new lane, not a result
+        // write-back, so it is not fenced.
+        const replacementLease = sanitizeTaskLease(lease);
+        if (!replacementLease) {
+          const leaseCheck = evaluateTaskLease(task.lease, Date.now());
+          if (!leaseCheck.ok) {
+            return jsonContent({
+              status: "rejected",
+              reasonCode: leaseCheck.reasonCode,
+              taskId,
+              lease: task.lease ?? null,
+              serverTime: new Date().toISOString(),
+              detail:
+                leaseCheck.reasonCode === "lease_revoked"
+                  ? "This task's lease was revoked; another lane holds the claim. The write-back was not applied."
+                  : "This task's lease expired against the server clock. The write-back was not applied.",
+              selfFencingClause: LEASE_SELF_FENCING_CLAUSE,
+            });
+          }
+        }
+
         if (typeof title === "string") task.title = title.trim();
         if (typeof description === "string") task.description = trimOptional(description);
         if (status) task.status = status;
@@ -307,6 +352,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         if (typeof lastCheckpoint === "string") task.lastCheckpoint = trimOptional(lastCheckpoint);
         if (typeof lastError === "string") task.lastError = trimOptional(lastError);
         if (goalContract) task.goalContract = sanitizeGoalContract(goalContract);
+        if (replacementLease) task.lease = replacementLease;
         if (priority) task.priority = priority;
         if (Array.isArray(tags)) task.tags = sanitizeTags(tags);
         if (typeof owner === "string") task.owner = trimOptional(owner);

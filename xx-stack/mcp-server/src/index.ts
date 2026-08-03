@@ -17,6 +17,8 @@ import { validateExecRequest } from "./execution_policy.js";
 import { atomicWriteTextFile } from "./io_runtime.js";
 import {
   buildMemoryResyncHelperPrompt,
+  getAgentMemoryEntrypoint,
+  getCompletionMemorySyncStatus,
   hashMemoryContent,
   lineDiffSummary,
   readSnapshotMeta,
@@ -47,6 +49,8 @@ import { registerRoutingTools } from "./routing_tools.js";
 import { registerSupervisorTools } from "./supervisor_tools.js";
 import { registerTaskTools } from "./task_tools.js";
 import { registerRepoMapTools } from "./repo_map_tools.js";
+import { registerHookToolsIfEnabled } from "./hook_tools.js";
+import { readTaskStore } from "./task_runtime.js";
 import { registerReviewTools } from "./review_tools.js";
 import { registerVerifyEditTools } from "./verify_edit_tools.js";
 import {
@@ -188,6 +192,19 @@ registerTaskTools(server, {
 
 registerRepoMapTools(server, {});
 
+// MCP lifecycle hook tools (_Stop / _PostCompact) are off by default: a harness
+// that is not hook-aware would see them as ordinary callable tools. Opt in with
+// XX_STACK_HOOK_TOOLS=1; without it they are absent from tools/list entirely.
+const hookToolsRegistered = registerHookToolsIfEnabled(server, {
+  readTaskStore,
+  readSupervisorStore,
+  loadReliabilityConfig,
+  pruneSupervisorStore,
+  evaluateCompletionReadiness,
+  getCompletionMemorySyncStatus,
+  getAgentMemoryEntrypoint,
+});
+
 registerVerifyEditTools(server, {
   allowedCommands: ["echo", "cat", "node", "npm", "npx", "ruff", "pytest"],
 });
@@ -221,7 +238,11 @@ registerReviewTools(server, {
 
 async function main(): Promise<void> {
   await initServerLog();
-  void logEvent("server", "server.start", { pid: process.pid, nodeVersion: process.version });
+  void logEvent("server", "server.start", {
+    pid: process.pid,
+    nodeVersion: process.version,
+    hookToolsRegistered,
+  });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
