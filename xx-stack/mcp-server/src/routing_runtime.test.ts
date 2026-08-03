@@ -48,9 +48,7 @@ test("routeArchitectEditor resolves distinct deep and fast lanes when both are a
     {
       id: TIER_IDS.tailscaleOllama,
       label: "Tailscale Ollama",
-      hosts: [
-        makeHost("skippy-fast", "Skippy (Fast)", ["qwen2.5-coder:7b-tq2_0"]),
-      ],
+      hosts: [makeHost("skippy-fast", "Skippy (Fast)", ["qwen2.5-coder:7b-tq2_0"])],
     },
   ]);
 
@@ -71,10 +69,7 @@ test("routeArchitectEditor resolves distinct deep and fast lanes when both are a
 
   // Fallback should describe the two lanes
   assert.ok(result.fallback, "fallback should be set");
-  assert.ok(
-    typeof result.fallback === "string",
-    "fallback should be a string"
-  );
+  assert.ok(typeof result.fallback === "string", "fallback should be a string");
 });
 
 test("routeArchitectEditor collapses to single lane when only one tier/host is available", () => {
@@ -82,18 +77,11 @@ test("routeArchitectEditor collapses to single lane when only one tier/host is a
     {
       id: TIER_IDS.local,
       label: "Local",
-      hosts: [
-        makeHost("workstation-only", "Workstation Only", [
-          "qwen2.5-coder:7b-tq2_0",
-        ]),
-      ],
+      hosts: [makeHost("workstation-only", "Workstation Only", ["qwen2.5-coder:7b-tq2_0"])],
     },
   ]);
 
-  const result = __testExports.routeArchitectEditor(
-    "Fix a CSS layout bug",
-    registry as any
-  );
+  const result = __testExports.routeArchitectEditor("Fix a CSS layout bug", registry as any);
 
   // Both lanes should resolve to the same host
   assert.ok(result.architect.host, "architect should have a host");
@@ -117,23 +105,16 @@ test("routeArchitectEditor excludes cloud by default", () => {
     {
       id: TIER_IDS.local,
       label: "Local",
-      hosts: [
-        makeHost("local-box", "Local Box", ["qwen2.5-coder:7b-tq2_0"]),
-      ],
+      hosts: [makeHost("local-box", "Local Box", ["qwen2.5-coder:7b-tq2_0"])],
     },
     {
       id: TIER_IDS.cloud,
       label: "Cloud",
-      hosts: [
-        makeHost("cloud-gpu", "Cloud GPU", ["gpt-4o"]),
-      ],
+      hosts: [makeHost("cloud-gpu", "Cloud GPU", ["gpt-4o"])],
     },
   ]);
 
-  const result = __testExports.routeArchitectEditor(
-    "Refactor the database layer",
-    registry as any
-  );
+  const result = __testExports.routeArchitectEditor("Refactor the database layer", registry as any);
 
   // Neither lane should route to cloud
   assert.notEqual(
@@ -141,11 +122,7 @@ test("routeArchitectEditor excludes cloud by default", () => {
     "cloud-gpu",
     "architect should not route to cloud by default"
   );
-  assert.notEqual(
-    result.editor.host,
-    "cloud-gpu",
-    "editor should not route to cloud by default"
-  );
+  assert.notEqual(result.editor.host, "cloud-gpu", "editor should not route to cloud by default");
 
   // Reasoning should mention cloud exclusion
   assert.ok(
@@ -155,5 +132,73 @@ test("routeArchitectEditor excludes cloud by default", () => {
   assert.ok(
     result.editor.reasoning.includes("cloud"),
     "editor reasoning should mention cloud exclusion"
+  );
+});
+test("routeArchitectEditor honors a routable preferred host per lane", () => {
+  const registry = buildRegistryFixture([
+    {
+      id: TIER_IDS.local,
+      label: "Local",
+      hosts: [makeHost("workstation-deep", "Workstation (Deep)", ["qwen3-coder:30b-a3b-tq2_0"])],
+    },
+    {
+      id: TIER_IDS.tailscaleOllama,
+      label: "Tailscale Ollama",
+      hosts: [makeHost("skippy-fast", "Skippy (Fast)", ["qwen2.5-coder:7b-tq2_0"])],
+    },
+  ]);
+
+  const result = __testExports.routeArchitectEditor(
+    "Implement a new authentication flow",
+    registry as any,
+    "skippy-fast",
+    "workstation-deep"
+  );
+
+  assert.equal(result.architect.host, "skippy-fast", "architect preference should win");
+  assert.ok(
+    result.architect.reasoning.includes('Caller-preferred host "skippy-fast"'),
+    "architect reasoning should state the preference was honored"
+  );
+  assert.equal(result.editor.host, "workstation-deep", "editor preference should win");
+  assert.ok(result.editor.model, "preferred editor lane should still pick a model");
+});
+
+test("routeArchitectEditor falls back with stated shortfall on unusable preferred hosts", () => {
+  const registry = buildRegistryFixture([
+    {
+      id: TIER_IDS.local,
+      label: "Local",
+      hosts: [makeHost("local-box", "Local Box", ["qwen2.5-coder:7b-tq2_0"])],
+    },
+    {
+      id: TIER_IDS.cloud,
+      label: "Cloud",
+      hosts: [makeHost("cloud-gpu", "Cloud GPU", ["gpt-4o"])],
+    },
+  ]);
+
+  const missing = __testExports.routeArchitectEditor(
+    "Refactor the database layer",
+    registry as any,
+    "no-such-host",
+    undefined
+  );
+  assert.equal(missing.architect.host, "local-box", "missing preference keeps routed lane");
+  assert.ok(
+    missing.architect.reasoning.includes('preferred host "no-such-host" not found'),
+    "reasoning should state the missing-host shortfall"
+  );
+
+  const gated = __testExports.routeArchitectEditor(
+    "Refactor the database layer",
+    registry as any,
+    undefined,
+    "cloud-gpu"
+  );
+  assert.equal(gated.editor.host, "local-box", "cloud preference stays behind the opt-in gate");
+  assert.ok(
+    gated.editor.reasoning.includes("non-routable tier"),
+    "reasoning should state the cloud-gate shortfall"
   );
 });
