@@ -64,9 +64,9 @@
       "kind": "skill",
       "books": [
         {
-          "id": "domain-driven-design-distilled",
+          "id": "the-pragmatic-programmer",
           "defaultTier": "mini",
-          "why": "Bounded contexts and ubiquitous language sharpen the forcing questions about problem domain and scope."
+          "why": "Dig-for-real-requirements, tracer bullets, and prototype honesty rule on the decisions this interview actually makes: whether an answer is a durable need or a restated solution, and whether the wedge is one thin end-to-end slice or a pile of disconnected pieces. Replaces domain-driven-design-distilled, whose Core/Supporting/Generic subdomain split was the only one of its 16 decision rules with a decision point in a file that has no code and no model — the remaining 15 are aggregates, entities, value objects, domain events, context mapping, and integration styles."
         }
       ]
     },
@@ -147,7 +147,7 @@
         {
           "id": "a-philosophy-of-software-design",
           "defaultTier": "mini",
-          "why": "Design-system and component-library creation is interface design; APoSD's deep-module and small-surface rules apply to component APIs."
+          "why": "Narrow but real: applies at Step 3 (component library) and the audit's consistency check only, where a component's props and variants are a module interface and APoSD's deep-module, small-surface, and no-knobs rules decide whether a fifth variant is a distinction or a configuration knob. The rest of the skill — design tokens, WCAG 2.1 AA criteria, style-guide writing — is outside the book's subject, and the instruction in the skill says so, so a token- or accessibility-only lane can skip it knowingly. Kept rather than emptied because no vendored book covers visual design or accessibility, and clean-code (overlapping — pick one) is strictly worse on interface design."
         }
       ]
     },
@@ -414,9 +414,9 @@
       "kind": "agent",
       "books": [
         {
-          "id": "the-pragmatic-programmer",
+          "id": "working-effectively-with-legacy-code",
           "defaultTier": "mini",
-          "why": "Broad default for exploration and dependency-impact mapping, per seed mapping."
+          "why": "Blast-radius mapping is WELC's effect-tracing rule under another name — trace effects outward from the change point through values, calls, fields, outputs, collaborators, interception points, and pinch points — and its legacy-risk list gives read-only findings a vocabulary for which risks are worth reporting. Replaces the-pragmatic-programmer, whose own why admitted it was a broad seed default: this agent never writes code, and TPP's applicable content was two coupling rules plus a restatement of the agent's existing citation rule. Same book as debug-investigate, for the same investigate-before-change reason."
         }
       ]
     },
@@ -425,7 +425,7 @@
       "kind": "agent",
       "books": [
         {
-          "id": "the-pragmatic-programmer",
+          "id": "working-effectively-with-legacy-code",
           "defaultTier": "mini",
           "why": "Compatibility alias for research; mirrors research's mapping."
         }
