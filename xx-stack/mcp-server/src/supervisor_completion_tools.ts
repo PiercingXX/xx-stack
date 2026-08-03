@@ -43,6 +43,29 @@ const SECRET_ASSIGNMENT_PATTERN =
   /\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?key|secret[_-]?key|client[_-]?secret|secret|token|password|passwd|credentials?|authorization))\b(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi;
 const AUTH_SCHEME_PATTERN = /\b(bearer|basic|token|digest)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
+/**
+ * Credentials embedded in a URL's userinfo — `scheme://user:pass@host`.
+ *
+ * None of the passes above catch these. The value patterns enumerate vendor
+ * key formats; the key-name pass needs a secret-ish noun and `DATABASE_URL`
+ * has none; the auth-scheme pass needs a literal `Bearer`/`Basic` token. So
+ * `postgres://admin:hunter2@db.internal/prod` survived all three verbatim.
+ *
+ * The structural dotenv pass DOES catch it — but only when the caller names a
+ * dotenv path, and the production callers do not: handoff and continuation
+ * prompt lines and reviewed diffs all call `redactSecrets(text)` with no path.
+ * So a model that writes a connection URL into an open-work item leaked the
+ * password into a prompt the supervisor then sends to another lane.
+ *
+ * Greedy up to the LAST `@` before a `/`, `?`, `#` or whitespace, so a password
+ * containing `@` is covered rather than half-redacted. The username is kept
+ * when there is a colon — same rule as the dotenv pass keeping key names: a
+ * handoff must still be able to say which user on which host, never the
+ * secret. With no colon the whole userinfo goes, since a bare userinfo is as
+ * likely to be a token as a name.
+ */
+const URL_USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/?#]*)@/gi;
+
 /** The single redaction marker. Every pass writes this one — never a second. */
 const REDACTION_MARKER = "[redacted-secret]";
 
@@ -172,6 +195,14 @@ export function redactSecrets(text: string, opts?: { path?: string }): string {
   // pair before the assignment pass closes that hole; the assignment pass then
   // harmlessly re-redacts the placeholder.
   let out = text.replace(AUTH_SCHEME_PATTERN, `$1 ${REDACTION_MARKER}`);
+  out = out.replace(URL_USERINFO_PATTERN, (_m, scheme: string, userinfo: string) => {
+    const colon = userinfo.indexOf(":");
+    // Keep the user, drop the secret. No colon means the whole userinfo is
+    // opaque and could be a token, so none of it survives.
+    return colon > 0
+      ? `${scheme}${userinfo.slice(0, colon)}:${REDACTION_MARKER}@`
+      : `${scheme}${REDACTION_MARKER}@`;
+  });
   out = out.replace(
     SECRET_ASSIGNMENT_PATTERN,
     (_match, key: string, sep: string) => `${key}${sep}${REDACTION_MARKER}`

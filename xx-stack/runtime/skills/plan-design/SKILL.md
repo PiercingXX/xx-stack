@@ -71,7 +71,9 @@ Create a token system:
 
 ### Step 3: Component Library
 
-A component's props and variants are a module interface. Read `packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md` before fixing that surface — ~1,400 tokens on deep modules, small interfaces, and pulling complexity downward. It rules on whether a fifth button variant is a real distinction or a knob that pushes the decision onto every caller.
+A component's props and variants are a module interface. Read `packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md` before fixing that surface — ~1,400 tokens on deep modules, small interfaces, and pulling complexity downward. It rules on whether a fifth button variant is a real distinction or a knob that pushes the decision onto every caller, and it backs the audit's consistency check, where a convention that only one component follows is not yet a convention.
+
+Read it for this step and that check only. The rest of this skill is design tokens, WCAG criteria, and style-guide writing, which the book does not speak to — if your lane is token or accessibility work, skip it and lose nothing.
 
 Design core components:
 

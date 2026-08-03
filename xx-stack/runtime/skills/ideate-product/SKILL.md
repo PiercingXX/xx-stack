@@ -52,7 +52,7 @@ Listen for:
 ### 4. Narrowest Wedge (MVP Scope)
 "What's the minimal version you could ship next week? What single problem does it solve?"
 
-Before you accept a wedge, read `packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md` and test the answer against its rules. It is ~1,600 tokens on subdomain classification and ubiquitous language — it separates the Core Domain worth building from the Supporting and Generic work that should be bought or kept dumb, and it exposes a wedge whose central noun still means two different things to two different people.
+Before you accept a wedge, read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` and test the answer against its rules. It is ~1,800 tokens of delivery judgment rather than a code catalog: its tracer-bullet rule rejects a "minimal version" that is a pile of disconnected pieces and holds out for one thin slice that is real end to end, and its prototype rule forces the founder to name what a throwaway proves, what it does not, and which shortcuts must be discarded — which is the Instant Gate's weekend-hack-or-real-module question, answered. Its dig-for-real-requirements rule applies back at questions 1–3, where the answer offered is usually a proposed solution rather than a durable need.
 
 Listen for:
 - Realistic scoping

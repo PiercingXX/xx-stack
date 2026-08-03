@@ -35,7 +35,7 @@ Use this agent when another agent needs to:
 4. **Synthesize** — produce findings, not raw data dumps
 5. **Flag unknowns** — explicitly call out gaps where you could not find evidence
 
-Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before you synthesize. ~1,800 tokens whose coupling and orthogonality rules let a blast-radius answer name the seams a change crosses instead of listing the files it touches — and whose "prove it, don't assume" rule is the same discipline as the citation rule below.
+Read `packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md` before step 3, not after step 4 — it changes what you go looking for. ~1,400 tokens whose effect-tracing rule (follow effects outward from the change point through values, calls, fields, outputs, collaborators, interception points, and pinch points) is the blast-radius question this agent exists to answer, and it turns a list of files that mention a symbol into the named seams and pinch points a change has to cross. Its legacy-risk list — hard-coded collaborators, global or static reach-through, constructor side effects, business logic trapped in framework entry points — tells you which findings are worth reporting. And its rule to state the behavior that must remain, not only the behavior that changes, is the half of the answer a caller needs that a file:line citation never supplies on its own.
 
 ## Rules
 
