@@ -64,7 +64,7 @@
       "path": "design-systems/",
       "contents": "137 directories, one DESIGN.md each",
       "provenance": "verified",
-      "nature": "vendored, with local modifications to 15 files",
+      "nature": "vendored, with local modifications to 8 files (7 further files differ only because upstream moved on)",
       "primarySource": "open-design",
       "license": "Apache-2.0",
       "detail": {
@@ -72,23 +72,6 @@
         "fromAwesomeDesignMd": 1,
         "byteIdenticalToOpenDesignHead": 121,
         "modifiedOrDrifted": 15,
-        "modifiedFiles": [
-          "arc",
-          "cal",
-          "canva",
-          "dashboard",
-          "discord",
-          "duolingo",
-          "expo",
-          "framer",
-          "github",
-          "huggingface",
-          "kami",
-          "ollama",
-          "openai",
-          "replicate",
-          "voltagent"
-        ],
         "modificationCause": "Two causes, both observed in sampled diffs. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. (2) Upstream drift since vendoring — e.g. design-systems/arc gained a '## 7. Usage Guardrails' section upstream that this copy predates.",
         "exceptions": [
           {
@@ -98,7 +81,37 @@
             "provenance": "verified",
             "note": "Byte-identical to VoltAgent/awesome-design-md design-md/bmw-m/DESIGN.md except for one line: upstream `name: BMW-M-design-analysis` was changed to `name: BMW M`. This is the only file in design-systems/ with YAML frontmatter, and the only one that does not come from open-design; open-design ships its own, different bmw-m."
           }
-        ]
+        ],
+        "modifiedByUs": [
+          "cal",
+          "dashboard",
+          "expo",
+          "framer",
+          "kami",
+          "ollama",
+          "replicate",
+          "voltagent"
+        ],
+        "differsOnlyByUpstreamDrift": [
+          "arc",
+          "canva",
+          "discord",
+          "duolingo",
+          "github",
+          "huggingface",
+          "openai"
+        ],
+        "apacheSection4bModifiedSet": [
+          "cal",
+          "dashboard",
+          "expo",
+          "framer",
+          "kami",
+          "ollama",
+          "replicate",
+          "voltagent"
+        ],
+        "separationMethod": "Separated by matching every file against upstream history with a blob:none clone: files whose content matches SOME historical upstream state are upstream drift; files matching NO upstream state at any commit are our edits. Before this, the two causes could not be told apart and all 15 were recorded as modified."
       },
       "copyrightNote": "The content is written as 'Design System Inspired by <brand>' — prose analysis of publicly observable visual language, not copied brand assets. That framing is upstream's, authored at nexu-io/open-design and VoltAgent/awesome-design-md; it was NOT clean-room reinterpretation performed in this repo. Everything here is a redistributed copy of upstream text. Brand names, wordmarks, and trademarks referenced in the prose remain the property of their respective owners and are used nominatively.",
       "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 121 of 137 files are byte-identical to upstream. The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m)."
@@ -151,7 +164,7 @@
       "path": "workflow-skills/",
       "contents": "31 skill directories plus quality-gates.json",
       "provenance": "verified",
-      "nature": "vendored, with local modifications to 25 of 31 SKILL.md files",
+      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (6 with local edits); the other 79 have no upstream counterpart at any path or commit and were written here.",
       "primarySource": "open-design",
       "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
       "detail": {
@@ -168,7 +181,26 @@
         "modifiedOrDrifted": 25,
         "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten.",
         "inFileAttribution": "All 31 SKILL.md files retain upstream's `od:` frontmatter block — open-design's own metadata namespace — which is what identifies the subtree's origin from inside the files.",
-        "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick)."
+        "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick).",
+        "skillMdModifiedByUs": [
+          "critique",
+          "guizang-ppt",
+          "motion-frames",
+          "replit-deck",
+          "saas-landing",
+          "tweaks"
+        ],
+        "authoredHereFiles": "every references/checklist.md (31), references/layouts.md (31), and assets/template.html (31), plus quality-gates.json — upstream ships only SKILL.md + example.html per template",
+        "authoredHereFileCount": 93,
+        "authoredHereEvidence": "No upstream counterpart exists at any path in any commit, and the checklists cite this repo's own design-prototype skill and its P0/P1/P2 severity vocabulary.",
+        "apacheSection4bModifiedSet": [
+          "critique",
+          "guizang-ppt",
+          "motion-frames",
+          "replit-deck",
+          "saas-landing",
+          "tweaks"
+        ]
       },
       "exceptions": [
         {
@@ -241,5 +273,13 @@
       "question": "design-systems/ names ~100 real brands (Apple, Stripe, BMW, Nike, Discord, ...) in headings and prose. Nominative use of a trademark to describe a design language is normally permissible, and the risk is inherited from upstream rather than created here, but nobody in this repo has made an explicit decision about it.",
       "needsHuman": true
     }
-  ]
+  ],
+  "vendoringWindow": {
+    "note": "The exact vendoring commit is not recoverable, but the window is. All 57 commits in this range share one design-systems tree, and nothing in our pack distinguishes commits inside it — a single sha would be invention.",
+    "from": "9ee2c19 (2026-05-02T23:19+08:00)",
+    "to": "483e00d (2026-05-04T12:21+08:00)",
+    "sharedDesignSystemsTree": "0fdec1613e72c752e9c278a38d94c6081ab987c5",
+ "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: upstream's `` (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
+    "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), git hash-object over all 304 vendored files, match-counted against every historical state of upstream's design-systems/, skills/, and design-templates/ trees."
+  }
 }

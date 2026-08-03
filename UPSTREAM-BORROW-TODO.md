@@ -641,3 +641,140 @@ Explicitly NOT borrowing
     buzz-cli wholesale — Task 17's CLI already ships the same JSON-in/JSON-out, meaningful-exit-codes conventions; only the write-conflict exit code transfers (folded into Task 29).
  Reply guard, multi-convention skill-dir discovery (.agents/.goose/.), context self-handoff mechanics — harness-side loop concerns; the useful fragment (re-inject state after compaction) is Task 26's _PostCompact.
     Conformance suite and formal/ specs — protocol-suite rigor at a scale a single MCP server does not need.
+
+From nexu-io/open-design (reviewed 2026-08-03)
+
+Re-review of the upstream that already supplies 136 of our 137 design-systems/ and all 31 workflow-skills/, run immediately after the byte-level provenance audit of packs/design/. Upstream HEAD is dceac12f70df2b9eb0fae9c90aff1fe75da309c0 (2026-08-03T03:12:16Z). The repo has grown into a full local-first desktop design app — Tauri/web client, daemon, plugin marketplace, 4,025 files under apps/ alone — so the great majority of it is the exact category the guiding constraint excludes. Content growth is also mostly bulk: 151 design systems (+14) and 114 design templates (+83, of which 48 are html-ppt-* deck skins and 32 of those are one contributor's zhangzara series). More brands and more deck skins are not capability.
+
+Three things upstream built that we do not have are capability, and they are the borrows: craft/ — a brand-agnostic craft-rulebook axis with a per-skill opt-in binding; a concrete, checkable anti-AI-slop rule set with a P0/P1/P2 severity ladder that upstream actually enforces in a linter; and a machine-readable design-system token contract (design-systems/_schema/ + per-brand tokens.css) that turns DESIGN.md prose into something a gate can verify. A fourth task is documentary: this review recovered the commit window we vendored at, which closes an open question in MANUAL §11.1 and corrects two wrong claims in packs/design/manifest.json.
+
+Licensing and provenance position: unchanged and clean. Upstream's LICENSE at HEAD is byte-identical to our vendored packs/design/licenses/nexu-io-open-design-Apache-2.0.txt. No NOTICE file was added, no relicensing, no restructured attribution, and the per-directory MIT carve-out for guizang-ppt still ships upstream exactly as we hold it. One new obligation arrives with Task 30 only: craft/ content is upstream-attributed as adapted from referodesign/refero_skill (MIT, © Refero Design), so vendoring it adds a second license text and a two-hop provenance chain we must record.
+
+The vendoring commit (closes MANUAL §11.1 "vendoring-commits-unrecorded" for this pack). Method: filtered clone of upstream (--filter=blob:none keeps every tree, so blob SHAs are readable without downloading content), git hash-object over all 304 of our design-systems/ + workflow-skills/ files, then a match count of our blob SHAs against every historical state of upstream's design-systems/, skills/, and design-templates/ trees. Result: our pack was vendored from the window
+
+    9ee2c1994c3687dc0f7a0f5b8eb6b6a4eaf783cc  (2026-05-02T23:19:00+08:00)  ..  483e00d24da162d41ffec4c63dd3c816ac468dd4  (2026-05-04T12:21:39+08:00)
+
+— 57 commits, ~37 hours, all sharing design-systems tree 0fdec1613e72c752e9c278a38d94c6081ab987c5. Nothing in our pack distinguishes any commit inside that window (the match score is flat at 201/304 across all 57), so the window is the finest honest answer; cite the window, or 483e00d as its upper bound, rather than inventing a single sha. The evidence is strong and specific: that tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap — upstream's, which we do not carry, replaced by bmw-m, which the audit already traced to VoltAgent. At the same window upstream's skills/ held 52 entries and our 31 workflow-skills are a subset of them, 25 of 31 byte-identical; design-templates/ did not exist yet (upstream split skills/ into skills/ + design-templates/ on 2026-05-11, which is why our copies sit under the older path).
+
+Edit-versus-drift, now separable. A file that matches no upstream tree at any commit was changed here; a file that matches some historical tree but not HEAD is upstream drift.
+
+    design-systems/ — 8 of the 15 differing files are ours: cal, dashboard, expo, framer, kami, ollama, replicate, voltagent. The other 7 are pure upstream drift and we never touched them: arc, canva, discord, duolingo, github, huggingface, openai. (bmw-m is the known VoltAgent file.) So the Apache-2.0 §4(b) modified set for design-systems/ is 8 files, not 15.
+    workflow-skills/ — only 6 SKILL.md carry local edits: critique, guizang-ppt, motion-frames, replit-deck, saas-landing, tweaks. 19 are pure upstream drift and 6 still match HEAD. The manifest's "modified 25 of 31" reads as 25 local edits; the real number is 6.
+    A larger correction: 79 of our 167 workflow-skills/ files have no upstream counterpart at any path in upstream history — 26 × assets/template.html, 26 × references/checklist.md, 26 × references/layouts.md, plus quality-gates.json. Upstream ships only SKILL.md + example.html per template (guizang-ppt excepted). Those 79 files are authored here — the checklist.md files cite this repo's design-prototype skill and its own P0/P1/P2 vocabulary — so calling the whole subtree "vendored" overstates it by roughly half.
+
+Same ground rules as the top of this file. Tasks 30 and 33 are content-pack work (packs/design/ stays out of Prettier — do not reformat vendored files); 31 touches a gate script; 32 is documentary.
+Tier 1
+30. craft/ — brand-agnostic craft references as a fourth pack axis (upstream: craft/)
+
+Goal. Vendor upstream's craft/ directory into packs/design/craft/ — 11 dense, brand-agnostic rulebooks (typography, typography-hierarchy, typography-hierarchy-editorial, color, anti-ai-slop, state-coverage, animation-discipline, accessibility-baseline, rtl-and-bidi, form-validation, laws-of-ux; ~101KB total) — plus the per-skill opt-in binding that makes them affordable, and a drift check that fails on an unresolved craft slug.
+
+Why. This is the one genuinely new *kind* of content upstream has, and it fills a real hole. design-systems/ tells the agent which colors and fonts a brand uses; nothing in this pack tells it the universal rules a competent designer applies on top (ALL CAPS needs ≥0.06em tracking; cap visible accent uses at 2 per screen; every stateful surface needs empty/loading/error/partial states). Our design-prototype skill and design-engineer agent currently carry a handful of these as scattered prose. The opt-in mechanism is the part that makes it fit this stack rather than bloat it: a skill declares craft.requires: [typography, color, anti-ai-slop] in frontmatter and only those sections are injected, so a skill that needs typography pays nothing for form-validation. That is the same "smallest mechanism that changes the agent's decisions" principle packs/rules already implements with nano/mini/full tiers, applied on a different axis — and the two should share the token-budget convention.
+
+Honesty about what this is. craft/ is not new since we vendored: three rulebooks (anti-ai-slop, color, typography) plus a README landed 2026-05-02T11:00, about twelve hours before our vendoring window opened. We simply did not take it. Eight of the eleven rulebooks, and ~90% of the bytes, are genuinely new since.
+
+Files.
+
+    New: packs/design/craft/*.md — the 11 rulebooks + upstream's README.md (rewritten for our paths) + FUTURE_SECTIONS.md convention.
+    New: packs/design/licenses/referodesign-refero_skill-MIT.txt — read from the upstream LICENSE, copied verbatim, per this pack's established honesty rule. Do not record the license without reading it.
+    Edit: packs/design/manifest.json — new subtree entry with the two-hop chain (refero_skill MIT → open-design Apache-2.0 → here), the upstream sha fetched at, and per-file token estimates (bytes/4, same convention as packs/rules/manifest.json).
+    Edit: packs/design/workflow-skills/<slug>/SKILL.md — add od.craft.requires where it earns its keep.
+    Edit: xx-stack/runtime/agents/design-engineer.md, runtime/skills/design-prototype/SKILL.md — reference the craft sections instead of restating rules inline.
+    New: a craft-reference drift check in xx-stack/scripts/ (mirror check-rules-coverage.mjs), wired into npm run verify.
+
+Approach.
+
+    Vendor verbatim; byte-comparability against upstream is the whole reason packs/ is in .prettierignore. Rewrite only upstream's README (it documents pnpm lint:craft and a daemon prompt-composer we do not have).
+    Take upstream's craft.requires bindings for the 31 slugs we hold rather than inventing our own — they were authored against these exact skills. Note this means resolving those bindings against SKILL.md files that are 3 months behind upstream; taking the binding line without the rest of the drift is the cheap path and is fine.
+    The drift check asserts every craft slug named in any SKILL.md resolves to packs/design/craft/<slug>.md or is listed in FUTURE_SECTIONS.md — upstream's exact contract, and the reason a typo cannot silently drop a section.
+    Selection is the routing tie-in, same as packs/rules: which sections to inject is a budget decision against the target lane's context window. Keep it a recommendation surfaced in reasoning, not something the server performs.
+    Do not vendor laws-of-ux.md and form-validation.md (17KB each) unless a skill actually requires them — this pack does not need shelf-ware.
+
+Acceptance criteria.
+
+    Craft files present with both license texts and a manifest entry recording the two-hop chain; token estimates populated.
+    Every craft slug referenced from a SKILL.md resolves, or is an explicit FUTURE_SECTIONS entry; the drift check fails when a reference is added without a file.
+    design-prototype and design-engineer reference craft sections rather than restating their rules; no duplicated guidance left behind.
+    npm run design:catalog regenerates clean; npm run verify green.
+
+Effort: M (curation + bindings + drift check). Risk: Low (additive content), except the licensing step — get the Refero license text and the chain right before merging.
+31. Concrete anti-AI-slop rules for the HTML quality gate (upstream: craft/anti-ai-slop.md + apps/daemon/src/lint-artifact.ts)
+
+Goal. Replace the two soft heuristics in packs/design/scripts/quality-gate-html.mjs (a purple-gradient warning, a global emoji warning) with upstream's concrete checkable rule set, and give the gate a P0/P1/P2 severity ladder instead of today's binary failure/warning split.
+
+Why. Our gate is structurally solid — doctype, viewport, title, :root tokens, semantic tags, self-containment, per-profile section/H1/CTA rules, documented exemptions — but its taste rules are guesses. Upstream's are specific and were derived from a real corpus: the exact seven Tailwind indigo hexes that read as an AI tell, two-stop "trust" gradients (purple→blue, blue→cyan, indigo→pink), emoji scoped to <h*>/<button>/<li>/class*="icon" rather than anywhere in the document, display headings that hardcode Inter/Roboto/system-ui when the design system binds a serif, the rounded-card-with-colored-left-border tile, invented metrics ("10× faster", "99.9% uptime"), filler copy, external placeholder image CDNs, more than ~12 raw hex values outside :root, and var(--accent) used 6+ times in the body. Every one is a regex or a small DOM walk over a file we already have on disk — no network, no dependency, no model. Our own workflow-skills/*/references/checklist.md files already speak P0/P1/P2, so the severity ladder lands on vocabulary this pack uses; today the gate does not.
+
+Files.
+
+    New: packs/design/craft/anti-ai-slop.md (arrives with Task 30) and a derived packs/design/anti-slop-rules.json — the rule table as data: { id, severity, kind, pattern|hexes, scope, message }.
+    Edit: packs/design/scripts/quality-gate-html.mjs — read the rule table, emit findings with severity, sort P0 → P1 → P2.
+    Edit: packs/design/workflow-skills/quality-gates.json — the exempt map gains per-rule-id granularity so an exemption names the rule it silences.
+    New: a *.test.mjs (or extend the existing gate coverage) with a passing and a deliberately slop-ridden fixture.
+
+Approach.
+
+    Licensing shape matters here. quality-gate-html.mjs is ours under the repo-root MIT LICENSE; lint-artifact.ts is Apache-2.0. Do not port the TypeScript. Encode the rules as data in packs/design/anti-slop-rules.json, attributed to open-design under Apache-2.0 in manifest.json alongside craft/, and keep the MIT script a generic engine that reads the table. That keeps the license boundary exactly where the pack boundary already is, and makes the rules editable without touching code.
+    Adopt only the mechanically checkable rules. Upstream's own file flags several as "(guidance, not auto-checked)" — the hero-features-pricing-FAQ-CTA skeleton, decorative blob backgrounds, symmetric-layout-without-tension. Leave those in craft/ prose for the agent to read; a gate that guesses at them will produce noise.
+    Severity is not exit code. P0 fails the gate. P1 and P2 report and do not fail, matching upstream's own position that artifact persistence is not hard-blocked on P0 either — this is a quality signal for the agent, not a merge gate on generated content. Keep the existing hard structural checks failing as they do today.
+    Findings must be actionable in one round: name the rule id, the offending value, and the token to use instead ("#6366f1 → var(--accent)").
+    Re-run against the pack's own 67 swept HTML files first. Expect hits — several vendored example.html files predate these rules. Triage before enabling P0, and record each exemption with a reason, the way gates.exempt already requires.
+
+Acceptance criteria.
+
+    Rule table externalised and attributed; script carries no copied upstream code.
+    Gate reports P0/P1/P2 with rule ids; only P0 and the pre-existing structural checks affect exit code.
+    Slop fixture trips every P0 rule; clean fixture trips none; both tested.
+    npm run design:html-gate green over the pack (with documented exemptions, not silenced rules); npm run verify green.
+
+Effort: M. Risk: Low–Med (a noisy gate is worse than no gate — triage the corpus before turning P0 on). Depends on: Task 30 for the prose; the rule table can land first.
+32. Record the vendoring window and correct the design-pack provenance record
+
+Goal. Write the recovered vendoring window into packs/design/manifest.json, replace the two claims this review disproved, and close the vendoring-commits-unrecorded open question in MANUAL §11.1 for this pack.
+
+Why. The manifest is explicit that it records vendoredAtCommit: null with a nullReason rather than guessing, and that "modified" conflates our edits with upstream drift. Both are now resolvable for open-design, with method and evidence above. Until it is written down, every future drift review re-derives it — and the two wrong claims (15 modified design systems, 25 modified workflow skills) actively overstate our Apache-2.0 §4(b) modification set, which is the one thing that record exists to get right.
+
+Files.
+
+    Edit: packs/design/manifest.json — sources[open-design]: replace vendoredAtCommit: null with the window (both endpoint shas + dates), the design-systems tree sha, and a method note; keep the field honest about being a window rather than a point. Split modifiedFiles into locallyModified (8) and upstreamDrift (7) for design-systems/, and the same for workflow-skills/ (6 vs 19 vs 6 identical). Add the workflow-skills locallyAuthored finding (79 files with no upstream counterpart).
+    Edit: packs/design/README.md — "What is not known" loses the vendoring-commit bullet and the "cannot say which of those 40 differ because we changed them" clause; both are now known.
+    Edit: MANUAL.md §11.1 — mark the open question resolved for packs/design (packs/rules already pins its sha), or narrow it to the two upstreams still unpinned.
+    Reference (do not commit): the filtered-clone + blob-SHA method is reproducible in ~10 minutes; record the commands in the manifest's method note so the next reviewer does not reinvent it.
+
+Approach. Documentary only — do not move, edit, or re-vendor a single pack file in this task. The count corrections are the deliverable; a re-sync is Task 33's or the user's decision. Note in the manifest that bergside/awesome-design-skills and VoltAgent/awesome-design-md remain unpinned, so the open question narrows rather than closes outright.
+
+Acceptance criteria. Manifest records the window with evidence and the corrected per-cause file lists; README's unknowns section matches; MANUAL §11.1 updated; npm run verify green.
+
+Effort: S. Risk: None (no behavior change).
+Tier 2
+33. Design-system token contract — _schema/ + per-brand tokens.css (upstream: design-systems/_schema/, design-systems/<slug>/tokens.css)
+
+Goal. Vendor upstream's token contract for the 137 brands we already ship: the layered token schema (A1-identity / A1-structure / A2-with-fallback / B-slot-alias, plus per-brand C-extensions and the documented C → B-slot → A2 promotion path) and each brand's compiled tokens.css, so a brand stops being prose only and becomes a checkable :root contract.
+
+Why. This is the schema change this review was looking for, and it is the only one that changes what a gate can prove. Today packs/design/scripts/quality-gate-html.mjs can assert that an artifact declares *some* custom properties in :root; it cannot assert that it declares *this brand's* tokens, or that it uses --accent instead of a hardcoded hex from the wrong palette. With tokens.css vendored, "does this artifact honour the design system it claims" becomes a mechanical check, and Task 31's raw-hex and accent-overuse rules gain a reference to check against. The schema itself is good thinking worth reading even if we only take part of it — the A2 rationale (agents paste one brand's :root into a single <style>, so there is no global stylesheet for a fallback to come from) is exactly our artifact model.
+
+Files.
+
+    New: packs/design/design-systems/<slug>/tokens.css — 136 files, vendored verbatim (every slug we hold except bmw-m, which is VoltAgent-sourced; upstream's same-named brand is a different file and must not be mixed in).
+    New: packs/design/design-systems/_schema/ — tokens.schema.ts + defaults.css + upstream's AGENTS.md. Note the canonical copy upstream lives at packages/contracts/src/design-systems/token-schema.ts; take the design-systems/_schema re-export, not the app package.
+    Edit: packs/design/scripts/quality-gate-html.mjs — optional --design-system <slug> that checks the artifact's :root against that brand's declared tokens.
+    Edit: packs/design/manifest.json, README.md, DESIGN-CATALOG.md generator.
+
+Approach.
+
+    Scope hard. Upstream now ships ~31 files per design system — components.html, components.manifest.json, design-tokens.json, tailwind-v4.css, USAGE.md, preview/, source/, and a whole system/ tree of rendered artifact fixtures (deck/email/form/landing/newsletter/poster) — 4,759 files under design-systems/. Take tokens.css and _schema only. The rest is a rendering catalogue for a desktop app we do not have, and it would multiply this pack's file count by ~30 for zero routing value.
+    All 151 upstream brands ship a tokens.css at HEAD (they landed brand-by-brand from 2026-05-15 onward), so coverage is not the problem — bmw-m is. It is the one slug we hold that does not come from this upstream; leave it without tokens and record the gap in the manifest rather than authoring tokens ourselves or borrowing the same-named upstream brand's. This pack redistributes; it does not originate.
+    Do not port upstream's guards (pnpm guard, check-design-system-manifests.ts). They enforce a repo layout we are not adopting. If a check is wanted, write a small one here against the vendored schema.
+    Skip manifest.json per brand unless the catalog generator actually needs it; DESIGN-CATALOG.md already derives its index from the directory tree and DESIGN.md frontmatter.
+
+Acceptance criteria. tokens.css vendored for every brand upstream has one, gaps recorded; schema present with provenance; gate's optional token check passes on a compliant fixture and fails on a hardcoded-palette one; DESIGN-CATALOG regenerates deterministically; verify green.
+
+Effort: L (137 files + gate work + manifest accounting). Risk: Low–Med (large additive vendoring; the risk is scope creep into the other 4,600 files, not correctness). Depends on: Task 32 for an honest provenance record to extend; synergy with Task 31.
+Explicitly NOT borrowing
+
+    The entire desktop application — Tauri client, apps/daemon, web UI, e2e suites, plugin registry and marketplace (docs/plugins-spec.md, docs/schemas/open-design.plugin.v1.json), self-hosted registry, Docker/cloud deployment, figma-plugin, clipper. This is a GUI design tool with a hosted extension ecosystem; xx-stack routes and supervises. Same call as Orca's Design Mode and buzz's Tauri app.
+ The 14 new design systems (atelier-zero, cisco, hud, loom, mission-control, perplexity, slack, tom-modern, totality-festival, trading-terminal, urdu, webex, wechat) and the 83 new design templates as a bulk sync. Not refused — deferred to the user with the cost in hand, because it is a content-volume decision, not an engineering one. Note what the volume actually is: 48 of the 83 are html-ppt-* deck skins and 32 of those are one contributor's zhangzara series. The design-systems refresh is the cheaper and better half (14 directories, and it would also pull the 7 drifted files back in line); the template refresh mostly buys deck variants. Anything taken must land through Task 32's corrected provenance accounting, and re-vendoring a drifted file must not silently revert one of our 8 local design-system edits or 6 SKILL.md edits.
+    skills/ (162 entries). Looks like the biggest content gap and is not one. Upstream's own skills/AGENTS.md says the curated catalogue entries are "lightweight stubs — frontmatter + a short body that points at the upstream repo", seeded idempotently by a script and deliberately not vendoring upstream assets. Of the rest, most bind to a paid API at runtime (fal-*, venice-*, replicate, minimax-*, sora, imagen, nanobanana-ppt, pixelbin-media) or to a hosted product (figma-*, stitch-*, slack-gif-creator, youtube-clipper, notebooklm) — network calls at runtime, which the guiding constraint excludes. The prose-only survivors (apple-hig, web-design-guidelines, writing-guidelines, marketing-psychology, color-expert) are thinner than craft/ and overlap it; take craft/ instead.
+    Per-brand rich packages beyond tokens.css — components.html, components.manifest.json, design-tokens.json, tailwind-v4.css, USAGE.md, preview/, source/, system/. Scoped out of Task 33 on purpose: ~4,600 files serving a rendering catalogue and an importer-evidence trail for a desktop app.
+    DESIGN-<locale>.md translations (23 brands × 8+ languages). No consumer here; the design-engineer agent and all our skills run in English.
+    docs/critique-theater.md and the Critique Theater feature — a multi-persona review surface in the desktop app. The transferable idea (diverse reviewers) is already Task 23's reviewer-diversity routing, done properly against the live registry rather than as fixed personas.
+    docs/agent-adapters.md, docs/new-agent-runtime-acp.md, prompt composition internals — host-adapter concerns; adapters/ and opencode-orchestration/ already own that, same call as jina-ai's per-tool install docs and buzz's harness binaries.
+    Upstream's repo guards (pnpm guard, lint:craft, check-design-system-manifests.ts) as code. The contracts they enforce are worth copying; their implementations assume a pnpm monorepo with packages/contracts. Write the equivalents in xx-stack/scripts/ (Tasks 30, 33).
