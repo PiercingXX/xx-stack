@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
 import { AgentMemoryScope, readJson } from "./config_runtime.js";
+import { estimateTokens, selectContext } from "./context_selection_runtime.js";
 import { atomicWriteTextFile } from "./io_runtime.js";
 import { PATH_CONSTANTS } from "./runtime_constants.js";
 
@@ -202,4 +203,281 @@ export async function getCompletionMemorySyncStatus(
     diff,
     helperPrompt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Memory entry parsing (UPSTREAM-BORROW-TODO task 20)
+// ---------------------------------------------------------------------------
+
+const SUPERSEDED_MARKER_RE = /^- \[superseded:([^\]]*)\] ?(.*)$/;
+
+export interface ParsedMemoryEntry {
+  /** Stable identifier: hash of the entry text with any superseded marker
+   * stripped, so the id survives being marked superseded. */
+  id: string;
+  /** Position of the entry in the document (0-based). */
+  index: number;
+  /** 0-based line number of the entry's bullet line in the raw content. */
+  line: number;
+  /** Full entry text as it appears in the file (marker included if present). */
+  text: string;
+  /** Entry text with any superseded marker stripped ("- " prefix retained). */
+  canonicalText: string;
+  superseded: boolean;
+  supersededBy: string | null;
+}
+
+export interface ParsedMemoryDocument {
+  /** Raw content before the first entry (headers etc.), verbatim. */
+  preamble: string;
+  entries: ParsedMemoryEntry[];
+}
+
+/** Stable id for a memory entry line (superseded marker ignored). */
+export function computeMemoryEntryId(entryText: string): string {
+  const match = SUPERSEDED_MARKER_RE.exec(entryText);
+  const canonical = match ? `- ${match[2]}` : entryText;
+  return hashMemoryContent(canonical);
+}
+
+/**
+ * Parse a MEMORY.md document into a preamble plus bullet entries. An entry is
+ * a line starting with "- " at column 0 (the shape agent_memory_append
+ * writes); everything before the first entry is preamble and preserved.
+ */
+export function parseMemoryEntries(content: string): ParsedMemoryDocument {
+  const lines = content.split("\n");
+  const entries: ParsedMemoryEntry[] = [];
+  let firstEntryLine = -1;
+
+  for (let lineNo = 0; lineNo < lines.length; lineNo += 1) {
+    const line = lines[lineNo];
+    if (!line.startsWith("- ")) continue;
+    if (firstEntryLine === -1) firstEntryLine = lineNo;
+
+    const match = SUPERSEDED_MARKER_RE.exec(line);
+    const canonicalText = match ? `- ${match[2]}` : line;
+    entries.push({
+      id: hashMemoryContent(canonicalText),
+      index: entries.length,
+      line: lineNo,
+      text: line,
+      canonicalText,
+      superseded: match !== null,
+      supersededBy: match ? match[1] : null,
+    });
+  }
+
+  const preamble = firstEntryLine === -1 ? content : lines.slice(0, firstEntryLine).join("\n");
+  return { preamble, entries };
+}
+
+// ---------------------------------------------------------------------------
+// Token-budgeted recall
+// ---------------------------------------------------------------------------
+
+export interface BudgetedMemoryRecall {
+  /** Preamble plus the selected entries in their original file order. */
+  content: string;
+  tokenBudget: number;
+  tokensEstimated: number;
+  entriesTotal: number;
+  entriesSelected: number;
+  entriesSuperseded: number;
+  /** True when anything eligible had to be left out to fit the budget. */
+  truncated: boolean;
+}
+
+/** Strip the bullet prefix, superseded marker, and leading ISO timestamp so
+ * similarity signals compare note content rather than scaffolding. */
+function stripEntryScaffolding(entryText: string): string {
+  return entryText.replace(/^- (?:\[superseded:[^\]]*\] )?(?:\d{4}-\d{2}-\d{2}T[0-9:.]+Z? )?/, "");
+}
+
+/**
+ * Fit memory content into a token budget. Entry selection uses submodular
+ * context selection (relevant to the optional query + diverse), superseded
+ * entries are excluded unless includeSuperseded is set, and the selected
+ * entries are returned in stable original order.
+ */
+export function selectMemoryForBudget(
+  content: string,
+  tokenBudget: number,
+  query?: string,
+  includeSuperseded = false
+): BudgetedMemoryRecall {
+  const doc = parseMemoryEntries(content);
+  const supersededCount = doc.entries.filter((e) => e.superseded).length;
+  const eligible = includeSuperseded ? doc.entries : doc.entries.filter((e) => !e.superseded);
+
+  const preamble = doc.preamble.replace(/\n+$/, "");
+  const preambleBlock = preamble.length > 0 ? `${preamble}\n\n` : "";
+  const preambleTokens = estimateTokens(preambleBlock);
+
+  const base: Omit<
+    BudgetedMemoryRecall,
+    "content" | "tokensEstimated" | "entriesSelected" | "truncated"
+  > = {
+    tokenBudget,
+    entriesTotal: doc.entries.length,
+    entriesSuperseded: supersededCount,
+  };
+
+  const entryBudget = tokenBudget - preambleTokens;
+  if (entryBudget <= 0) {
+    // Budget cannot even hold the preamble: return as much of it as fits.
+    const charBudget = Math.max(0, tokenBudget * 4);
+    const clipped = preambleBlock.slice(0, charBudget);
+    return {
+      ...base,
+      content: clipped,
+      tokensEstimated: estimateTokens(clipped),
+      entriesSelected: 0,
+      truncated: true,
+    };
+  }
+
+  // Byte-identical entries share an id; keep only the first occurrence so a
+  // single selection cannot pull multiple copies past the budget.
+  const uniqueEligible: typeof eligible = [];
+  const seenIds = new Set<string>();
+  for (const e of eligible) {
+    if (seenIds.has(e.id)) continue;
+    seenIds.add(e.id);
+    uniqueEligible.push(e);
+  }
+
+  const selection = selectContext({
+    candidates: uniqueEligible.map((e) => ({
+      id: e.id,
+      // Similarity/relevance over the note itself: the bullet prefix, any
+      // superseded marker, and the timestamp would otherwise make every
+      // entry look alike. Token cost still charges for the full line.
+      text: stripEntryScaffolding(e.text),
+      // +1 accounts for the newline each entry adds to the assembled content.
+      tokens: estimateTokens(e.text) + 1,
+    })),
+    tokenBudget: entryBudget,
+    query,
+  });
+  const chosen = new Set(selection.selected.map((s) => s.id));
+
+  // Stable order: original file order, not selection order.
+  const selectedEntries = uniqueEligible.filter((e) => chosen.has(e.id));
+  const body = selectedEntries.map((e) => e.text).join("\n");
+  const assembled = `${preambleBlock}${body}${body.length > 0 ? "\n" : ""}`;
+
+  return {
+    ...base,
+    content: assembled,
+    tokensEstimated: estimateTokens(assembled),
+    entriesSelected: selectedEntries.length,
+    truncated: selectedEntries.length < eligible.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Rule-abstraction compaction (continuation-prompt pattern: the server never
+// calls models — it emits a deterministic distillation prompt; the agent
+// writes abstracted rules back via agent_memory_append and marks the source
+// entries superseded via agent_memory_mark_superseded).
+// ---------------------------------------------------------------------------
+
+export interface CompactionCandidate {
+  id: string;
+  text: string;
+}
+
+export interface CompactionPromptResult {
+  /** Deterministic id derived from the candidate entry ids. */
+  compactionId: string;
+  prompt: string;
+  candidates: CompactionCandidate[];
+  entriesTotal: number;
+  entriesEligible: number;
+}
+
+/**
+ * Build a deterministic distillation prompt from the non-superseded entries
+ * of a memory document. Same content in -> byte-identical prompt out.
+ */
+export function buildMemoryCompactionPrompt(
+  agentId: string,
+  content: string,
+  maxEntries?: number
+): CompactionPromptResult {
+  const doc = parseMemoryEntries(content);
+  const eligible = doc.entries.filter((e) => !e.superseded);
+  const limit =
+    typeof maxEntries === "number" && maxEntries > 0
+      ? Math.min(maxEntries, eligible.length)
+      : eligible.length;
+  const picked = eligible.slice(0, limit);
+
+  const candidates: CompactionCandidate[] = picked.map((e) => ({ id: e.id, text: e.text }));
+  const compactionId = hashMemoryContent(candidates.map((c) => c.id).join(","));
+
+  const lines: string[] = [
+    `Memory compaction for agent "${agentId}" (compaction ${compactionId}).`,
+    "",
+    `Below are ${candidates.length} specific memory entries. Distill them into a small set of general rules:`,
+    "1. Each rule must be one sentence stating a durable, reusable lesson — not a restatement of a single observation.",
+    "2. Only abstract patterns supported by two or more entries; leave one-off facts alone.",
+    "3. Do not invent information that is not in the entries.",
+    "",
+    "Then apply the compaction:",
+    `1. Write each rule back with agent_memory_append (agentId "${agentId}"), prefixing the note with "[rule ${compactionId}]".`,
+    `2. Mark the entries you distilled as superseded by calling agent_memory_mark_superseded with supersededBy "${compactionId}" and the entryIds listed below.`,
+    "3. Never delete entries: superseded entries stay in MEMORY.md and remain recoverable.",
+    "",
+    "Candidate entries (entryId: text):",
+    ...candidates.map((c) => `${c.id}: ${c.text}`),
+  ];
+
+  return {
+    compactionId,
+    prompt: lines.join("\n"),
+    candidates,
+    entriesTotal: doc.entries.length,
+    entriesEligible: eligible.length,
+  };
+}
+
+export interface MarkSupersededResult {
+  content: string;
+  marked: string[];
+  alreadySuperseded: string[];
+  missing: string[];
+}
+
+/**
+ * Mark entries superseded in place. Only the matched bullet lines change
+ * (a "[superseded:<ref>]" marker is inserted after "- "); every other byte of
+ * the document is preserved, so the original observations stay recoverable.
+ */
+export function markMemoryEntriesSuperseded(
+  content: string,
+  entryIds: string[],
+  supersededBy: string
+): MarkSupersededResult {
+  const doc = parseMemoryEntries(content);
+  const lines = content.split("\n");
+  const wanted = new Set(entryIds);
+  const marked: string[] = [];
+  const alreadySuperseded: string[] = [];
+  const found = new Set<string>();
+
+  for (const entry of doc.entries) {
+    if (!wanted.has(entry.id)) continue;
+    found.add(entry.id);
+    if (entry.superseded) {
+      alreadySuperseded.push(entry.id);
+      continue;
+    }
+    lines[entry.line] = `- [superseded:${supersededBy}] ${entry.text.slice(2)}`;
+    marked.push(entry.id);
+  }
+
+  const missing = entryIds.filter((id) => !found.has(id));
+  return { content: lines.join("\n"), marked, alreadySuperseded, missing };
 }
