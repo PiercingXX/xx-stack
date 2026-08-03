@@ -94,11 +94,19 @@ cargo test
 If no deterministic test or build surface exists, say so explicitly and fall back to manual journey verification plus static artifact checks.
 
 ### 4. Add Regression Test
+
+Before writing the test, name the seams under test and confirm they exist — the module boundary, API surface, or state transition where this bug lives. A test aimed at no particular seam verifies nothing.
+
 ```javascript
 test('should handle [scenario]', () => {
-  // Test code
+  // Test code — exercises the named seam from the outside
 })
 ```
+
+Anti-patterns to reject:
+
+- **Tautological assertions** — asserting the code does what the code does (e.g. expecting a mock to return the value you configured it to return)
+- **Implementation coupling** — mocking internals or asserting on private call sequences; test through the seam, not through the guts
 
 ### 5. Re-verify
 

@@ -20,6 +20,16 @@ Use this skill when the request needs product scoping, acceptance criteria, deli
 
 Do not use it for review-only, debugging, or direct implementation work where the scope is already fixed.
 
+## Instant Gate (zero tools)
+
+The moment a build is proposed — before any planning machinery spins up — surface the 1–3 consequential choices hidden in it, from the head, no tools:
+
+- one-off or repeated? (a script vs. a product surface)
+- a few lines or a proper module?
+- what is the biggest thing it could break?
+
+State them in one short message. If the answers are obvious, say so and proceed; if not, they seed the questioning phase below.
+
 ## Planning Method
 
 Run the questioning phase with the `interrogate-plan` skill — it owns the interview mechanics (one question per message, a recommended answer with every question, repo-answerable facts checked instead of asked, answers recorded before moving on). Seed it with these decision areas:
@@ -112,6 +122,28 @@ Produce this exact structure:
 - Every edge case maps to a clear expected behavior.
 - Non-goals are explicit and defendable.
 - Slices can be delivered independently.
+
+## Spec Hygiene
+
+- Keep the spec body free of file paths and code snippets — they age poorly. Describe behavior in prose and acceptance criteria instead.
+- The one place for paths is the required Critical Files closing section below: it is the builder handoff, not spec content, and it stays.
+- Preserve a prototyped snippet only when it encodes a decision better than prose can — state machines, schemas, type shapes.
+
+## Required Closing Section
+
+Every plan output must end with:
+
+```markdown
+### Critical Files for Implementation
+
+List 3–5 files most critical for implementing this plan:
+
+- path/to/file1
+- path/to/file2
+- path/to/file3
+```
+
+If this is a greenfield feature with no existing files, list the files that will need to be created. This section is the primary handoff artifact for the builder picking up the plan — do not omit it.
 
 ## Verification State
 

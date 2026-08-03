@@ -68,6 +68,15 @@ When the supervisor fails a task over to another lane (`fallback_applied`), or a
 - It ends with the verify-don't-trust preamble: treat every claim as context to verify against the code, not facts to accept.
 - Secrets are never echoed: reference where credentials live, never values. The formatter also redacts secret-shaped values defensively.
 
+## Heartbeat Pattern
+
+Recurring supervision runs as one cheap tick, not many timers:
+
+- a single recurring tick (`supervisor_tick`) gates all per-task checks — there is never one timer per task.
+- each per-task check keeps a last-run timestamp; the tick compares timestamps against each check's own interval and runs only the checks that are due.
+- the tick acts only on what is due and stays silent when nothing is — no output, no escalation, no model invocation.
+- never put a model on a tight timer: the tick itself is deterministic bookkeeping. A model is engaged only when a due check surfaces something that needs judgment.
+
 ## Tooling Notes
 
 - Use `supervisor_emit_continuation_prompt` after a failed completion attempt.

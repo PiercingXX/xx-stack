@@ -65,6 +65,23 @@ Examples:
 - health endpoint responds if a deployed service actually exists
 - release notes and install instructions match the shipped state
 
+### 7. Verify the exact SHA is live
+
+"Pushed" is not "done". Done means the exact SHA is verified live, tracked through the whole chain:
+
+```bash
+SHA=$(git rev-parse HEAD)
+# 1. CI is green for $SHA (not just for the branch)
+# 2. The deploy/publish was promoted for $SHA
+# 3. The health endpoint (or shipped artifact) reports $SHA and is OK
+```
+
+If a newer push superseded yours before deploy, confirm the newer SHA contains your change and track that SHA through the chain instead:
+
+```bash
+git merge-base --is-ancestor "$SHA" "$NEWER_SHA" && echo "change included — track $NEWER_SHA"
+```
+
 ### 11. SLO Smoke Window (15-30 min)
 
 Track after deploy:
@@ -89,6 +106,7 @@ If regression exceeds threshold, trigger rollback.
 ## Deployment
 - Release path used: [actual path or not applicable]
 - Publish/Deploy result: [result]
+- SHA verified live: [exact SHA + how verified]
 
 ## Health Check
 - Verification checks: [actual checks + result]

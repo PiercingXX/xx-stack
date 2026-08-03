@@ -163,6 +163,20 @@ Item 3: Setup automated performance testing
   Success: "CI rejects deployments that degrade p95 latency by > 10%"
 ```
 
+### Part 7: Low-Confidence Decisions (10 min)
+
+Disclose the decisions made during the work that are genuinely unsure — and only those. Skip decisions that are well-settled: a list padded with confident calls buries the ones that need review.
+
+For each low-confidence decision:
+
+```
+Decision:                  [what was decided]
+Why unsure:                [the specific doubt]
+Unconsidered alternatives: [options nobody evaluated at the time]
+```
+
+This is the retrospective twin of the forward-looking `interrogate-plan` questioning — it surfaces the branches that were taken without ever being interrogated.
+
 ## Post-Mortem (When Something Broke)
 
 Use this for incidents or major failures:
