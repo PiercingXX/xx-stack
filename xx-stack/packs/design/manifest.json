@@ -270,21 +270,116 @@
         "totalBytes": 108643,
         "tokenEstimateMethod": "bytes/4 rounded, same convention as packs/rules/manifest.json",
         "files": [
-          { "file": "typography.md", "slug": "typography", "bytes": 3067, "tokensEstimated": 767, "vendored": true, "reforoAttributedInline": true },
-          { "file": "typography-hierarchy.md", "slug": "typography-hierarchy", "bytes": 7414, "tokensEstimated": 1854, "vendored": true },
-          { "file": "typography-hierarchy-editorial.md", "slug": "typography-hierarchy-editorial", "bytes": 8748, "tokensEstimated": 2187, "vendored": true },
-          { "file": "color.md", "slug": "color", "bytes": 3118, "tokensEstimated": 780, "vendored": true, "reforoAttributedInline": true },
-          { "file": "anti-ai-slop.md", "slug": "anti-ai-slop", "bytes": 3919, "tokensEstimated": 980, "vendored": true, "reforoAttributedInline": true },
-          { "file": "state-coverage.md", "slug": "state-coverage", "bytes": 7084, "tokensEstimated": 1771, "vendored": true },
-          { "file": "animation-discipline.md", "slug": "animation-discipline", "bytes": 9114, "tokensEstimated": 2279, "vendored": true },
-          { "file": "accessibility-baseline.md", "slug": "accessibility-baseline", "bytes": 12894, "tokensEstimated": 3224, "vendored": true },
-          { "file": "rtl-and-bidi.md", "slug": "rtl-and-bidi", "bytes": 12159, "tokensEstimated": 3040, "vendored": true },
-          { "file": "form-validation.md", "slug": "form-validation", "bytes": 17186, "tokensEstimated": 4297, "vendored": true },
-          { "file": "laws-of-ux.md", "slug": "laws-of-ux", "bytes": 17339, "tokensEstimated": 4335, "vendored": true },
-          { "file": "README.md", "slug": null, "bytes": 6310, "tokensEstimated": 1578, "vendored": true },
-          { "file": "FUTURE_SECTIONS.md", "slug": null, "bytes": 291, "tokensEstimated": 73, "vendored": true },
-          { "file": "XX-STACK-NOTES.md", "slug": null, "bytes": 4777, "tokensEstimated": 1194, "vendored": false, "license": "MIT (repo root LICENSE)" },
-          { "file": "anti-ai-slop-rules.json", "slug": null, "bytes": 22695, "tokensEstimated": 5674, "vendored": false, "license": "MIT structure; rule VALUES from two Apache-2.0 upstreams (nexu-io/open-design and google-labs-code/stitch-skills) — see its own `attribution` block, and every rule's `source` field" }
+          {
+            "file": "typography.md",
+            "slug": "typography",
+            "bytes": 3067,
+            "tokensEstimated": 767,
+            "vendored": true,
+            "reforoAttributedInline": true
+          },
+          {
+            "file": "typography-hierarchy.md",
+            "slug": "typography-hierarchy",
+            "bytes": 7414,
+            "tokensEstimated": 1854,
+            "vendored": true
+          },
+          {
+            "file": "typography-hierarchy-editorial.md",
+            "slug": "typography-hierarchy-editorial",
+            "bytes": 8748,
+            "tokensEstimated": 2187,
+            "vendored": true
+          },
+          {
+            "file": "color.md",
+            "slug": "color",
+            "bytes": 3118,
+            "tokensEstimated": 780,
+            "vendored": true,
+            "reforoAttributedInline": true
+          },
+          {
+            "file": "anti-ai-slop.md",
+            "slug": "anti-ai-slop",
+            "bytes": 3919,
+            "tokensEstimated": 980,
+            "vendored": true,
+            "reforoAttributedInline": true
+          },
+          {
+            "file": "state-coverage.md",
+            "slug": "state-coverage",
+            "bytes": 7084,
+            "tokensEstimated": 1771,
+            "vendored": true
+          },
+          {
+            "file": "animation-discipline.md",
+            "slug": "animation-discipline",
+            "bytes": 9114,
+            "tokensEstimated": 2279,
+            "vendored": true
+          },
+          {
+            "file": "accessibility-baseline.md",
+            "slug": "accessibility-baseline",
+            "bytes": 12894,
+            "tokensEstimated": 3224,
+            "vendored": true
+          },
+          {
+            "file": "rtl-and-bidi.md",
+            "slug": "rtl-and-bidi",
+            "bytes": 12159,
+            "tokensEstimated": 3040,
+            "vendored": true
+          },
+          {
+            "file": "form-validation.md",
+            "slug": "form-validation",
+            "bytes": 17186,
+            "tokensEstimated": 4297,
+            "vendored": true
+          },
+          {
+            "file": "laws-of-ux.md",
+            "slug": "laws-of-ux",
+            "bytes": 17339,
+            "tokensEstimated": 4335,
+            "vendored": true
+          },
+          {
+            "file": "README.md",
+            "slug": null,
+            "bytes": 6310,
+            "tokensEstimated": 1578,
+            "vendored": true
+          },
+          {
+            "file": "FUTURE_SECTIONS.md",
+            "slug": null,
+            "bytes": 291,
+            "tokensEstimated": 73,
+            "vendored": true
+          },
+          {
+            "file": "XX-STACK-NOTES.md",
+            "slug": null,
+            "bytes": 4777,
+            "tokensEstimated": 1194,
+            "vendored": false,
+            "license": "MIT (repo root LICENSE)"
+          },
+          {
+            "file": "anti-ai-slop-rules.json",
+            "slug": null,
+            "bytes": 22695,
+            "tokensEstimated": 5674,
+            "vendored": false,
+            "license": "MIT structure; rule VALUES from two Apache-2.0 upstreams (nexu-io/open-design and google-labs-code/stitch-skills) — see its own `attribution` block, and every rule's `source` field"
+          }
         ],
         "whyReadmeWasNotRewritten": "Task 30 proposed rewriting upstream's README for our paths. It was vendored unmodified instead: byte-comparability against upstream is the reason packs/ is .prettierignore'd, and editing the one file that documents the axis would forfeit it for the file most likely to drift. The corrections a reader needs — `pnpm lint:craft` is `scripts/check-craft-references.mjs` here, there is no daemon prompt-composer, `data-od-id` is an upstream desktop-app concern — are in craft/XX-STACK-NOTES.md, which is clearly ours.",
         "optIn": {
@@ -293,18 +388,63 @@
           "boundSkills": 12,
           "unboundSkills": 19,
           "bindings": {
-            "blog-post": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
-            "dashboard": ["state-coverage", "accessibility-baseline", "laws-of-ux"],
-            "digital-eguide": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
-            "docs-page": ["typography", "typography-hierarchy", "typography-hierarchy-editorial", "rtl-and-bidi"],
-            "finance-report": ["rtl-and-bidi"],
-            "gamified-app": ["state-coverage", "animation-discipline"],
-            "hr-onboarding": ["accessibility-baseline"],
-            "kanban-board": ["state-coverage", "laws-of-ux"],
-            "mobile-app": ["state-coverage", "animation-discipline"],
-            "mobile-onboarding": ["state-coverage", "animation-discipline", "accessibility-baseline", "form-validation", "laws-of-ux"],
-            "pricing-page": ["laws-of-ux"],
-            "saas-landing": ["typography", "color", "anti-ai-slop", "laws-of-ux"]
+            "blog-post": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "dashboard": [
+              "state-coverage",
+              "accessibility-baseline",
+              "laws-of-ux"
+            ],
+            "digital-eguide": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "docs-page": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "finance-report": [
+              "rtl-and-bidi"
+            ],
+            "gamified-app": [
+              "state-coverage",
+              "animation-discipline"
+            ],
+            "hr-onboarding": [
+              "accessibility-baseline"
+            ],
+            "kanban-board": [
+              "state-coverage",
+              "laws-of-ux"
+            ],
+            "mobile-app": [
+              "state-coverage",
+              "animation-discipline"
+            ],
+            "mobile-onboarding": [
+              "state-coverage",
+              "animation-discipline",
+              "accessibility-baseline",
+              "form-validation",
+              "laws-of-ux"
+            ],
+            "pricing-page": [
+              "laws-of-ux"
+            ],
+            "saas-landing": [
+              "typography",
+              "color",
+              "anti-ai-slop",
+              "laws-of-ux"
+            ]
           },
           "bindingProvenance": "Every binding above is upstream's at dceac12, for the same slug, transcribed unchanged. saas-landing's pre-existing list gained `laws-of-ux` to match. The 19 unbound skills have no upstream binding and were left unbound rather than guessed — absence is a decision here, the way packs/rules/coverage.json records explicit empty entries. Note these bindings are resolved against SKILL.md bodies roughly three months behind upstream; taking the binding line without the rest of the drift is deliberate.",
           "resolution": "Selection is a budget decision against the target lane's context window, surfaced in the agent's reasoning. Nothing in the MCP server injects craft sections — the same position packs/rules takes with nano/mini/full.",
@@ -384,5 +524,22 @@
     "sharedDesignSystemsTree": "0fdec1613e72c752e9c278a38d94c6081ab987c5",
  "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: upstream's `` (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
     "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), git hash-object over all 304 vendored files, match-counted against every historical state of upstream's design-systems/, skills/, and design-templates/ trees."
-  }
+  },
+  "knownContentDefects": [
+    {
+      "id": "declared-text-on-surface-contrast",
+      "severity": "real defect in shipped content",
+      "affects": [
+        "design-systems/bold/",
+        "design-systems/pacman/",
+        "design-systems/energetic/"
+      ],
+      "finding": "Each declares a Text token and a Surface token, and its own prose instructs pairing them — bold says 'Keep body copy on Text (#111827) for legibility' while 'Use Surface (#111111) for large backgrounds'. Measured WCAG AA contrast: bold 1.06:1, pacman 1.18:1, energetic 2.11:1. AA requires 4.5:1 for body text, so an agent following the file produces unreadable output.",
+      "cause": "Upstream generator defect, not ours. All three came in with the 57-file Schema-B batch from nexu-io/open-design; the dark themes kept a light-theme Text default. Verified against our vendored bytes, so re-vendoring may or may not carry the fix.",
+      "detectedBy": "Manual WCAG computation over the declared Text/Surface pair, prompted by the google-labs-code/design.md review. Nothing in this repo checks it: design:golden covers 5 eval tasks and design:html-gate covers 67 generated artifacts — neither reads the 137 design systems.",
+      "status": "recorded, not fixed",
+      "whyNotFixed": "Editing vendored bytes destroys the byte-comparability the provenance record depends on (see separationMethod). Fixing needs either a recorded local-edit entry or an upstream fix. The durable answer is a design-system lint gate over declared pairs only — cross-producing role-bucketed tokens was measured at 52% false positives and must not be shipped.",
+      "reportUpstream": "https://github.com/nexu-io/open-design"
+    }
+  ]
 }
