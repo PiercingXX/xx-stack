@@ -377,3 +377,30 @@ test("handoff prompt with a revoked lease is deterministic and unchanged without
   assert.ok(first.includes("tsk-lease-002"));
   assert.ok(!plain.includes("Prior Lane's Claim"));
 });
+
+test("redactSecrets scrubs auth-scheme tokens that the assignment pass would strand", () => {
+  // Regression: SECRET_ASSIGNMENT_PATTERN treats `authorization` as a secret
+  // key and its value capture stops at the first space, so it consumed only
+  // the word "Bearer" and left the token in the clear. Anything not separately
+  // matched by SECRET_VALUE_PATTERNS (a JWT, an opaque vendor token) leaked
+  // into handoff and continuation prompts verbatim.
+  const leaky = [
+    "Authorization: Bearer eyJhbGciOiJI.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2QT4",
+    "authorization: bearer short1234567890abcdef",
+    "Proxy-Authorization: Bearer tok_live_9999abcd",
+    "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+  ];
+  for (const line of leaky) {
+    const out = redactSecrets(line);
+    assert.ok(
+      !/eyJ|short1234567890|tok_live_9999|dXNlcjpwYXNz/.test(out),
+      `token survived redaction: ${out}`
+    );
+    assert.match(out, /\[redacted-secret\]/);
+  }
+
+  // A credential LOCATION must still survive — a handoff has to be able to say
+  // where the secret lives without carrying its value.
+  const location = "token lives in ~/.hermes/config.yaml";
+  assert.equal(redactSecrets(location), location);
+});

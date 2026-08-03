@@ -111,26 +111,115 @@ test("compactOutput collapseRepeats dropped line count equals input lines minus 
   );
 });
 
+// ---------------------------------------------------------------------------
+// MCP-5: compactOutput violated its own contract three ways — it overran the
+// cap by `4 + digits(dropped)` (24 chars reserved for a 28+ char marker), it
+// reported `length - cap` as the drop rather than what was actually removed,
+// and for any cap too small to hold a marker it returned the FULL UNCAPPED
+// string with an empty `dropped` list.
+// ---------------------------------------------------------------------------
+
+/** The bytes actually removed, derived from the output rather than the report. */
+function actualBytesRemoved(input: string, output: string): number {
+  const marker = output.match(/\n\.\.\. \[truncated \d+ bytes\] \.\.\.\n/);
+  const retained = marker ? output.length - marker[0].length : output.length;
+  return input.length - retained;
+}
+
+function reportedBytesRemoved(dropped: string[]): number {
+  const msg = dropped.find((d) => d.startsWith("truncated "));
+  assert.ok(msg, "truncation must be reported in `dropped`");
+  const m = msg!.match(/^truncated (\d+) bytes/);
+  assert.ok(m, "truncation message should contain a byte count");
+  return parseInt(m![1]!, 10);
+}
+
 test("compactOutput truncation reported dropped bytes match actual bytes removed", () => {
   // A long enough input that truncation kicks in.
   const input = "A\n".repeat(200) + "B\n".repeat(200);
   const cap = 500;
   const result = compactOutput(input, { cap });
 
-  // Truncation should have occurred.
-  const truncMsg = result.dropped.find((d) => d.startsWith("truncated"));
-  assert.ok(truncMsg, "should report truncation");
-
-  // Parse the reported truncated byte count.
-  const m = truncMsg!.match(/^truncated (\d+) bytes/);
-  assert.ok(m, "truncation message should contain byte count");
-  const reportedTruncated = parseInt(m[1]!, 10);
-
-  // The reported truncated bytes should equal input length minus cap
-  // (the cap determines how many bytes are kept; the rest are truncated).
-  assert.equal(
-    reportedTruncated,
-    input.length - cap,
-    "reported truncated bytes should equal input length minus cap"
+  assert.ok(
+    result.output.length <= cap,
+    `output ${result.output.length} must not exceed cap ${cap}`
   );
+  assert.equal(
+    reportedBytesRemoved(result.dropped),
+    actualBytesRemoved(input, result.output),
+    "reported truncated bytes must equal the bytes actually removed"
+  );
+});
+
+test("compactOutput never exceeds its cap (MCP-5: cap 1000 on 5000 chars produced 1008)", () => {
+  const input = "x".repeat(5000);
+  const cap = 1000;
+  const result = compactOutput(input, { cap });
+
+  assert.equal(
+    result.output.length <= cap,
+    true,
+    `output was ${result.output.length} chars for a cap of ${cap}`
+  );
+  assert.ok(result.output.includes("[truncated"), "a cap this size still carries the marker");
+  assert.equal(
+    reportedBytesRemoved(result.dropped),
+    actualBytesRemoved(input, result.output),
+    "the report must not understate the drop (it reported 4000 while dropping 4024)"
+  );
+});
+
+test("compactOutput honors a small cap instead of returning the input uncapped", () => {
+  const input = "x".repeat(5000);
+
+  // cap 50 was inside the old `tailBytes <= 0` dead zone: the guard skipped
+  // the whole block and returned all 5000 chars with dropped: [].
+  const fifty = compactOutput(input, { cap: 50 });
+  assert.ok(fifty.output.length <= 50, `cap 50 must be honored — got ${fifty.output.length} chars`);
+  assert.ok(fifty.dropped.length > 0, "truncation is never silent");
+  assert.equal(reportedBytesRemoved(fifty.dropped), actualBytesRemoved(input, fifty.output));
+
+  // A cap smaller than the marker itself has no room for one, so it
+  // hard-truncates — but still reports the drop.
+  const tiny = compactOutput(input, { cap: 20 });
+  assert.equal(tiny.output.length, 20, "a cap below the marker width is still a hard bound");
+  assert.ok(!tiny.output.includes("[truncated"), "no room for a marker at this cap");
+  assert.equal(reportedBytesRemoved(tiny.dropped), input.length - 20);
+});
+
+test("compactOutput is exact at the cap where the truncation marker first fits", () => {
+  const input = "x".repeat(5000);
+  // The marker is `\n... [truncated NNNN bytes] ...\n` — 28 chars plus the
+  // digits of the reported drop, so 32 chars here. A marker is only worth
+  // emitting once at least one character of content survives beside it, which
+  // makes cap 33 the boundary: 32 for the marker + 1 retained char.
+  const boundary = 33;
+  for (let cap = boundary - 3; cap <= boundary + 3; cap++) {
+    const result = compactOutput(input, { cap });
+    assert.ok(result.output.length <= cap, `cap ${cap}: output was ${result.output.length} chars`);
+    assert.ok(result.dropped.length > 0, `cap ${cap}: truncation must be reported`);
+    assert.equal(
+      reportedBytesRemoved(result.dropped),
+      actualBytesRemoved(input, result.output),
+      `cap ${cap}: reported drop must equal the actual drop`
+    );
+  }
+
+  // Below the boundary there is no marker; at and above it there is.
+  assert.ok(!compactOutput(input, { cap: boundary - 1 }).output.includes("[truncated"));
+  assert.ok(compactOutput(input, { cap: boundary }).output.includes("[truncated"));
+  assert.equal(compactOutput(input, { cap: boundary }).output.length, boundary);
+});
+
+test("compactOutput caps every size from 1 upward without overrunning or misreporting", () => {
+  const input = "abcdefghij".repeat(50); // 500 chars
+  for (let cap = 1; cap <= 200; cap++) {
+    const result = compactOutput(input, { cap });
+    assert.ok(result.output.length <= cap, `cap ${cap}: output ${result.output.length}`);
+    assert.equal(
+      reportedBytesRemoved(result.dropped),
+      actualBytesRemoved(input, result.output),
+      `cap ${cap}: reported drop must equal the actual drop`
+    );
+  }
 });

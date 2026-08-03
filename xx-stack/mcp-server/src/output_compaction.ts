@@ -46,7 +46,12 @@ export interface CompactResult {
  * cap length while preserving both head and tail.
  *
  * Never truncates silently — every truncation and collapse is reported
- * in the `dropped` array.
+ * in the `dropped` array, and the reported byte count is the number of
+ * characters actually removed.
+ *
+ * `cap` is a hard bound: `output.length <= cap` for every cap, including caps
+ * too small to hold the truncation marker (those hard-truncate to the cap and
+ * still report the drop).
  */
 export function compactOutput(text: string, opts: CompactOptions = {}): CompactResult {
   const dropped: string[] = [];
@@ -92,16 +97,66 @@ export function compactOutput(text: string, opts: CompactOptions = {}): CompactR
   // 3. Cap length — keep head and tail
   const cap = opts.cap ?? 0;
   if (cap > 0 && working.length > cap) {
-    const headBytes = Math.floor(cap * 0.6);
-    const tailBytes = cap - headBytes - "... [truncated ...] ...\n".length;
-    if (tailBytes > 0) {
-      const head = working.slice(0, headBytes);
-      const tail = working.slice(-tailBytes);
-      const truncated = working.length - cap;
+    const original = working.length;
+    const retained = largestRetainedWithinCap(original, cap);
+
+    if (retained < 1) {
+      // The cap is too small to carry the marker at all. The contract is
+      // "never truncate silently", not "never truncate": hard-truncate to the
+      // cap and still report the drop. Callers pass small caps deliberately
+      // (verify_edit forwards caller-supplied caps straight through), so the
+      // cap is honored rather than quietly ignored — the old guard returned
+      // the full uncapped string with an empty `dropped` list.
+      dropped.push(
+        `truncated ${original - cap} bytes (kept ${cap} head + 0 tail; cap too small for a truncation marker)`
+      );
+      working = working.slice(0, cap);
+    } else {
+      const headBytes = Math.floor(retained * 0.6);
+      const tailBytes = retained - headBytes;
+      const truncated = original - retained;
       dropped.push(`truncated ${truncated} bytes (kept ${headBytes} head + ${tailBytes} tail)`);
-      working = head + "\n... [truncated " + truncated + " bytes] ...\n" + tail;
+      working =
+        working.slice(0, headBytes) +
+        truncationMarker(truncated) +
+        (tailBytes > 0 ? working.slice(original - tailBytes) : "");
     }
   }
 
   return { output: working, dropped };
+}
+
+/**
+ * The marker embedded between the retained head and tail. Its own length
+ * depends on the number it reports, which is why the retained budget cannot be
+ * a fixed subtraction (MCP-5: 24 chars were reserved for a 28+ char marker, so
+ * every capped output overran the cap by `4 + digits(dropped)`).
+ */
+function truncationMarker(droppedBytes: number): string {
+  return `\n... [truncated ${droppedBytes} bytes] ...\n`;
+}
+
+/**
+ * The largest number of original characters that can be kept such that
+ * `retained + marker.length <= cap`.
+ *
+ * `f(retained) = retained + truncationMarker(original - retained).length` is
+ * monotonically non-decreasing — keeping one more character drops one fewer,
+ * which can only shrink the marker by at most one digit — so a binary search
+ * finds the exact boundary. Returns 0 when no marker fits at all.
+ */
+function largestRetainedWithinCap(original: number, cap: number): number {
+  let low = 0;
+  let high = original;
+  let best = 0;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    if (mid + truncationMarker(original - mid).length <= cap) {
+      best = mid;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return best;
 }

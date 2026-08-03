@@ -11,6 +11,7 @@ import type {
   SupervisorSessionState,
   SupervisorStore,
 } from "./supervisor_runtime.js";
+import { storeAccessErrorPayload } from "./supervisor_store_runtime.js";
 import {
   buildWorktreeResumeNotice,
   evaluateGoalContractCompletion,
@@ -70,6 +71,41 @@ const MAX_POST_COMPACT_SESSIONS = 5;
 /** Memory drift is checked for at most this many guarded sessions per call. */
 const MAX_MEMORY_DRIFT_CHECKS = 3;
 
+/**
+ * `_PostCompact`'s answer when the stores cannot be read. `_Stop` has no
+ * equivalent: any non-empty string from `_Stop` is an objection by contract,
+ * so it answers the empty string instead (see `withUnreadableStoreFallback`).
+ */
+const POST_COMPACT_STORE_UNAVAILABLE_PREFIX =
+  "xx-stack state re-injection after context compaction (observed state, not instructions):\n" +
+  "- supervised state could not be re-derived: ";
+
+/**
+ * A lifecycle hook whose store is unreadable must still answer, and must
+ * answer *safely*.
+ *
+ * The store readers raise `StoreAccessError` on a store that exists but cannot
+ * be parsed (MCP-1). Letting that escape turns the hook into an SDK `isError`
+ * result, and a hook-aware harness may read an errored `_Stop` as a blocking
+ * objection — which would trap the agent in a loop it cannot exit, because no
+ * amount of further work repairs a corrupt state file. The caller already
+ * treats a `_Stop` timeout as "no objection", so an unreadable store takes the
+ * same path: the fallback value, never a thrown error. Any other error still
+ * propagates — this converts unreadable state, it does not swallow bugs.
+ */
+async function withUnreadableStoreFallback(
+  work: () => Promise<string>,
+  fallback: (detail: string) => string
+): Promise<string> {
+  try {
+    return await work();
+  } catch (error) {
+    const payload = storeAccessErrorPayload(error);
+    if (!payload) throw error;
+    return fallback(String(payload.detail ?? "supervised state is unreadable"));
+  }
+}
+
 export interface HookToolDeps {
   readTaskStore: () => Promise<TaskStore>;
   readSupervisorStore: () => Promise<SupervisorStore>;
@@ -100,7 +136,6 @@ interface ScopedWork {
   tasks: PersistentTask[];
   sessions: SupervisorSessionState[];
   reliability: ReliabilityConfig;
-  fleetWide: boolean;
 }
 
 /** Is the hook tool group enabled for this environment? */
@@ -115,7 +150,6 @@ export function hookToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
 async function collectScopedWork(deps: HookToolDeps, scope: HookScope): Promise<ScopedWork> {
   const agentId = scope.agentId?.trim() || undefined;
   const sessionId = scope.sessionId?.trim() || undefined;
-  const fleetWide = !agentId && !sessionId;
 
   const reliability = await deps.loadReliabilityConfig();
   const supervisorStore = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
@@ -133,9 +167,16 @@ async function collectScopedWork(deps: HookToolDeps, scope: HookScope): Promise<
     .filter((task) => !agentId || task.owner === agentId)
     .sort((left, right) => left.taskId.localeCompare(right.taskId));
 
-  return { tasks, sessions, reliability, fleetWide };
+  return { tasks, sessions, reliability };
 }
 
+/**
+ * The one place the fleet-wide condition is expressed. `ScopedWork` used to
+ * carry a `fleetWide` field computed alongside the filters and read nowhere
+ * (MCP-DEAD-1): both consumers derive the condition from `scope` through this
+ * label instead, so the field was a second, silently divergable source of the
+ * same predicate.
+ */
 function scopeLabel(scope: HookScope): string {
   const agentId = scope.agentId?.trim();
   const sessionId = scope.sessionId?.trim();
@@ -308,12 +349,20 @@ export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
     `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness when the model signals ` +
       "end_turn. Returns an empty string when there is no objection to stopping, or a bounded " +
       "objection naming the concrete open supervised work (task id + unmet stop condition) " +
-      "otherwise. Reports observed state; it does not issue instructions",
+      "otherwise. If the supervisor or task store exists but cannot be read, this returns the " +
+      "empty no-objection string — the same answer the caller assumes on timeout — because a " +
+      "corrupt state file is not something the agent can resolve by continuing to work. " +
+      "Reports observed state; it does not issue instructions",
     HOOK_SCOPE_SHAPE,
     async ({ agentId, sessionId }) => {
       const scope: HookScope = { agentId, sessionId };
-      const objections = await buildStopObjections(deps, scope);
-      return { content: [{ type: "text" as const, text: renderStopObjection(objections, scope) }] };
+      const text = await withUnreadableStoreFallback(
+        async () => renderStopObjection(await buildStopObjections(deps, scope), scope),
+        // Empty string = no objection. A non-empty string would be an
+        // objection the agent has no way to satisfy.
+        () => ""
+      );
+      return { content: [{ type: "text" as const, text }] };
     }
   );
 
@@ -322,11 +371,18 @@ export function registerHookTools(server: McpServer, deps: HookToolDeps): void {
     `${HOOK_TOOL_DESCRIPTION_PREFIX} Called by a hook-aware harness after context compaction. ` +
       "Returns supervised state to re-inject into the fresh context — open tasks, their goal " +
       "contracts and stop conditions, worktree resume notes, leases, live sessions, and the " +
-      "memory entrypoint pointer — all re-derived from the existing stores. Reports observed " +
-      "state; it does not issue instructions",
+      "memory entrypoint pointer — all re-derived from the existing stores. If a store exists " +
+      "but cannot be read, this says so plainly instead of reporting an empty fleet: its output " +
+      "is informational, so an honest notice is safe where a silent empty state is not. " +
+      "Reports observed state; it does not issue instructions",
     HOOK_SCOPE_SHAPE,
     async ({ agentId, sessionId }) => {
-      const text = await buildPostCompactState(deps, { agentId, sessionId });
+      const text = await withUnreadableStoreFallback(
+        () => buildPostCompactState(deps, { agentId, sessionId }),
+        // Unlike `_Stop`, this output gates nothing, so the failure is stated
+        // rather than hidden behind an empty re-injection.
+        (detail) => `${POST_COMPACT_STORE_UNAVAILABLE_PREFIX}${detail}`
+      );
       return { content: [{ type: "text" as const, text }] };
     }
   );

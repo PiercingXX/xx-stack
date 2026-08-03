@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { emitLifecycleHooks } from "./execution_policy.js";
 import { guardStoreAccess } from "./supervisor_store_runtime.js";
+import { filterTasks } from "./task_list_runtime.js";
 import {
   ANTI_REWARD_HACKING_CLAUSE,
   buildResumeDirective,
@@ -463,28 +464,13 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
     },
     async ({ status, tag, owner, includeCompleted, limit }) =>
       guardStoreAccess(() =>
-        withTaskStoreLock(async () => {
-          const store = await readTaskStore();
-          const tagFilter = tag?.trim().toLowerCase();
-          const ownerFilter = owner?.trim().toLowerCase();
-
-          const tasks = Object.values(store.tasks)
-            .filter((task) => !status || task.status === status)
-            .filter((task) => includeCompleted === true || !TASK_TERMINAL_STATUSES.has(task.status))
-            .filter(
-              (task) =>
-                !tagFilter || task.tags.some((taskTag) => taskTag.toLowerCase() === tagFilter)
-            )
-            .filter((task) => !ownerFilter || (task.owner ?? "").toLowerCase() === ownerFilter)
-            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-
-          const capped = tasks.slice(0, limit ?? 100);
-          return jsonContent({
-            total: tasks.length,
-            returned: capped.length,
-            tasks: capped,
-          });
-        })
+        withTaskStoreLock(async () =>
+          // MCP-DUP-3: the filter/sort/cap shaping is the shared runtime the
+          // `xx tasks list` CLI path calls, not a second copy of it.
+          jsonContent(
+            filterTasks(await readTaskStore(), { status, tag, owner, includeCompleted, limit })
+          )
+        )
       )
   );
 }

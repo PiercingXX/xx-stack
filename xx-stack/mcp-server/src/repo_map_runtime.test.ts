@@ -240,11 +240,51 @@ test("a hostile tracked filename cannot execute shell during a repo map", async 
     const mapped = new Set(result.files.map((f) => f.path));
     assert.ok(mapped.has("ordinary.ts"));
     for (const name of hostileNames) {
-      // `git ls-files` C-quotes a path containing a literal double quote, so
-      // that one name never reaches getGitTimestamp as a usable path at all
-      // (a separate, pre-existing discovery gap — not a shell-safety hole).
-      if (name.includes('"')) continue;
       assert.ok(mapped.has(name), `${name} should still appear in the repo map`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `git ls-files` applies C quoting to any path containing a double quote, a
+// backslash, or a non-ASCII byte — `quote".ts` came back as `"quote\".ts"`,
+// a string naming no real file. Every such path was then dropped from the map
+// with nothing reported. `-z` with NUL splitting closes it.
+// ---------------------------------------------------------------------------
+
+test("filenames git would C-quote are still discovered, not silently dropped", async () => {
+  await withTempRepo(async (root) => {
+    const quotedNames = [
+      'quote".ts', // literal double quote
+      "back\\slash.ts", // literal backslash
+      "café.ts", // non-ASCII, Latin-1 range
+      "日本語.ts", // non-ASCII, multi-byte
+      "emoji-🚀.ts", // non-ASCII, astral plane
+      "tab\tchar.ts", // control character
+    ];
+
+    for (const name of quotedNames) {
+      await writeFile(join(root, name), "export const x = 1;\n", "utf8");
+    }
+    await writeFile(join(root, "plain.ts"), "export const y = 2;\n", "utf8");
+
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("git", ["add", "-A"], { cwd: root, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "quotable filenames"], { cwd: root, stdio: "ignore" });
+
+    // Prove the premise: git really does quote these on the default output.
+    const quotedListing = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" });
+    assert.ok(
+      quotedListing.includes('\\"') || quotedListing.includes("\\3"),
+      "fixture must actually trigger git's C quoting"
+    );
+
+    const result = await buildRepoMap({ root, tokenBudget: 8000 });
+    const mapped = new Set(result.files.map((f) => f.path));
+
+    assert.ok(mapped.has("plain.ts"), "the ordinary file is the control");
+    for (const name of quotedNames) {
+      assert.ok(mapped.has(name), `${name} must appear in the repo map, not be quoted away`);
     }
   });
 });

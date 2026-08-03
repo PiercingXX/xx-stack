@@ -125,11 +125,19 @@ function simpleMatch(path: string, pattern: string): boolean {
 /**
  * Get all tracked files in a git repo, respecting ignore patterns.
  * Uses `git ls-files` for speed and correctness.
+ *
+ * `-z` is not optional. Without it `git ls-files` applies C quoting to any
+ * path containing a double quote, a backslash, a control character, or a
+ * non-ASCII byte, emitting `"quote\".ts"` or `"caf\303\251.ts"` — a string
+ * that does not name a real file. Those paths then failed every subsequent
+ * `readFileSync`/`git log` and were silently dropped from the repo map, so a
+ * repo with non-ASCII filenames had holes in it that nothing reported. With
+ * `-z` git emits raw NUL-terminated paths and quoting never applies.
  */
 async function discoverFiles(root: string, ignorePatterns: string[]): Promise<string[]> {
   let output: string;
   try {
-    output = execSync("git ls-files --cached --others --exclude-standard", {
+    output = execSync("git ls-files -z --cached --others --exclude-standard", {
       cwd: root,
       encoding: "utf8",
       timeout: 10000,
@@ -140,7 +148,8 @@ async function discoverFiles(root: string, ignorePatterns: string[]): Promise<st
     return discoverFilesByWalk(root, ignorePatterns);
   }
 
-  const allFiles = output.trim().split("\n").filter(Boolean);
+  // NUL-separated, so a filename may legally contain a newline.
+  const allFiles = output.split("\0").filter(Boolean);
   // Filter through our ignore patterns (git's --exclude-standard already
   // handles .gitignore, but we also need .xxignore)
   return allFiles.filter((f) => !isIgnored(f, ignorePatterns));

@@ -11,12 +11,47 @@ import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import { revokeSessionTaskLeases } from "./task_runtime.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
+
+/**
+ * Identifiers accepted at the tool boundary.
+ *
+ * Session and agent ids are not opaque: `log_worker` derives a per-session
+ * `.jsonl` path from the session id and the memory runtime derives a memory
+ * entrypoint path from the agent id. Both sanitize defensively (MCP-7), so a
+ * traversal is already neutralized wherever a path is built — but neutralizing
+ * a value is weaker than never accepting it. Constraining the id here makes
+ * `../../../tmp/x` unrepresentable: it is rejected by the schema before any
+ * handler, store key, or path builder sees it, and any future path builder
+ * inherits the guarantee without having to remember the sanitizer.
+ *
+ * Deliberately narrow: letters, digits, `.`, `_`, `-`, 1-128 chars. Whitespace
+ * padding and the empty string are rejected rather than trimmed away.
+ */
+const SAFE_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+/**
+ * The pattern alone still admits `.`, `..`, and `...`, which are exactly the
+ * traversal primitives — a path segment must carry real content, so at least
+ * one alphanumeric character is required.
+ */
+function safeId(description: string): z.ZodType<string, string> {
+  return z
+    .string()
+    .regex(SAFE_ID_PATTERN, "must be 1-128 characters of letters, digits, '.', '_' or '-'")
+    .refine((value) => /[A-Za-z0-9]/.test(value), {
+      message: "must contain at least one letter or digit; dot-only identifiers are rejected",
+    })
+    .describe(description);
+}
+
 export function registerSupervisorSessionTools(server: McpServer, deps: SupervisorToolDeps): void {
   server.tool(
     "supervisor_start_session",
     "Start or restart a supervised orchestrator session with persisted fallback state",
     {
-      sessionId: z.string().optional().describe("Optional supervisor session ID"),
+      sessionId: safeId(
+        "Optional supervisor session ID; letters/digits/._- only, generated when omitted"
+      ).optional(),
       description: z.string().describe("Task description this session should supervise"),
       preferredHost: z.string().optional().describe("Preferred host ID for primary attempt"),
       preferredModel: z.string().optional().describe("Preferred model for primary attempt"),
@@ -30,10 +65,9 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
       forceRestart: z.boolean().optional().describe("Replace an existing session with the same ID"),
       memorySync: z
         .object({
-          agentId: z
-            .string()
-            .min(1)
-            .describe("Agent identifier to enforce memory snapshot sync on completion"),
+          agentId: safeId(
+            "Agent identifier to enforce memory snapshot sync on completion; letters/digits/._- only"
+          ),
           scope: z
             .enum(["user", "project", "local"])
             .optional()
@@ -167,7 +201,7 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
     "supervisor_record_event",
     "Record canonical session lifecycle events (status, error, stop, and output updates) and apply transition logic",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
+      sessionId: safeId("Supervisor session ID"),
       eventType: z
         .enum([
           "session.status.busy",
@@ -253,7 +287,7 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
     "supervisor_tick",
     "Tick a supervised session. Detect stalls, apply cooldown/backoff, and switch to fallback route when needed",
     {
-      sessionId: z.string().describe("Supervisor session ID to tick"),
+      sessionId: safeId("Supervisor session ID to tick"),
       progressObserved: z
         .boolean()
         .optional()
@@ -647,7 +681,7 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
     "supervisor_abort_session",
     "Abort a supervised session and mark it as interrupted",
     {
-      sessionId: z.string().describe("Supervisor session ID"),
+      sessionId: safeId("Supervisor session ID"),
       reason: z.string().optional().describe("Optional abort reason"),
     },
     async ({ sessionId, reason }) =>
