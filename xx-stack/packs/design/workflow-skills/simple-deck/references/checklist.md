@@ -13,6 +13,10 @@ Run before emitting `<artifact>`. P0 must pass.
 - [ ] **The 5-rule nav script is intact.** Don't replace `scroller()` with `document.body`. Don't drop one of the dual capture-phase listeners. Don't use `scrollIntoView()`. (The seed has the working version — leave it.)
 - [ ] **No `scrollIntoView()` calls.** Breaks iframe boundaries.
 - [ ] **`data-screen-label` on every slide** (e.g. `"01 Cover"`, `"05 Big stat"`). Used by chat for "edit slide 5".
+- [ ] **No production control was rendered as content.** Re-read every headline, eyebrow, lead, stat caption, table cell, `alt` string and `data-screen-label` and ask: does this describe the deck, or the subject? Instructions from the brief about charts, layout, styling, positioning or slide order are production controls — they choose the markup and are then spent. A slide titled "make slide 4 a bar chart" is the exact failure this line exists to catch.
+- [ ] **Layout matches the shape of the content.** One number → big stat, not a paragraph. Parallel figures → three-point row. Ordered stages → pipeline. Two states → before/after. A real attributed quote → quote slide. Nothing chosen because it looked good empty.
+- [ ] **No image frame without an image.** If the source supplied no picture, `.ph-img` does not appear. A reserved frame for an asset that will never arrive is filler by another name.
+- [ ] **Speaker notes, if present, are plain text.** No markdown — a notes pane renders `**bold**` and `- ` literally.
 - [ ] **No invented metrics.** Numbers come from the brief or a real source. "10× faster" / "99.9% uptime" without source = remove.
 - [ ] **No emoji icons / no purple gradients / no rounded boxes with left-border accent.** Anti-slop trio.
 

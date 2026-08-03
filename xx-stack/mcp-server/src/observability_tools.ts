@@ -113,8 +113,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "check_health",
     category: "observability",
-    description: "Ping configured model endpoints and report reachability and latency",
-    keywords: ["latency", "health", "ping", "availability"],
+    description:
+      "Ping configured model endpoints and report reachability, latency, and — where the host can be asked — the models it currently has loaded and its VRAM pressure",
+    keywords: ["latency", "health", "ping", "availability", "resident", "loaded", "vram", "memory"],
   },
   {
     name: "list_models",
@@ -398,7 +399,10 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
 
   server.tool(
     "check_health",
-    "Check health and latency of all configured model endpoints in the platform registry",
+    "Check health and latency of all configured model endpoints in the platform registry. " +
+      "Hosts that support resident-model inspection (Ollama runtimes in the current registry) " +
+      "also report residentModels and memoryPressure; the absence of those fields means the " +
+      "host cannot be asked, not that it is idle.",
     {},
     // MCP-DUP-3: the same shaping `xx diagnose` renders, from one module.
     async () => jsonContent(await diagnoseHosts(await deps.loadRegistry()))

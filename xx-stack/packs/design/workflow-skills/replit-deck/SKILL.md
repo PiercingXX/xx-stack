@@ -147,8 +147,21 @@ If any `style="--accent:..."` or theme override appears on individual slides, re
 
 One sentence before the artifact. Stop after `</artifact>`.
 
+## Content vs production controls
+
+Everything the deck renders is **audience-facing**. The brief also carries **production controls** — instructions about how the deck should be built: "make slide 4 a bar chart", "use the dark theme", "six metrics across", "put the photo on the right".
+
+A production control is honored by **what you build**, never by **what you write**. It picks a theme, a layout from `references/layouts.md`, a primitive from `references/components.md` — and then it is spent. It never becomes a title, an eyebrow, a `.lead`, a `.num-label`, a table cell, an `alt` string, a `data-screen-label`, or a speaker note.
+
+The failure this prevents is literal: the user says "make slide 4 a bar chart" and slide 4 ships with the headline *Make slide 4 a bar chart*. Test every string before you render it — if it describes the artifact rather than the subject, it is a control. Consume it and drop it.
+
+Layout follows the shape of the content, not preference. `references/components.md` → *Content-type cross-reference* is the mapping: a single number gets `.num` alone, a set of metrics gets the `grid-6` row, an attributed quote gets the display-serif pull-quote. If the source supplied no image, build no image slide — `gallery-plate` and the bevel photo grid exist for decks that have photography, not as a frame to reserve for one that never arrives.
+
+If speaker notes are ever added to a deck, they are **plain text**. No markdown — a notes pane does not render it, so `**bold**` and `- ` arrive as literal characters.
+
 ## Hard rules
 
+- **No production control is ever rendered.** Chart, layout, styling and positioning instructions from the brief select markup; they never appear as slide text. See "Content vs production controls".
 - **One theme per deck.** `data-theme` set on `<body>` — never override per-slide.
 - **Numbers are real or absent.** No invented metrics. Use `—` or a grey block as an honest placeholder.
 - **Display face follows theme.** helix/world-dark/world-mint/bluehouse use the sans Display; holm/vance/atlas use the serif Display; bevel uses the Y2K display. Do not swap. (Authoritative source: the `--font-display` token of each theme in `assets/template.html` — if this list ever disagrees with the template, the template wins.)

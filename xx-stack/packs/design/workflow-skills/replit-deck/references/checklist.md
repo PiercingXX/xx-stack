@@ -28,6 +28,13 @@ grep -nE '@import|<link.*font' index.html && echo FAIL
 - [ ] Deck chrome is present exactly once: `.deck-progress`, `.deck-counter`, `.deck-hint`.
 - [ ] The nav `<script>` is unchanged from the seed.
 
+### Content firewall
+
+- [ ] **No production control was rendered as content.** Re-read every title, eyebrow, `.lead`, `.num-label`, table cell, `alt` string and `data-screen-label` and ask: does this describe the deck, or the subject? Instructions from the brief about charts, layout, theme, styling, positioning or slide order are production controls — they choose the markup and are then spent. A slide titled "make slide 4 a bar chart" is the exact failure this line exists to catch.
+- [ ] **Layout matches the shape of the content**, per *Content-type cross-reference* in `components.md`. A single number → `.num` alone. A set of metrics → the `grid-6` row. An attributed quote → the display-serif pull-quote.
+- [ ] **No image slide without images.** If the brief supplied no photography, `gallery-plate` and the bevel photo grid do not appear. A reserved frame for an asset that never arrives is filler by another name.
+- [ ] **Speaker notes, if present, are plain text.** No markdown — a notes pane renders `**bold**` and `- ` literally.
+
 ### Honesty
 
 - [ ] No invented metrics. Any number displayed is from the user's brief, or labeled as illustrative.

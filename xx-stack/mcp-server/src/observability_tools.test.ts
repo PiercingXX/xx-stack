@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { AddressInfo } from "node:net";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -476,4 +478,107 @@ test("§11.1: filtering by the new categories returns those tools and only those
   assert.ok(!names.includes("build_repo_map"), "a repo map is not observability");
   assert.ok(!names.includes("verify_edit"), "a lint/test runner is not observability");
   assert.ok(names.includes("check_health"), "the genuine observability tools are still there");
+});
+
+// --- check_health reports what a host is actually holding -----------------
+
+/**
+ * The pressure numbers `monitor-memory` computes were invisible to every MCP
+ * caller. `check_health` now surfaces them — but only for a host that can be
+ * asked, and never as a guess: a host without
+ * `capabilities.supportsResidentModelInspection` gets no `residentModels` key
+ * at all, which is a different statement from "loaded nothing".
+ *
+ * Driven through the registered tool with no injection, against a stub Ollama
+ * on loopback, so the real probe path is what runs.
+ */
+async function startStubOllama(): Promise<{ endpoint: string; close: () => Promise<void> }> {
+  const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const body =
+      req.url === "/api/ps"
+        ? { models: [{ name: "qwen3:30b", size: 20 * 1073741824, size_vram: 8 * 1073741824 }] }
+        : { models: [{ name: "qwen3:30b" }] };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(body));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  return {
+    endpoint: `http://127.0.0.1:${port}`,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+test("check_health reports resident models and memory pressure for an inspectable host", async () => {
+  const stub = await startStubOllama();
+  try {
+    const registry = {
+      version: 1,
+      selectionPolicy: { defaultOrder: ["local"], rules: [] },
+      tiers: [
+        {
+          id: "local",
+          label: "Local",
+          priority: 1,
+          hosts: [
+            {
+              id: "gpu-box",
+              label: "GPU box",
+              provider: "ollama",
+              endpoint: stub.endpoint,
+              capabilities: { endpointFamily: "ollama", supportsResidentModelInspection: true },
+              executionPolicy: { contextReservePercent: 25 },
+              hardware: { detected: { totalGpuVramGb: 24 } },
+              models: ["qwen3:30b"],
+            },
+            {
+              // Same stub endpoint, so it pings healthy too — the only
+              // difference is that nobody can ask it what it is holding.
+              id: "opaque-box",
+              label: "Opaque box",
+              provider: "sglang-remote",
+              endpoint: stub.endpoint,
+              capabilities: {
+                endpointFamily: "openai-compatible",
+                supportsResidentModelInspection: false,
+              },
+              hardware: { detected: { totalGpuVramGb: 24 } },
+              models: ["some-model"],
+            },
+          ],
+        },
+      ],
+    } as unknown as Registry;
+
+    const handlers: Record<string, Handler> = {};
+    registerObservabilityTools(
+      fakeServer((name, handler) => {
+        handlers[name] = handler;
+      }),
+      { loadRegistry: async () => registry } as never
+    );
+
+    const results = (await call(handlers.check_health!)) as Array<Record<string, any>>;
+    const byHost = new Map(results.map((entry) => [entry.host as string, entry]));
+
+    const gpu = byHost.get("gpu-box")!;
+    assert.equal(gpu.status, "healthy");
+    assert.deepEqual(gpu.residentModels, ["qwen3:30b"]);
+    // 24 GB card at a 25% reserve => 18 usable; 8 GB resident + 5 GB headroom.
+    assert.equal(gpu.memoryPressure.usableVramGb, 18);
+    assert.equal(gpu.memoryPressure.usedVramGb, 8);
+    assert.equal(gpu.memoryPressure.contextHeadroomGb, 5);
+    assert.equal(gpu.memoryPressure.estimatedFreeGb, 5);
+    assert.equal(gpu.memoryPressure.overload, false);
+
+    const opaque = byHost.get("opaque-box")!;
+    assert.equal(opaque.status, "healthy");
+    assert.ok(
+      !("residentModels" in opaque),
+      "an uninspectable host must not be described as holding nothing"
+    );
+    assert.ok(!("memoryPressure" in opaque));
+  } finally {
+    await stub.close();
+  }
 });

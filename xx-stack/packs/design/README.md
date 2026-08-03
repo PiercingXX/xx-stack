@@ -12,7 +12,7 @@ that these files stay byte-comparable against their upstreams.
 | `design-systems/` | 137 brand design systems, one `DESIGN.md` each | vendored |
 | `design-skills/` | 57 aesthetic styles, `SKILL.md` + `DESIGN.md` each | vendored |
 | `workflow-skills/` | 31 artifact workflow skills | vendored |
-| `craft/` | 11 brand-agnostic craft rulebooks + the anti-slop rule table | vendored (2 files authored here) |
+| `craft/` | 11 brand-agnostic craft rulebooks + the anti-slop rule table + one doctrine note | vendored (3 files authored here) |
 | `evals/golden-tasks/` | agent grading fixtures | authored here |
 | `scripts/` | catalog generator, the two design gates, and two checks | authored here |
 | `DESIGN-CATALOG.md` | generated index (`npm run design:catalog`) | generated here |
@@ -27,6 +27,12 @@ context tokens only for the sections it names — the same "smallest mechanism
 that changes the agent's decisions" principle `packs/rules` applies with its
 nano/mini/full tiers. Twelve of the 31 workflow skills are bound; the other 19
 are deliberately unbound. See [`craft/XX-STACK-NOTES.md`](craft/XX-STACK-NOTES.md).
+
+A twelfth shipped section, [`craft/design-intent.md`](craft/design-intent.md),
+is authored here and is **doctrine rather than a rulebook** — no gate reads it
+and no skill binds it. It states the theory behind
+`craft/anti-ai-slop-rules.json`'s 18 checkable rules, and records a dissent that
+bears on `UPSTREAM-BORROW-TODO.md` task 33.
 
 [`manifest.json`](manifest.json) is the machine-readable version of everything
 below, with a per-subtree `provenance` field.
@@ -44,20 +50,23 @@ itself carves out.
 | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | MIT, © 2026 VoltAgent | [`licenses/voltagent-awesome-design-md-MIT.txt`](licenses/voltagent-awesome-design-md-MIT.txt) | `design-systems/bmw-m/` only |
 | [referodesign/refero_skill](https://github.com/referodesign/refero_skill) | MIT, © 2026 Refero | [`licenses/referodesign-refero_skill-MIT.txt`](licenses/referodesign-refero_skill-MIT.txt) | nothing directly — second hop of the `craft/` chain (see below) |
 | [google-labs-code/stitch-skills](https://github.com/google-labs-code/stitch-skills) | Apache-2.0 | [`licenses/google-labs-code-stitch-skills-Apache-2.0.txt`](licenses/google-labs-code-stitch-skills-Apache-2.0.txt) | rule values only: 7 of the 18 rules in `craft/anti-ai-slop-rules.json`, plus part of an 8th |
+| [google-labs-code/design.md](https://github.com/google-labs-code/design.md) | Apache-2.0 | [`licenses/google-labs-code-design-md-Apache-2.0.txt`](licenses/google-labs-code-design-md-Apache-2.0.txt) | prose doctrine only — three `PHILOSOPHY.md` arguments restated in our own words in `craft/design-intent.md`; no file redistributed, no code ported |
 | op7418 (歸藏) | MIT | [`workflow-skills/guizang-ppt/LICENSE`](workflow-skills/guizang-ppt/LICENSE) | `workflow-skills/guizang-ppt/` |
 
 `workflow-skills/guizang-ppt/LICENSE` is the author's own license, shipped
 inside the skill directory exactly as upstream ships it. It overrides the
 repo-wide Apache-2.0 for that directory. **Do not move, edit, or delete it.**
 
-Both Apache-2.0 texts are shipped separately even though the license is the
-same one: the two renderings differ in line-wrapping, in the §4 and §9 heading
-wording, and in the appendix copyright line, so neither was assumed to stand in
-for the other.
+All three Apache-2.0 texts are shipped separately even though the license is the
+same one. Each pair was diffed: the renderings differ in line-wrapping, in the
+§1, §4, §6 and §9 wording, and in the appendix copyright line, so none was
+assumed to stand in for another.
 
 Content authored in this repository — `evals/`, `scripts/`, `craft/XX-STACK-NOTES.md`,
 `craft/anti-ai-slop-rules.json` (its structure; the rule *values* are the two
-Apache-2.0 upstreams'), `workflow-skills/quality-gates.json`, and the generated
+Apache-2.0 upstreams'), `craft/design-intent.md` (its text; the *ideas* are
+attributed to a third Apache-2.0 upstream and restated, not copied),
+`workflow-skills/quality-gates.json`, and the generated
 `DESIGN-CATALOG.md` structure — is covered by the repo root
 [MIT LICENSE](../../LICENSE).
 
@@ -118,6 +127,14 @@ a project's general reputation, or from memory.
   were deliberately refused and why. No upstream *code* was copied — the
   enforcement engine in `scripts/quality-gate-html.mjs` was written here, which
   is what keeps it MIT while the rule values stay Apache-2.0.
+- **`craft/design-intent.md`** — authored here, and the only file in this pack
+  written from an upstream whose bytes we deliberately did **not** take. Three
+  arguments from `google-labs-code/design.md`'s `PHILOSOPHY.md` (Apache-2.0,
+  read at `9bf8eae`) are restated in our own words; nothing is reproduced, so
+  there is nothing to byte-compare and nothing to keep in sync. Its licence text
+  ships anyway — attribution is owed even where redistribution is not. One of
+  its arguments dissents from `UPSTREAM-BORROW-TODO.md` task 33; that dissent is
+  recorded in `manifest.json` under source `design-md`, not only in the file.
 
 ### What is *not* known
 
