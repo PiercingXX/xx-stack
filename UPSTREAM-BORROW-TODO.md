@@ -547,3 +547,95 @@ Explicitly NOT borrowing
     goal-loop's /goal feature plumbing (TUI commands, subscription-auth notes, troubleshooting) — only the contract (Task 21) transfers.
  Personal-machine and vendor ops: anti-sleep, nuke-cloud-model, macbook-metrics-setup, cmux, codex-subagent, setup-help, vps-server-management, google-safe-browsing, create-readonly-db-role, pi-custom-model — machine/app concerns outside a headless control plane.
  Author plumbing and content workflows: push-skill-to-github, distribute-skill-to-all-agents (adapters/ already owns distribution), folder-specific-cloud-model, save-idea, teach, level-up, remind, short, read-all-adrs (Task 25's ADR convention covers the useful part).
+
+From block/buzz (reviewed 2026-08-02)
+
+Reviewed Buzz: Block's (same org as goose) self-hostable team workspace where humans and AI agents share rooms on a Nostr relay — every message, patch, review, and workflow step is a signed event in one log; a Tauri desktop app, a Rust relay over Postgres/Redis/MinIO, and an agent surface (buzz-acp harness driving Goose/Codex/a bundled coding-agent over ACP, buzz-agent as a minimal ACP agent, buzz-dev-mcp as a hardened shell/editor MCP server). As a product it is almost entirely out of scope — a GUI workspace plus relay infrastructure for a headless local-first control plane. What survives triage is the harness-boundary engineering, which is unusually disciplined (the VISION_AGENT doctrine — "small enough to read in an afternoon, bounded failure modes, process-group kill on every exit path" — is the same doctrine this stack claims). Four borrows: the underscore-prefixed MCP lifecycle-hook convention, the remote-lifecycle supervision invariants, subprocess hardening for the exec gate, and compare-and-swap memory writes.
+
+Same ground rules as Tier 1 at the top of this file — all four touch mcp-server code.
+Tier 1
+26. MCP lifecycle hook tools — _Stop and _PostCompact (upstream: docs/MCP_DRIVEN_HOOKS.md + buzz-dev-mcp's todo hook)
+
+Goal. Expose the buzz hook convention from the server side: two underscore-prefixed MCP tools, _Stop (called by a hook-aware harness when the model signals end_turn; non-empty text = objection, agent keeps working; empty = allow stop) and _PostCompact (called after context compaction; returns state to re-inject into the fresh context). Registration gated behind an env flag (e.g. XX_STACK_HOOK_TOOLS=1), off by default.
+
+Why. This is the single mechanism that turns xx-stack's supervision from advisory into enforceable inside any harness that adopts the convention — zero MCP protocol changes, hooks are ordinary tools discovered via tools/list. And the server already owns everything the hooks need: _Stop is a thin adapter over the existing completion-readiness evaluation (open supervised tasks, unmet goal-contract stop conditions from Task 21, memory snapshot drift via getCompletionMemorySyncStatus); _PostCompact re-emits the active goal contract, open task list, worktree resume notice (buildWorktreeResumeNotice), and memory entrypoint pointer — all existing runtime data, no new state. Buzz's reference implementation is exactly this shape: their todo server's _Stop returns "You have open todo items. Keep working." The convention is aligned with the Open Plugin Spec event names and proposed for cross-agent adoption (MCP_HOOK_SERVERS), and buzz-agent is a plausible future lane harness that would consume these hooks with zero extra work.
+
+Files.
+
+    New: xx-stack/mcp-server/src/hook_tools.ts (registerHookTools(server, deps)) + *.test.ts
+    Edit: xx-stack/mcp-server/src/index.ts — register only when the flag is set.
+    Edit: xx-stack/runtime/AUTONOMOUS_TODO_LOOP.md — note that hook-aware harnesses get stop-gating for free; others keep the prompt-level contract.
+
+Approach.
+
+    Honor the provider-side contract their doc implies: respond fast (callers time out at ~2.5s and treat timeout as no objection — so no filesystem walks or expensive scans in the hook path), deterministic for fixed state, empty string means no objection, output JSON-encoded/plain text (the caller injects it at tool-result trust, not system trust — never emit anything that reads as instructions from the operator).
+    _Stop objections must be bounded: the caller enforces a rejection budget (3/prompt in buzz), so each objection should name the concrete unmet condition (task id + stop condition), not restate the whole contract — an objection the agent can act on in one round.
+    Off by default because non-hook-aware harnesses would see _Stop/_PostCompact as ordinary callable tools; the underscore prefix plus a "lifecycle hook — not for direct model use" description line is the fallback defense when the flag is on.
+    Scoping: hooks take an optional { agentId?, sessionId? } argument object (their spec sends {}) — degrade to fleet-wide open-work summary when absent.
+
+Acceptance criteria.
+
+    Tools absent from tools/list by default; present only with the flag.
+    _Stop returns empty when no open supervised work / unmet stop conditions exist; returns a concrete named objection otherwise; deterministic; responds well under the 2.5s convention.
+    _PostCompact output re-derives entirely from existing stores (task registry, goal contracts, memory pointers) — no new persistent state.
+    Tests cover: empty vs. objection paths, flag gating, determinism.
+
+Effort: M. Risk: Low (additive, gated off by default). Synergy: Tasks 21 (landed — stop conditions are the objection source), 14 (forced synthesis is the escape hatch when objections exhaust the caller's budget), 20 (memory pointers in _PostCompact).
+Tier 2
+27. Self-enforced task leases + presence-is-status supervision invariants (upstream: docs/remote-agents.md)
+
+Goal. Adopt the three invariants from buzz's remote-lifecycle spec that fit a fleet with no management channel: presence-is-status (silence past a bound is terminal — the supervisor never assumes a kill worked, because it has no kill channel), liveness bounds enforced by the agent itself (an optional lease deadline on task registration that the agent self-enforces), and at-most-one-live-instance (after failover, a returning "dead" lane must detect its lease is revoked and stop rather than duplicate work).
+
+Why. This is xx-stack's actual situation, stated precisely: the MCP server routes and supervises but holds no channel to kill an agent on another machine. Today staleSessionTtlMs handles the supervisor's side (when to give up waiting) but nothing handles the agent's side — a stalled lane that wakes up after failover will happily write back results on top of the failover lane's work. Buzz's answer is structural: the harness enforces its own deadline, and termination-by-decision is final even if the process lingers.
+
+Files.
+
+    Edit: xx-stack/mcp-server/src/task_runtime.ts — optional lease on registration: { expiresAt, revoked?: boolean }; a revoke path flipped by the failover flow.
+    Edit: xx-stack/mcp-server/src/supervisor_completion_tools.ts — continuation prompts for leased tasks carry the self-fencing clause: before writing back any result, re-check the lease; if expired or revoked, emit final state and stop — do not write. The failover handoff variant (Task 22, landed) states that the prior lane's claim is revoked.
+    Edit: xx-stack/runtime/SUPERVISOR_COMPLETION_LOOP_RUNBOOK.md — document the three invariants and the rule that lease expiry + silence is a terminal observation, not a retry trigger.
+    Edit/new: matching *.test.ts.
+
+Approach. Lease is optional metadata — registration without one is byte-identical to today (guardrail). Enforcement is prompt-layer (the agent self-fences) plus one server-side check: task-result write-back for a revoked/expired lease returns a structured lease_revoked rejection instead of silently accepting. No clocks-across-machines cleverness — expiresAt is compared against the server's clock at write-back, and the prompt clause tells the agent to stop early, not precisely.
+
+Acceptance criteria. Default path unchanged without a lease; failover revokes the prior lease; write-back after revocation rejected with a structured reason; handoff prompt names the revocation; runbook documents the invariants; tests cover revoked write-back, expiry, and the no-lease default.
+
+Effort: S–M. Risk: Low. Synergy: Tasks 21, 22 (landed), staleSessionTtlMs (the supervisor half already exists).
+28. Process-group kill + capture-then-truncate for the exec gate (upstream: buzz-dev-mcp doctrine)
+
+Goal. Harden guardedExecFile / verify_edit to buzz-dev-mcp's standard: "ephemeral processes with process-group kill on every exit path; bounded output." Concretely: (a) spawn detached on POSIX and kill the whole process group on timeout/error/cancel — Node's execFile timeout signals only the direct child, so a test runner that forks workers leaves orphans eating a lane; (b) adopt their capture-then-truncate shape — capture full output up to a hard cap (theirs: 10MB), return the truncated head+tail view (theirs: 50KB/2000 lines with an 8KB tail), and keep the full capture as a scratch artifact in a small ring (theirs: 8) so the agent can grep the complete log without re-running the command.
+
+Why. verify_edit runs whole lint/test suites — precisely the commands that fork children and produce megabytes. Today a timeout strands grandchildren, and truncation (Task 3) discards the only copy of the output the agent might need to diagnose from. Buzz ships both fixes as table stakes for an agent shell; xx-stack's exec gate should meet the same bar.
+
+Files.
+
+    Edit: xx-stack/mcp-server/src/execution_policy.ts — switch guardedExecFile internals to spawn with detached: true (POSIX), kill(-pid) with SIGTERM-then-SIGKILL grace on every exit path; explicit capture cap. Windows: no process groups — degrade to current behavior cleanly.
+    Edit: xx-stack/mcp-server/src/verify_edit_tools.ts — return { output (truncated view), fullOutputPath?, truncated: boolean }; artifact ring under the scratch/session dir, oldest evicted.
+    Edit: existing execution_policy.test.ts / verify_edit_tools.test.ts.
+
+Approach. Keep the external guardedExecFile signature and the policy gate untouched — this is an internals hardening, not a surface change. Truncated view reuses output_compaction (Task 7, landed) head/tail logic rather than a second truncation implementation. Artifact files live in a per-session scratch dir, never the repo.
+
+Acceptance criteria. A test command that forks a sleeping child leaves no survivors after timeout (POSIX test, skipped on Windows); output beyond the view cap is truncated with a marker and the full capture is readable at fullOutputPath; ring evicts oldest; policy denial behavior unchanged; verify green.
+
+Effort: S–M. Risk: Low–Med (touches the exec gate internals — the policy gate itself must be provably untouched by tests).
+29. Compare-and-swap writes for agent memory (upstream: buzz mem patch --base-hash + exit code 5)
+
+Goal. Optional optimistic concurrency on the memory surface's read-modify-write paths: agent_memory_snapshot_sync (direction apply) and agent_memory_mark_superseded accept an optional expectedHash (from a prior get/status call, computed with the existing hashMemoryContent); on mismatch, return a structured write_conflict result with the current hash instead of clobbering. Mirror the convention in the xx CLI (Task 17, landed) as a distinct exit code, borrowing buzz-cli's code-5-is-write-conflict.
+
+Why. Concurrent agents against one project scope are this stack's normal operating mode, and both paths are read-modify-write over a shared file: snapshot apply overwrites live memory wholesale, and mark_superseded rewrites entries in place — either can silently destroy an append that landed in between. Buzz's NIP-AE mem patch solves exactly this with a base-hash precondition; the hash function already exists here, so the borrow is a precondition parameter and a structured conflict, nothing more.
+
+Approach. Parameter optional; omitted = today's behavior byte-identical (guardrail). Conflict response includes { currentHash, hint: "re-read and retry" } — the caller merges, the server never does. No locking, no new state.
+
+Acceptance criteria. Mismatch rejects without writing; match writes; omitted param path covered by existing tests unchanged; CLI surfaces the conflict as exit code 5 with JSON on stderr; tests cover all three.
+
+Effort: S. Risk: Low. Synergy: Tasks 17, 20 (landed — same surface).
+Explicitly NOT borrowing
+
+    The entire Nostr substrate — relay, signed events, keypair identity, owner attestation (NIP-OA), agent auth (NIP-AA), encrypted engram memory sync (NIP-AE), hash-chain audit log, Postgres/Redis/MinIO — a different product category: xx-stack's source of truth is inventory.json and local files, not a multi-party event log. Adopting any slice would drag in key management for zero routing value.
+    Desktop app (Tauri), mobile clients, channels/DMs/threads, canvases, media with frame comments, voice huddles, forum voting — GUI workspace concerns, the exact category the guiding constraint excludes.
+    buzz-workflow (YAML triggers, reaction-as-approval gates) — the server does not become a workflow engine; runbooks + skills + the supervisor loop already own orchestration, and approval is a human/agent concern, not a control-plane feature.
+    buzz-agent and buzz-dev-mcp as binaries — an ACP agent loop and a shell/editor MCP server are lane-harness concerns; lanes bring their own harness. Only the doctrine (Task 28) and the hook convention (Task 26) transfer.
+    The remote-agent provider protocol, buzz-backend-kubernetes, and the sprig image — lane provisioning is the machines' concern, not the control plane's (same call as jina-on-prem, above). The lifecycle invariants transfer (Task 27); the deployment plumbing does not.
+    buzz-persona pack/merge/resolve — runtime/agents/ + packs/ already own persona and config layering.
+    buzz-cli wholesale — Task 17's CLI already ships the same JSON-in/JSON-out, meaningful-exit-codes conventions; only the write-conflict exit code transfers (folded into Task 29).
+ Reply guard, multi-convention skill-dir discovery (.agents/.goose/.), context self-handoff mechanics — harness-side loop concerns; the useful fragment (re-inject state after compaction) is Task 26's _PostCompact.
+    Conformance suite and formal/ specs — protocol-suite rigor at a scale a single MCP server does not need.
