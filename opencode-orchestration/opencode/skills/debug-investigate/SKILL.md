@@ -35,6 +35,17 @@ Do not jump to fixes until a plausible cause is supported by evidence.
 
 Ask: "Can you reproduce 100% of the time or intermittently?"
 
+Then turn the reproduction into a feedback loop **before** generating any hypotheses. Build one command that:
+
+```bash
+# - goes RED on this exact bug
+# - is deterministic (same result every run)
+# - is fast (seconds, not minutes)
+# - runs unattended (no clicks, no judgment calls)
+```
+
+No red command, no hypothesis phase. A 2-second deterministic loop is a debugging superpower — every hypothesis test in Step 4 becomes one cheap rerun, and the fix in Step 5 is proven the moment the command goes green.
+
 ### Step 2: Narrow Scope
 Ask:
 - "When did it start?"
@@ -56,13 +67,20 @@ Hypothesis 4: [External service]
 For each hypothesis, run ONE test:
 
 ```bash
-# Add logging/debugging
-console.log("Hypothesis 1 check:", value)
-# Run the scenario
+# Add logging/debugging — tag every line with one unique session prefix
+console.log("[DEBUG-a4f2] Hypothesis 1 check:", value)
+# Run the red command from Step 1
 # Check if we can confirm or eliminate the hypothesis
 ```
 
+Pick one unique prefix (e.g. `[DEBUG-a4f2]`) for the whole session and tag all debug instrumentation with it — cleanup after the fix is then a single grep for the tag.
+
 **Stop after 3 failed hypotheses.** Ask for help.
+
+For hard repros, escalate to mechanical narrowing before giving up:
+
+- **Bisection**: drive `git bisect run` with the red command from Step 1 to find the commit that introduced the bug
+- **Differential testing**: run the same input through the last-known-good build, config, or environment and diff the behavior to isolate the varying factor
 
 ### Step 5: Fix
 Once you have the root cause:
@@ -117,10 +135,12 @@ Once you have the root cause:
 ## Key Rules
 
 1. **No fix without investigation** — Symptoms != root cause
-2. **One test per hypothesis** — Test quickly, eliminate fast
-3. **Stop at 3 failures** — Ask for help if stuck
-4. **Verify both ways** — Test the fix AND that it doesn't break others
-5. **Separate facts from guesses** — call out confidence explicitly
+2. **Red command before hypotheses** — No deterministic feedback loop, no hypothesis phase
+3. **One test per hypothesis** — Test quickly, eliminate fast
+4. **Stop at 3 failures** — Escalate to bisection/differential testing, then ask for help if stuck
+5. **Verify both ways** — Test the fix AND that it doesn't break others
+6. **Separate facts from guesses** — call out confidence explicitly
+7. **Tag instrumentation** — One `[DEBUG-xxxx]` prefix per session; cleanup is a grep
 
 ## Principle
 

@@ -34,6 +34,17 @@ Classify every finding by severity:
 
 ## Review process
 
+### 0. Pin the review baseline
+
+Resolve the base ref to a fixed commit before reading any code, and require a non-empty diff:
+
+```bash
+REF=$(git rev-parse origin/main)   # or the base ref the caller names
+git diff "$REF"...HEAD --stat      # must be non-empty
+```
+
+If the diff is empty, stop and report that there is nothing to review against that baseline. Every finding cites this diff — the baseline never moves mid-review.
+
 ### 1. Scan for bugs
 ```
 - Undefined variables references?
@@ -44,10 +55,19 @@ Classify every finding by severity:
 - CSRF protection missing?
 ```
 
-### 2. Separate findings from fixes
+### 2. Review on two independent axes
+
+Run two separate passes and keep their verdicts separate:
+
+- **Standards axis**: does the change follow this repo's conventions, patterns, and quality bars?
+- **Spec axis**: does the change actually implement the originating issue, spec, or request?
+
+Report each axis on its own — never rerank or blend them into a single score, so "standards pass, spec fail" stays visible. The two axes are independent: when multiple lanes are available, they can run in parallel via `route_parallel_tasks`.
+
+### 3. Separate findings from fixes
 Default to findings first. Only fix issues immediately when the request explicitly includes fixes or the issue is trivial and unambiguous.
 
-### 3. Flag if uncertain
+### 4. Flag if uncertain
 For issues that need context:
 - Complex refactorings
 - Architectural questions
@@ -55,7 +75,7 @@ For issues that need context:
 
 List them and ask: "OK to fix?" before proceeding.
 
-### 4. Run repository-aware validation
+### 5. Run repository-aware validation
 Pick commands from the observed repo surface first.
 
 Validation ladder:
@@ -78,7 +98,7 @@ Coverage rule:
 
 Do not claim tests or builds ran if the repo does not expose them.
 
-### 5. Merge Gate Decision
+### 6. Merge Gate Decision
 
 Merge status rules:
 - Any S0 finding -> **Not ready**
@@ -90,6 +110,13 @@ Merge status rules:
 
 ```markdown
 # Code Review Results
+
+## Baseline
+- [resolved ref + diff stat]
+
+## Axis Verdicts
+- Standards axis: [pass/fail + key findings]
+- Spec axis: [pass/fail + key findings]
 
 ## Findings
 - [Severity + finding + impact + evidence]
@@ -107,6 +134,11 @@ Merge status rules:
 ## Recommendation
 [Ready to land / Needs fixes / Rewrite this part]
 ```
+
+## Report Integrity
+
+- The review report is returned to the requester verbatim. An orchestrating agent relaying this review must not rewrite, rerank, summarize, or soften it.
+- Review prompts stay neutral and unbiased: do not nudge the reviewer toward a solution or a verdict, and keep the scope broad so the reviewer finds its own issues.
 
 ## Safety First
 

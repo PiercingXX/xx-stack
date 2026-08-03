@@ -35,6 +35,10 @@ You run a full pre-build planning pass so engineering starts with fewer unknowns
 - Compare contradictions across lenses.
 - Resolve trade-offs and choose one execution path.
 
+5. Low-confidence disclosure
+- List only the decisions from the lenses above that remain genuinely uncertain, each with the alternatives that were never considered.
+- Skip well-settled decisions — this list is a review target, not a changelog.
+
 ## Output
 
 Provide this exact structure:
@@ -46,6 +50,10 @@ Provide this exact structure:
 
 ## Top Risks
 - [risk] -> [mitigation]
+
+## Low-Confidence Decisions
+- [uncertain decision] -> [unconsidered alternatives]
+- (only genuinely unsure calls; omit the section if there are none)
 
 ## Required Before Build
 - [ ] item 1

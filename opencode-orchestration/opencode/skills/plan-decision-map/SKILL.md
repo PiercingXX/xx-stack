@@ -75,6 +75,19 @@ Rules for the index:
 - Update the index via `task_update` on the map task every time a ticket is
   created or resolved. A stale index is a broken map.
 
+### Durable decision records (ADRs)
+
+A resolved decision ticket gets a durable record, not just a checkpoint note. Write a short numbered ADR:
+
+- location: `docs/adr/NNNN-slug.md` (`docs/adr/` created on first use; `NNNN` is
+  zero-padded and sequential)
+- sections, in order: **Status**, **Context**, **Decision**, **Consequences** —
+  a few sentences each, no more
+- link the ADR from the ticket's `lastCheckpoint` and from the ticket's line on
+  the map index
+
+The map's one-line answers stay navigable because the real rationale has a stable home the next session can read.
+
 ### Fog of war
 
 Unknowns that cannot yet be stated as a precise question live in the **Fog**
@@ -129,8 +142,9 @@ Used at project start and whenever resolved decisions reveal new territory.
    is off limits — pick another or stop.
 4. Resolve it according to its type (research / prototype / interrogate /
    task).
-5. Record: one-line answer on the map index, full rationale in the ticket's
-   `lastCheckpoint` or a linked doc, status `done`.
+5. Record: one-line answer on the map index, full rationale in a durable ADR
+   (see Durable decision records) linked from the ticket's `lastCheckpoint`,
+   status `done`.
 6. Re-check the fog: does this answer make a fog item precise enough to
    ticket? Does it unblock tickets? Update edges and the index.
 7. **Stop.** One decision per session is a hard rule. Resolving a decision

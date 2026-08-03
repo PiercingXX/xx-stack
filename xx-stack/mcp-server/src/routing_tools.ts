@@ -61,7 +61,7 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
 
   server.tool(
     "route_parallel_tasks",
-    "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts",
+    "Given multiple task descriptions, produce a hardware-aware parallel delegation schedule across local and remote hosts. Decompose work into tracer-bullet tasks before calling: each task should be a vertical slice through every layer it touches, sized to fit one fresh context window, with blocking edges between slices declared explicitly rather than discovered mid-run.",
     {
       tasks: z
         .array(z.string())
@@ -216,7 +216,7 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
 
   server.tool(
     "route_competitive_task",
-    "Given a task description (or an array of descriptions for a batched, position-aligned result), produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default.",
+    "Given a task description (or an array of descriptions for a batched, position-aligned result), produce up to N distinct routing lanes for competitive fan-out. Each lane is seeded with a different capability keyword to explore diverse hosts/models. Lanes are deduplicated by (host, model). Cloud hosts excluded by default. The caller creates one git worktree per lane and MUST bootstrap each before its agent starts — a bare worktree is the #1 way a parallel lane fails confusingly: copy (never symlink) env files into the worktree, install dependencies, pin shared-service identity/ports per lane so worktrees don't fight, and rebuild gitignored artifacts. Keep that checklist in a scripts/setup-worktree.sh at the repo root so every lane bootstraps identically.",
     {
       description: z
         .union([z.string(), z.array(z.string()).min(1).max(64)])
