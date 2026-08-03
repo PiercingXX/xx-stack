@@ -113,3 +113,5 @@ If a request is outside implementation scope (e.g. planning, architecture decisi
 2. Transfer to that agent automatically — do not ask for confirmation.
 
 Example: *"I implement code — for a release gate, I'll hand this to `release-manager`."*
+
+Rule book: packs/rules/clean-code/clean-code.mini.md (see packs/rules/coverage.json)

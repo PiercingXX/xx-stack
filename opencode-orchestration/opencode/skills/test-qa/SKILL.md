@@ -69,12 +69,29 @@ Screenshots: [Before/after]
 # Commit: fix: [bug description]
 ```
 
-For this repo, validate with project-native commands:
+For verification, derive project-native commands from the observed repo surface first.
+
+Look at files such as `package.json`, `Makefile`, `pyproject.toml`, `Cargo.toml`, CI config, or repo scripts and choose the matching test/build commands.
+
+Examples only:
 
 ```bash
+# JavaScript/TypeScript example
+npm test
+npm run build
+
+# Bun example
 bun test
 bun run build
+
+# Python example
+pytest
+
+# Rust example
+cargo test
 ```
+
+If no deterministic test or build surface exists, say so explicitly and fall back to manual journey verification plus static artifact checks.
 
 ### 4. Add Regression Test
 
@@ -124,10 +141,52 @@ All tests passing. [X] new tests added.
 - Validation commands failing -> No ship
 - Otherwise -> Ship with noted follow-ups
 
+## Verification Failure Modes
+
+You have two documented failure patterns. Recognize them and do the opposite.
+
+**Verification avoidance**: When faced with a check, finding reasons not to run it — reading code, narrating what you *would* test, writing PASS, and moving on. Reading is not verification. Run it.
+
+**Seduced by the first 80%**: Seeing a polished UI or a passing test suite and feeling inclined to pass it, not noticing half the buttons do nothing, state vanishes on refresh, or the backend crashes on bad input. The first 80% is the easy part. Your entire value is in finding the last 20%.
+
+The caller may spot-check your commands by re-running them. If a PASS step has no command output, or output that doesn't match re-execution, the report gets rejected.
+
+### Rationalizations to reject
+
+When you catch yourself about to write one of these, stop and run the command instead:
+
+- *"The code looks correct based on my reading"* — reading is not verification.
+- *"The implementer's tests already pass"* — the implementer may be an LLM. Verify independently.
+- *"This is probably fine"* — probably is not verified.
+- *"Let me start the server and check the code"* — start the server and hit the endpoint.
+- *"I don't have a browser"* — did you check available browser/automation tools? If present, use them.
+- *"This would take too long"* — not your call.
+
+### Before issuing PASS
+
+Your report must include at least one adversarial probe and its result — even if the result was "handled correctly." Probes to consider (adapt to the change type):
+
+- **Concurrency**: parallel requests to create-if-not-exists paths — duplicate sessions? lost writes?
+- **Boundary values**: 0, -1, empty string, very long strings, unicode, MAX_INT
+- **Idempotency**: same mutating request twice — duplicate created? correct no-op?
+- **Orphan operations**: delete or reference IDs that don't exist
+
+If all your checks are "returns 200" or "test suite passes," you have confirmed the happy path, not verified correctness. Go back and try to break something.
+
+### Before issuing FAIL
+
+You found something that looks broken. Check first:
+
+- **Already handled**: is there defensive code elsewhere that covers this?
+- **Intentional**: does README/comments/commit message explain this as deliberate?
+- **Not actionable**: is this a real limitation that can't be fixed without breaking an external contract? If so, note it as an observation, not a FAIL.
+
 ## Principle
 
-Real browsers catch bugs AI misses. Manual journey testing complements automation.
+Real browsers catch bugs AI misses. Manual journey testing complements automation. Test suite results are context, not evidence — run the suite, note pass/fail, then verify independently.
 
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
+
+Rule book: packs/rules/code-complete/code-complete.mini.md (see packs/rules/coverage.json)

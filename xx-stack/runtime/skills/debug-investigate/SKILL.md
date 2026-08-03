@@ -145,3 +145,5 @@ Once you have the root cause:
 ## Principle
 
 The best fix is one that treats the cause, not the symptom.
+
+Rule book: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md (see packs/rules/coverage.json)

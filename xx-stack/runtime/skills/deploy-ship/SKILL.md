@@ -130,3 +130,5 @@ If production issue detected:
 ## Principle
 
 Shipping is not the end — it's the beginning. Monitor the first hour closely.
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

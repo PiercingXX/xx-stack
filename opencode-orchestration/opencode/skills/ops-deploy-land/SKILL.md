@@ -19,64 +19,44 @@ You are an operations engineer. Your job is to ensure the deployment succeeds an
 - Rollback procedure
 - Error rate / latency spikes detected
 
+First determine what post-deploy surface this repository actually has. If there is no live service, canary mechanism, or production telemetry, degrade to release-readiness checks, artifact consistency, and rollback planning instead of inventing a SaaS-style ops path.
+
 ## Step 1: Pre-Deploy Checklist (Before Merge)
 
 ```bash
-# ✓ All tests passing
-npm test
-npm run test:e2e
-
-# ✓ Build succeeds
-npm run build
-
-# ✓ No console errors/warnings in browser
-npm run dev  # Manual check
-
-# ✓ Staging deployment works
-npm run deploy:staging
-# Visit staging URL, manual test
-
-# ✓ Database migrations ready (if applicable)
-npm run db:migrate:validate
-
-# ✓ Feature flags configured (if new feature)
-# Toggle feature flag in production (if doesn't break anything)
-
-# ✓ Rollback procedure documented
-# "If X goes wrong, run: Y"
+# Discover repo-native commands from the observed surface first:
+# - package.json / Makefile / pyproject.toml / Cargo.toml / scripts/
+# - CI config or release workflow docs
+#
+# Then verify the relevant checks for this repo:
+# - tests
+# - build or artifact generation
+# - staging or smoke environment, if it exists
+# - migration validation, if it exists
+# - rollback procedure is documented
 ```
 
 ## Step 2: Merge to Main
 
 ```bash
-# Verify everything one more time
-git log origin/main..HEAD --oneline  # What am I merging?
-git diff origin/main...HEAD          # Show changes
-
-# Merge with clean history
-git rebase origin/main
-git push origin main
-
-# Wait for CI (GitHub Actions, etc.)
-# See all checks green ✓
+# Verify the release diff one more time
+git log --oneline origin/main..HEAD
+git diff --stat origin/main...HEAD
 ```
+
+Only perform merge, tag, publish, or promotion steps that are explicitly supported by this repo and requested by the user.
 
 ## Step 3: Canary Deployment (If Your Setup Supports)
 
 Deploy to 5% of users first:
 
 ```bash
-# Option 1: Feature flag (safest)
-toggleFeatureFlag("new-feature", percentage: 5)
-npm run deploy
-
-# Option 2: Load balancer (if you have one)
-# Route 5% traffic to new backend, 95% to old
-# Monitor error rates for 5 minutes
-
-# Option 3: Region-based (if multi-region)
-# Deploy to lowest-traffic region first
-# Monitor for 30 minutes before global rollout
+# Examples only:
+# - feature-flag percentage rollout
+# - load-balancer traffic split
+# - lowest-traffic region first
+#
+# Use the actual rollout mechanism exposed by this repo/infrastructure.
 ```
 
 ## Step 4: Health Verification (First 30 Minutes Post-Deploy)
@@ -157,25 +137,16 @@ toggleFeatureFlag("new-feature", percentage: 100)
 If health checks fail:
 
 ```bash
-# ⚠️  DO THIS FAST. Every second of bad code affects users.
-
-# Option 1: Feature flag reversal (30 seconds)
-toggleFeatureFlag("new-feature", percentage: 0)
-# Done. Users see old code immediately.
-
-# Option 2: Git rollback (2 minutes)
-git revert <commit-hash> && git push origin main
-# CI redeploys automatically
-
-# Option 3: Database rollback (depends on migration)
-npm run db:rollback
-# Then Option 2
-
-# AFTER rollback:
-# 1. Watch health metrics for 5 minutes (should return to normal quickly)
-# 2. Post-mortem: What failed? Why didn't tests catch it?
-# 3. Fix the issue, add test to prevent recurrence
-# 4. Redeploy (now with test coverage)
+# Use the actual rollback path for this repo:
+# - feature-flag reversal
+# - rollback command from deploy system
+# - revert + redeploy
+# - migration rollback if supported
+#
+# After rollback:
+# 1. Watch health metrics until baseline returns
+# 2. Record what failed and why the gate missed it
+# 3. Add or improve the missing detection/verification step
 ```
 
 ## Step 7: Post-Deployment Monitoring
@@ -301,3 +272,5 @@ If something is clearly broken:
 ## Principle
 
 A good deployment is invisible to users. They never notice it happened.
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

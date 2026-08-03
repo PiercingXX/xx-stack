@@ -112,3 +112,5 @@ Ask: "Is this a startup idea or a learning/side project?"
 ## Key Principle
 
 The questions matter more than the answers. Good founders update their answers weekly. You're forcing them to think clearly, not validating their idea.
+
+Rule book: packs/rules/domain-driven-design-distilled/domain-driven-design-distilled.mini.md (see packs/rules/coverage.json)

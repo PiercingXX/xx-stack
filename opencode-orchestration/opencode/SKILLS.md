@@ -30,6 +30,19 @@ When writing or editing a skill:
 - match instruction strictness to task fragility: loose heuristics for robust tasks, templates for structured output, exact scripts for fragile sequences
 - test every skill against the weakest model it will run on — for this stack that rule is load-bearing (tight-context local lanes are the audience), and it is the acceptance test for any nano-tier skill variant
 
+## Guidance Tiers (full / nano)
+
+Critical-surface guidance ships in two sizes, matching the rules pack's tier convention (`packs/rules/manifest.json`):
+
+- full: the canonical file — `opencode/skills/<name>/SKILL.md` for skills, `opencode/agents/<name>.md` for agents.
+- nano (~1-2KB): `SKILL.nano.md` beside the skill, `opencode/agents/<name>.nano.md` beside the agent. Decision rules and gates only — no examples or output templates.
+
+The five critical surfaces carry nanos: `execution-orchestrator` and `fast-build` (agents), `review-code`, `debug-investigate`, `deploy-ship` (skills).
+
+Pick the tier from the lane's context window, the same budget convention as the rules pack's `defaultTier`: full when the lane holds the whole file plus the task and code; nano for tight-context lanes that would otherwise get truncation or nothing. Nanos here are exact copies of the xx-stack canonical nanos — they carry no OpenCode-specific content, and `npm run nano:check` (xx-stack/scripts/check-nano-tiers.mjs) enforces byte parity and fails when a canonical edit lands without a nano review.
+
+The weakest-model acceptance test from the Skill Authoring Contract above is the acceptance test for every nano — tight-context local lanes are exactly who it serves.
+
 ## Graceful Degradation
 
 Not every workflow is equally critical.

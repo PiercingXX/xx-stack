@@ -70,3 +70,5 @@ If a request is outside release or deploy scope:
 3. Only use true handoff if the active runtime supports it and the user explicitly wants to switch agent ownership.
 
 Example: *"I own release gating — for incident response, delegate to `incident-commander` from the active surface unless explicit handoff is supported and requested."*
+
+Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

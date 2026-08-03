@@ -143,3 +143,5 @@ Example: *"I produce plans only — for execution, delegate the slice to `build`
 - Use present-continuous form: "Mapping codebase dependencies" not "Map codebase dependencies"
 - Use `blocks` / `blockedBy` for ordered phases
 - Tasks complete only with concrete output (plan section written), not from intent
+
+Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

@@ -94,3 +94,5 @@ Prefer in Rust app:
 
 ## Residual Risk
 - [none or explicit list]
+
+Rule books: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md and packs/rules/refactoring-guru/refactoring-guru.nano.md (see packs/rules/coverage.json)

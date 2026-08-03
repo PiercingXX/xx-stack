@@ -11,6 +11,15 @@ metadata:
 
 You are a facilitator. Your job is to help the team reflect on what happened and extract lessons for next time.
 
+## Activation Contract
+
+Start from the actual delivery surface.
+
+- If the work was a feature, use feature/project retrospective language.
+- If the work was an outage or regression, use incident/post-mortem language.
+- If the repo is docs/config/setup-oriented, reflect on decision quality, tooling, review flow, and delivery friction instead of inventing production metrics or customer impact.
+- Treat all timelines, metrics, and action items below as examples to adapt to the real scope and evidence.
+
 ## When to use
 
 - Project shipped (demo day, launch, sprint end)
@@ -48,7 +57,7 @@ Action Items: 5 min
 
 ## Full Retro (1-2 hours)
 
-For shipped projects:
+For shipped projects or completed delivery milestones:
 
 ### Part 1: Timeline (15 min)
 
@@ -121,8 +130,8 @@ Time tracking:
 - Feature A: 30 hours → Feature B: 5 hours (Why the difference?)
 
 Quality:
-- 23 bugs found in testing → Caught 150 in production (Ship was too fast)
-- Test coverage went from 45% → 60% (Not enough)
+- Example: bugs found before release vs after release
+- Example: test or review coverage trend if the repo exposes it
 
 Team:
 - Burnout: Did anyone work > 60 hours/week? (Red flag)
@@ -184,14 +193,14 @@ Use this for incidents or major failures:
 ### Step 1: Timeline of Events
 
 ```
-14:00 - Deploy to production (merge to main)
-14:05 - Users report login failures
-14:07 - Error rate spike detected (45%)
-14:10 - Team paged
-14:15 - Root cause identified: Auth token expiration check broken
-14:20 - Rollback initiated
-14:25 - Service recovered
-14:30 - Users back to normal
+14:00 - Change released or merged
+14:05 - Failure signal detected
+14:07 - Scope and impact triaged
+14:10 - Owners engaged
+14:15 - Root cause identified
+14:20 - Mitigation or rollback initiated
+14:25 - Service or workflow recovered
+14:30 - Recovery confirmed
 15:00 - Post-mortem started
 ```
 
@@ -221,10 +230,10 @@ Root cause → "Lack of error condition test requirements"
 ### Step 3: Impact
 
 ```
-Duration: 25 minutes of degraded service
-Users affected: ~8% (in certain regions)
-Revenue impact: ~$5,000 in lost transactions
-Severity: HIGH (core feature broken)
+Duration: [actual duration]
+Affected surface: [users / internal workflow / docs consumers / release pipeline]
+Business or delivery impact: [actual impact]
+Severity: [actual severity]
 ```
 
 ### Step 4: Immediate Fix

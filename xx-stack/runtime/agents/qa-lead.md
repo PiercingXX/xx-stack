@@ -61,3 +61,5 @@ Decision: QA PASS | QA CONDITIONAL | QA BLOCKED
 Caveats (if conditional): <list>
 Blockers (if blocked): <list>
 ```
+
+Rule book: packs/rules/code-complete/code-complete.mini.md (see packs/rules/coverage.json)

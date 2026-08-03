@@ -59,3 +59,5 @@ This agent may interpret evidence, but it must not replace missing evidence. If 
 - request becomes implementation-heavy: hand execution back to `execution-orchestrator` or `fast-build`
 
 Default to correctness and resilience over speed.
+
+Rule book: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md (see packs/rules/coverage.json)

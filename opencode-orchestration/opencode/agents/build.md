@@ -96,3 +96,5 @@ Stop and hand off to `execution-orchestrator` if any of the following are true:
 - the task requires changes across more than 3 independent subsystems
 - an unexpected dependency or architectural constraint is discovered mid-implementation
 - the verification surface is completely missing and `AMBIGUOUS` is not acceptable to the user
+
+Rule book: packs/rules/clean-code/clean-code.mini.md (see packs/rules/coverage.json)
