@@ -1,6 +1,7 @@
 import type { Host, Registry, RouteRecommendation } from "./platform_types.js";
 import { checkHostModelHealth, modelNamesForHost } from "./routing_endpoint_runtime.js";
 import { TIER_IDS } from "./runtime_constants.js";
+import { assignWaves, type TaskWavePlan } from "./task_graph_runtime.js";
 import {
   failureKey,
   type SupervisorRoute,
@@ -464,13 +465,82 @@ export function routeTask(description: string, registry: Registry): RouteRecomme
   };
 }
 
-export function routeParallelTasks(
-  descriptions: string[],
-  registry: Registry
-): {
+/**
+ * One task in the edged form of `routeParallelTasks`.
+ *
+ * `route_parallel_tasks` already told the caller to declare blocking edges
+ * "explicitly rather than discovered mid-run", then took a flat `string[]` and
+ * fanned everything out at once — it asked for the edges and threw them away.
+ * This is the shape that keeps them.
+ *
+ * `id` defaults to the task's index as a string, so `blockedBy: ["0"]` means
+ * "waits on the first task in this array" without the caller inventing ids.
+ */
+export interface ParallelTaskInput {
+  /** Defaults to the array index as a string. */
+  id?: string;
+  description: string;
+  /** IDs of tasks in this same array that must finish first. */
+  blockedBy?: string[];
+}
+
+export interface ParallelSchedule {
   assignments: Array<Record<string, unknown>>;
   hostUtilization: Array<Record<string, unknown>>;
-} {
+  /**
+   * Present only for the edged input form, so flat `string[]` input returns a
+   * byte-identical document to the one it always has.
+   */
+  dependencySchedule?: TaskWavePlan & { note: string };
+}
+
+/**
+ * xx-stack computes and returns a schedule; it never executes one. The wave
+ * plan below is a PLAN — no dispatch loop, no waiting on completion, no
+ * unblocked-event mechanism — exactly like the worktree paths
+ * `route_competitive_task` returns without creating them. Taking the execution
+ * half would make this a workflow engine, which MANUAL §1 forbids.
+ */
+const DEPENDENCY_SCHEDULE_NOTE =
+  "Plan only: wave 0 can start now; each later wave waits on the waves before it. " +
+  "xx-stack does not dispatch, poll, or sequence these — the calling agent runs a wave, " +
+  "confirms it finished, and comes back for the next.";
+
+function normalizeParallelTasks(
+  tasks: Array<string | ParallelTaskInput>
+): Array<{ id: string; description: string; blockedBy: string[] }> {
+  return tasks.map((task, index) =>
+    typeof task === "string"
+      ? { id: String(index), description: task, blockedBy: [] }
+      : {
+          id: task.id?.trim() || String(index),
+          description: task.description,
+          blockedBy: (task.blockedBy ?? []).map((id) => id.trim()).filter(Boolean),
+        }
+  );
+}
+
+/**
+ * Fan a decomposed task list across lanes.
+ *
+ * Accepts today's flat `string[]` and, alternatively, `ParallelTaskInput[]`
+ * carrying blocking edges. The two forms share one host-assignment pass, so
+ * lane selection cannot drift between them; the edged form additionally
+ * carries `dependencySchedule` and a per-assignment `dependencyWave`.
+ *
+ * Note the two distinct senses of "wave" in this output. The long-standing
+ * per-assignment `wave` is a *capacity* wave: how many rounds a host's
+ * parallel-slice limit forces. `dependencyWave` is a *dependency* wave: what
+ * must finish before this task may start. They are unrelated, and neither one
+ * is executed by anything in this repo.
+ */
+export function routeParallelTasks(
+  tasks: string[] | Array<string | ParallelTaskInput>,
+  registry: Registry
+): ParallelSchedule {
+  const normalized = normalizeParallelTasks(tasks);
+  const edged = tasks.some((task) => typeof task !== "string");
+  const descriptions = normalized.map((task) => task.description);
   const orderedTierIds = routableTierIds(registry);
   const cloudBlocked = !cloudRoutingAllowed(registry);
   const allHostsByTier = new Map<string, Host[]>();
@@ -585,8 +655,36 @@ export function routeParallelTasks(
     })
     .sort((left, right) => Number(right.assignedTasks) - Number(left.assignedTasks));
 
+  if (!edged) {
+    // The flat form returns the document it has always returned, key for key.
+    return {
+      assignments,
+      hostUtilization,
+    };
+  }
+
+  // Every synthesized node is "todo": these are proposed slices, not stored
+  // tasks, so nothing here is terminal and every edge is still open.
+  const plan = assignWaves(
+    normalized.map((task) => ({
+      taskId: task.id,
+      status: "todo" as const,
+      blockedBy: task.blockedBy,
+    }))
+  );
+  const waveByTaskId = new Map<string, number>();
+  plan.waves.forEach((wave, index) => {
+    for (const taskId of wave) waveByTaskId.set(taskId, index);
+  });
+
   return {
-    assignments,
+    assignments: assignments.map((assignment, index) => ({
+      ...assignment,
+      taskGraphId: normalized[index]!.id,
+      blockedBy: normalized[index]!.blockedBy,
+      dependencyWave: waveByTaskId.get(normalized[index]!.id) ?? null,
+    })),
     hostUtilization,
+    dependencySchedule: { ...plan, note: DEPENDENCY_SCHEDULE_NOTE },
   };
 }

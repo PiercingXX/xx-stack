@@ -29,6 +29,7 @@ import {
   summarizePlatforms as runtimeSummarizePlatforms,
 } from "./observability_runtime.js";
 import type { Registry, RouteRecommendation } from "./platform_types.js";
+import { narrowTaskStoreToReady } from "./task_graph_runtime.js";
 import { filterTasks as runtimeFilterTasks } from "./task_list_runtime.js";
 import type { PersistentTask, TaskStore } from "./task_runtime.js";
 
@@ -205,6 +206,7 @@ test("parseCliArgs: tasks list parses all filters", () => {
     "--owner",
     "skippy",
     "--include-completed",
+    "--ready-only",
     "--limit",
     "25",
     "--json",
@@ -216,6 +218,7 @@ test("parseCliArgs: tasks list parses all filters", () => {
     tag: "ci",
     owner: "skippy",
     includeCompleted: true,
+    readyOnly: true,
     limit: 25,
   });
 });
@@ -229,6 +232,7 @@ test("parseCliArgs: tasks list defaults", () => {
     tag: undefined,
     owner: undefined,
     includeCompleted: false,
+    readyOnly: false,
     limit: undefined,
   });
 });
@@ -616,4 +620,98 @@ test("CliWriteConflictError carries the conflict payload runCli emits", () => {
   assert.ok(error instanceof Error);
   assert.equal(error.name, "CliWriteConflictError");
   assert.deepEqual(error.conflict, { status: "write_conflict", currentHash: "abc" });
+});
+
+// ---------------------------------------------------------------------------
+// BORROW A — `xx tasks list --ready-only`
+// ---------------------------------------------------------------------------
+
+test("xx tasks list --ready-only hides work whose blockers are still open", async () => {
+  const originalHome = process.env.HOME;
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-cli-ready-"));
+  try {
+    process.env.HOME = dir;
+    await mkdir(join(dir, ".config/opencode"), { recursive: true });
+
+    const task = (
+      taskId: string,
+      status: PersistentTask["status"],
+      blockedBy: string[] = []
+    ): PersistentTask => ({
+      taskId,
+      title: taskId,
+      status,
+      tags: [],
+      blockedBy,
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+    });
+
+    const store: TaskStore = {
+      version: 1,
+      tasks: {
+        "blocker-open": task("blocker-open", "in_progress"),
+        "blocker-done": task("blocker-done", "done"),
+        waiting: task("waiting", "todo", ["blocker-open"]),
+        startable: task("startable", "todo", ["blocker-done"]),
+        orphan: task("orphan", "todo", ["typo-id"]),
+      },
+    };
+    await writeFile(
+      join(dir, ".config/opencode/xx-stack-task-state.json"),
+      JSON.stringify(store),
+      "utf-8"
+    );
+
+    const plain = await runCaptured(["tasks", "list", "--json"]);
+    assert.equal(plain.code, EXIT_OK);
+    assert.deepEqual(
+      (JSON.parse(plain.stdout).tasks as PersistentTask[]).map((t) => t.taskId).sort(),
+      ["blocker-open", "orphan", "startable", "waiting"]
+    );
+
+    const ready = await runCaptured(["tasks", "list", "--ready-only", "--json"]);
+    assert.equal(ready.code, EXIT_OK);
+    const payload = JSON.parse(ready.stdout) as { total: number; tasks: PersistentTask[] };
+    assert.deepEqual(
+      payload.tasks.map((t) => t.taskId).sort(),
+      ["blocker-open", "startable"],
+      "a blocked task, and a task blocked by an ID that does not exist, are not startable"
+    );
+    // total/returned describe the narrowed population, not the whole store.
+    assert.equal(payload.total, 2);
+
+    // MCP-DUP-3: the CLI must not carry its own readiness rule — it produces
+    // exactly what the shared runtime pair produces.
+    assert.deepEqual(
+      JSON.parse(ready.stdout),
+      JSON.parse(JSON.stringify(filterTasks(narrowTaskStoreToReady(store), {})))
+    );
+
+    // --ready-only composes with the other filters rather than replacing them.
+    const combined = await runCaptured([
+      "tasks",
+      "list",
+      "--ready-only",
+      "--status",
+      "todo",
+      "--json",
+    ]);
+    assert.deepEqual(
+      (JSON.parse(combined.stdout).tasks as PersistentTask[]).map((t) => t.taskId),
+      ["startable"]
+    );
+  } finally {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("xx tasks list --ready-only help states it is a view, not a runner", () => {
+  // MANUAL §1: xx-stack computes and returns a schedule; it never executes
+  // one. The CLI is the surface most likely to be mistaken for a runner.
+  const help = commandHelpText("tasks");
+  assert.ok(help.includes("--ready-only"), help);
+  assert.ok(help.includes("never runs it"), help);
 });

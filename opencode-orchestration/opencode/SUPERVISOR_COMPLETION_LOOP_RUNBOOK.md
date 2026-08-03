@@ -49,6 +49,17 @@ Sessions end in one of three distinguished outcomes — the record never blurs t
 - failed (`blocked` / `interrupted` / `exhausted`) — the work did not finish and no synthesis was demanded.
 - `force_synthesized` — budget-exhausted forced synthesis (below). Never presented as a normal completion.
 
+### Terminal is terminal — ending something that already ended is a no-op
+
+A session that reached `completed`, `interrupted`, `exhausted`, or `force_synthesized` has a finished record. Nothing rewrites it, including a request to end it again.
+
+- **`supervisor_abort_session` against a terminal session writes nothing.** No status change, no `session.interrupted` event, no lease revocation. It answers `{"status": "already_terminal", "reasonCode": "session_terminal", "sessionId": "...", "priorStatus": "<the status it actually holds>"}`. It reports what happened rather than echoing the transition that was requested.
+- **Three distinct outcomes, three distinct answers.** `interrupted` = live work was stopped by this call. `already_terminal` = the session had already ended and nothing was touched. `missing` = no such session ID. Do not collapse the middle one into either neighbour: "I aborted it" and "it was already over" are different facts about the fleet.
+- **Aborting a `running`, `cooldown`, or `blocked` session is unchanged**, lease revocation included — that path is already idempotent, and those three statuses are live sessions that can still move.
+- **`task_suspend` carries the same rule.** A `done`, `canceled`, or `force_synthesized` task is rejected with `{"status": "rejected", "reasonCode": "task_terminal", "taskStatus": "<current>"}` and nothing is written. Without it a finished task could be resurrected into `suspended`, undoing `applyForceSynthesisOutcome` — the exact erasure the three distinguished terminal states exist to prevent. The lease fence runs **first** and is unchanged, so an expired or revoked claim is still reported as a lease failure rather than a terminal one.
+
+Deliberately **not** implemented: a running-vs-pending distinction on abort. The control plane holds no kill channel (see the lease invariants below), so which of the two a live session is in is unknowable from here. Reporting a guess would be worse than reporting the transition honestly.
+
 ## Budget-Exhausted Forced Synthesis (`force_synthesized`)
 
 When a budget, step, or stall threshold trips (max attempts per slice, max consecutive failures, hard session timeout, progress-stall threshold, or a session already `exhausted`/`blocked`), the accumulated partial work should not be discarded. Call `supervisor_force_synthesis`:
@@ -87,7 +98,7 @@ Task registration (`task_create` / `task_update`) accepts an optional lease:
 ```
 
 - The lease is **optional metadata**. A task registered without one behaves exactly as before — same record, same prompts, same write-back path. This is the guardrail.
-- `expiresAt` is compared against **the server's own clock at write-back**. There is deliberately no clock reconciliation across machines: the prompt clause tells the agent to stop *early*, not precisely.
+- `expiresAt` is compared against **the server's own clock at write-back**. There is deliberately no clock reconciliation across machines: the prompt clause tells the agent to stop _early_, not precisely.
 - Continuation prompts for leased tasks carry the self-fencing clause:
 
   > before writing back any result, re-check this task's lease; if it is expired or revoked, emit your final state and stop — do not write
@@ -114,6 +125,7 @@ After a failover, a returning "dead" lane must detect it lost the claim rather t
   ```
 
   `reasonCode` is `lease_revoked` for a revoked claim and `lease_expired` for a passed deadline (an unparseable `expiresAt` counts as expired — a lease nobody can evaluate never authorizes a write). Nothing is written when the rejection fires.
+
 - A `task_update` that carries a **replacement** lease is the supervisor re-leasing the task for a new lane, not a lane writing results back, so it is not fenced. That is how a failed-over task is handed to a live lane.
 
 Everything else is prompt-layer: the agent self-fences, and termination by decision is final even if the process lingers.

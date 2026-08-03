@@ -132,6 +132,9 @@ type VerifyEditArgs = {
 
 type CmdResult = {
   ok: boolean;
+  outcome: "pass" | "fail" | "could_not_run" | "denied";
+  reasonCode?: string;
+  remediation?: string;
   output: string;
   truncated: boolean;
   fullOutputPath?: string;
@@ -311,6 +314,142 @@ test("caller-supplied compaction still reports what it dropped", async () => {
     assert.equal(payload.test!.truncated, false, "collapsing is not truncation");
   } finally {
     resetFullOutputArtifacts();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// --- "could not run" is not "failed" ---------------------------------------
+//
+// xx-stack dispatches to heterogeneous machines, so the lane that got the task
+// is exactly the one most likely to be missing the toolchain. Before this
+// classification existed, `toResult` mapped every non-zero path to `ok: false`:
+// a denied command, a binary that is not installed here, a missing
+// `node_modules`, and a genuinely red test suite were byte-indistinguishable,
+// and the completion gate read all four as "the code is broken".
+
+test("verify_edit classifies a passing command as pass with ok true", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  try {
+    await writeFile(join(dir, "ok.js"), 'console.log("all good");\n');
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: "node ok.js" });
+
+    assert.equal(payload.test!.outcome, "pass");
+    assert.equal(payload.test!.ok, true, "ok must stay derivable from outcome");
+    assert.equal(payload.test!.reasonCode, undefined, "a pass needs no cause");
+    assert.equal(payload.test!.remediation, undefined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("verify_edit classifies a non-zero exit with captured output as fail", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  try {
+    await writeFile(join(dir, "red.js"), 'console.error("2 tests failed");\nprocess.exit(1);\n');
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: "node red.js" });
+
+    assert.equal(payload.test!.outcome, "fail", "a suite that ran and went red is a code failure");
+    assert.equal(payload.test!.ok, false);
+    assert.equal(payload.test!.remediation, undefined, "a real failure gets no lane remediation");
+    assert.ok(payload.test!.output.includes("2 tests failed"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("verify_edit classifies a nonexistent binary as could_not_run, not fail", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  try {
+    const missing = "xx-stack-definitely-not-installed";
+    const verifyEdit = captureVerifyEditTool([missing]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: `${missing} --version` });
+
+    assert.equal(
+      payload.test!.outcome,
+      "could_not_run",
+      "a missing toolchain is a fact about the LANE, not about the code"
+    );
+    assert.equal(payload.test!.ok, false);
+    assert.equal(payload.test!.reasonCode, "command_not_found");
+    assert.ok(
+      typeof payload.test!.remediation === "string" && payload.test!.remediation.includes(missing),
+      "could_not_run must name the fix"
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("verify_edit classifies a denylisted command as denied, machine-readably", async () => {
+  const verifyEdit = captureVerifyEditTool([]);
+  const payload = await verifyEdit({ cwd: tmpdir(), testCmd: "forbidden-tool --flag" });
+
+  // The whole point: a caller learns this was a policy refusal WITHOUT
+  // substring-matching `output` for "execution_policy_denied:".
+  assert.equal(payload.test!.outcome, "denied");
+  assert.equal(payload.test!.ok, false);
+  assert.ok(
+    typeof payload.test!.reasonCode === "string" && payload.test!.reasonCode.length > 0,
+    "the denial reason must be a structured field"
+  );
+  assert.ok(
+    !payload.test!.reasonCode!.includes("execution_policy_denied"),
+    "reasonCode carries the reason, not the wrapper prefix"
+  );
+  // The verbatim reason is still in the payload for a human reader.
+  assert.ok(payload.test!.output.startsWith("execution_policy_denied:"));
+});
+
+test("a missing cwd is bad_cwd, not a missing command", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  const gone = join(dir, "no-such-dir");
+  try {
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: gone, testCmd: "node --version" });
+
+    assert.equal(payload.test!.outcome, "could_not_run");
+    assert.equal(
+      payload.test!.reasonCode,
+      "bad_cwd",
+      "spawn reports ENOENT for both causes; blaming the binary would send the agent to install node"
+    );
+    assert.ok(payload.test!.remediation!.includes(gone));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("an npm failure with package.json but no node_modules is deps_not_installed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  try {
+    await writeFile(join(dir, "package.json"), '{"name":"probe","version":"0.0.0"}\n');
+    // `npm test` in a project with no install and no test script exits non-zero
+    // with output — historically indistinguishable from a red suite.
+    const verifyEdit = captureVerifyEditTool(["npm"]);
+    const payload = await verifyEdit({ cwd: dir, testCmd: "npm test" });
+
+    assert.equal(payload.test!.outcome, "could_not_run");
+    assert.equal(payload.test!.reasonCode, "deps_not_installed");
+    assert.ok(payload.test!.remediation!.includes("node_modules"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("ok is exactly outcome === pass on every path", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-outcome-"));
+  try {
+    await writeFile(join(dir, "ok.js"), 'console.log("fine");\n');
+    await writeFile(join(dir, "red.js"), "process.exit(3);\n");
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({ cwd: dir, lintCmd: "node ok.js", testCmd: "node red.js" });
+
+    for (const result of [payload.lint!, payload.test!]) {
+      assert.equal(result.ok, result.outcome === "pass", "ok must never disagree with outcome");
+    }
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
