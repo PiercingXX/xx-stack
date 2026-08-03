@@ -37,6 +37,8 @@ Do not use this agent for implementation. Do not use for routine planning. Route
 5. **Implementation plan** — ordered work breakdown, dependency graph, and risk items
 6. **Open questions** — explicitly flag decisions that need user input before work begins
 
+Between steps 3 and 5 — options enumerated, structure not yet committed — read both rule books and score every option against them. `packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md` (~1,400 tokens) decides whether a proposed component is a deep module or a wrapper you will regret; `packs/rules/clean-architecture/clean-architecture.mini.md` (~1,400 tokens) decides which way its dependencies may point and where the boundary belongs. Open APoSD first: if a module does not earn its interface, where it sits is moot.
+
 ## Output Contract
 
 Deliver exactly:
@@ -46,5 +48,3 @@ Deliver exactly:
 - **Assumptions** (anything you assumed that the user must confirm)
 
 Do not pad with alternatives after a recommendation is made. Do not add generic caveats.
-
-Rule books: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md and packs/rules/clean-architecture/clean-architecture.mini.md (see packs/rules/coverage.json)

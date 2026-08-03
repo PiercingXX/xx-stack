@@ -19,6 +19,8 @@ Do not invent latency, bundle, or throughput metrics for repos that are primaril
 
 ## Baseline
 
+Before choosing which numbers to record, read `packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md` and pick the metric set against its rules. It is ~1,700 tokens on describing load and performance with concrete request rates, access patterns, percentiles, contention, and tail behavior — it will tell you when a p95 taken over an unrealistic workload is a number that cannot detect the regression you care about.
+
 Record baseline before changes:
 - Bundle/build artifact size
 - API latency (p50/p95)
@@ -98,5 +100,3 @@ What gets measured gets improved; what is not measured regresses.
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
-
-Rule book: packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md (see packs/rules/coverage.json)

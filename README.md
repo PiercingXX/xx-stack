@@ -205,7 +205,7 @@ Most people only need the first one.
 
 | Folder | What it is |
 |---|---|
-| **[`xx-stack/`](xx-stack/)** | The core: the MCP server, agent contracts, skills, a design pack with 137 design systems, and a rules pack of context-tiered rule books. |
+| **[`xx-stack/`](xx-stack/)** | The core: the MCP server, agent contracts, skills, a design pack with 151 design systems, and a rules pack of context-tiered rule books. |
 | **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode / VS Code. Only needed if you use those. |
 | **[`hermes-orchestration/`](hermes-orchestration/)** | Standalone Python service for routing raw inference across GPU boxes. Optional. |
 

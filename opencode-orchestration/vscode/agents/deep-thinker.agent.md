@@ -31,6 +31,8 @@ Do not use this lane for simple file discovery, deterministic validation, or obv
 4. **Stress Test**: surface failure modes, operational risks, and edge cases.
 5. **Recommend**: provide a decision with a verification path.
 
+At step 3, before weighing options that differ in structure, read `packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md` and compare them against it. ~1,400 tokens on strategic versus tactical programming, complexity accumulation, and deep modules — it supplies the actual content of the cost, complexity, and reversibility entries your output contract already demands.
+
 ## Output Contract
 
 For each major recommendation, provide:
@@ -53,5 +55,3 @@ This agent may interpret evidence, but it must not replace missing evidence. If 
 - request becomes implementation-heavy: hand execution back to `execution-orchestrator` or `fast-build`
 
 Default to correctness and resilience over speed.
-
-Rule book: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md (see packs/rules/coverage.json)

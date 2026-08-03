@@ -65,6 +65,9 @@ Run two separate passes and keep their verdicts separate:
 Report each axis on its own — never rerank or blend them into a single score, so "standards pass, spec fail" stays visible. The two axes are independent: when multiple lanes are available, they can run in parallel via `route_parallel_tasks`.
 
 ### 3. Separate findings from fixes
+
+Before you write a structural finding or change a line yourself, read `packs/rules/refactoring/refactoring.mini.md` and judge the change against its decision rules. It is ~1,300 tokens of smell vocabulary and safe-change discipline, not a book summary — it separates a real S2 from a matter of taste, and it catches the case where a "cleanup" in the diff has quietly changed behavior.
+
 Default to findings first. Only fix issues immediately when the request explicitly includes fixes or the issue is trivial and unambiguous.
 
 ### 4. Flag if uncertain
@@ -149,5 +152,3 @@ Production bugs are expensive. Reviews are cheap insurance.
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
-
-Rule book: packs/rules/refactoring/refactoring.mini.md (see packs/rules/coverage.json)

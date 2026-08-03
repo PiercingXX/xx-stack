@@ -135,11 +135,35 @@ const ACCENT_AA = 3.0; // WCAG 2.1 AA, non-text / large text
 // They track the measured baseline exactly rather than sitting loose below it:
 // a loose floor cannot tell a pattern breaking from content being edited, which
 // is the whole reason they exist. Moving one is a deliberate act — record why.
-// Baseline at the time of writing: 137 files, 136 with tokens, 1639 tokens,
-// 57 declared pairs, 96.0% mean in-section hex capture, 111/137 files at 100%.
-const MIN_FILES_WITH_TOKENS = 136;
-const MIN_TOTAL_TOKENS = 1639;
+//
+// Baseline history (each line is a measured re-baseline, not an estimate):
+//   137 files — 136 with tokens, 1639 tokens, 57 pairs, 96.0% mean capture,
+//               111/137 at 100%.
+//   151 files — the 2026-08-03 re-vendor. Before Pattern E: 141 with tokens,
+//               1711 tokens, 91.8% mean capture, 113/148 at 100% — capture FELL
+//               because 14 new files arrived and nine of them express their
+//               palette as markdown tables the extractor refused wholesale.
+//   151 files — CURRENT, with Pattern E (palette table rows). 150 with tokens,
+//               1820 tokens, 57 pairs, 95.3% mean capture, 119/151 at 100%.
+//               Pattern E contributes 109 tokens from 118 palette rows carrying
+//               a hex; the 9-row gap is first-wins name collisions, itemised in
+//               the Pattern E comment below.
+// The declared-pair floor did NOT move: declared pairs are read from prose that
+// never passed through REFUSE_LINE, so table extraction cannot affect it.
+const MIN_FILES_WITH_TOKENS = 150;
+const MIN_TOTAL_TOKENS = 1820;
 const MIN_DECLARED_PAIRS = 57;
+
+// A RATE floor, not a count floor — and this one exists because the count
+// floors demonstrably could not catch what it catches. On the 2026-08-03
+// re-vendor the corpus grew 137 -> 151 files, absolute tokens rose 1639 ->
+// 1711, and every count floor passed comfortably. Mean capture had meanwhile
+// FALLEN 96.0% -> 91.8%, because nine incoming files expressed their palette
+// as markdown tables that the extractor refused. A growing corpus can hide an
+// extractor regression indefinitely under a floor denominated in totals.
+// Set just under the measured baseline: tight enough that a real regression
+// trips it, loose enough that vendoring one unusual file does not.
+const MIN_MEAN_CAPTURE_PCT = 94.0;
 
 // ---------------------------------------------------------------------------
 // WCAG contrast
@@ -181,7 +205,16 @@ const r2 = (n) => Math.round(n * 100) / 100;
 // text, 16px 24px padding`) that are component specs, not palette tokens.
 // Scoped, Pattern D contributes 0 — which is the correct answer.
 // ---------------------------------------------------------------------------
-const COLOR_H2 = /^##\s*(?:\d+\.\s*)?(?:Colors?|Color Palette & Roles)\s*$/;
+// "& Roles" is optional and a trailing parenthetical is tolerated, because the
+// 2026-08-03 re-vendor brought in files heading their palette "## Color Palette"
+// (wechat) and "## 2. Color Palette (Cultural Modernism)" (urdu). Both name the
+// colour section as plainly as "## Colors" does. Note HEADING_ALIASES already
+// mapped bare 'color palette' to the colour slot, so before this the two regexes
+// disagreed about the same heading: the structure check accepted it, the token
+// scoper did not, and the file was reported as having no colour section at all.
+// Deliberately still NOT matched: "## Palette Notes", which is what the
+// no-color-section fixture uses to prove this scoper can fail.
+const COLOR_H2 = /^##\s*(?:\d+\.\s*)?(?:Colors?|Color Palette(?: & Roles)?)(?:\s*\([^)]*\))?\s*$/;
 const ANY_H2 = /^##\s+\S/;
 
 function colorSectionRange(lines) {
@@ -208,6 +241,7 @@ function colorSectionRange(lines) {
 //   B ("generated"): - **Primary:** `#FF5701` — Token from style foundations.
 //   C ("em-dash"):   - **Surface** (`#FFFFFF`) — `--bg`. Cards, modals.
 //   D (fallback):    - **Name**: `#hex` ...
+//   E ("table"):     | `--wechat-green` | `#07C160` | Primary brand, CTA … |
 //
 // The map is keyed on token NAME, never on hex. 192 entries in this corpus are
 // a second name for a hex already present in the same file — Apple's #0071e3
@@ -224,13 +258,110 @@ function colorSectionRange(lines) {
 //
 // Deliberately NOT widened to a plain hyphen separator (`) - `). No line in the
 // corpus uses one, so allowing it buys nothing and only loosens the pattern.
+//
+// E is the odd one out and is gated, not free-running: it is the ONLY pattern
+// that may fire on a markdown table row, and it fires only on rows the header
+// check below (`paletteTableRows`) has already accepted. See that function for
+// why the gate is header-aware rather than positional. E is disjoint from A–D
+// structurally: A–D all require a `-`/`*` list bullet, E requires a leading `|`.
+//
+// KEYING: E keys on the FIRST cell — the token identifier (`--wechat-green`,
+// or a bare role word like `Background`) — not on the human colour name that
+// two of the 29 tables carry in a third column ("Sky Blue", "Deep Teal /
+// Jungle Green"). Three reasons, in order of weight:
+//   1. The identifier cell exists in all 29 tables; the human-name column
+//      exists in 2 of them (slack's logo accents, urdu's primary colours). A
+//      key present on 7% of rows is not a key.
+//   2. Where both exist the identifier is what an agent writes into the
+//      artifact — `var(--color-blue)`. The human name appears nowhere in the
+//      output and is not unique across brands.
+//   3. It keeps the map's existing invariant that names, not hexes, are keys.
+//      slack alone declares five alias pairs sharing one hex (`--color-blue`
+//      and `--color-info` are both `#36C5F0`; likewise green/success,
+//      yellow/warning, red/danger, link/mention), so hex-keying would drop one
+//      of each — the same 192-alias failure documented above.
+// The cost of identifier-keying is 9 first-wins collisions, all of them the
+// dual-value class A–D already refuse, now in table form: perplexity declares
+// 7 identifiers twice (`### Dark surface (default)` then `### Light surface`)
+// and mission-control declares Primary/Secondary in both its Data and Text
+// palettes. First-wins keeps the dark/default value, which is the shape those
+// files lead with, and matches how `- **Coral**: Light X / Dark Y` is handled.
 // ---------------------------------------------------------------------------
 const TOKEN_PATTERNS = [
   ['A', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*\(`?(#[0-9a-fA-F]{3,8})`?\)\s*:\s*(.+)$/],
   ['B', /^\s*[-*]\s+\*\*([^*]+?):\*\*\s*`?(#[0-9a-fA-F]{3,8})`?\s*[—–-]?\s*(.*)$/],
   ['C', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*\(`?(#[0-9a-fA-F]{3,8})`?\)\s*[—–]\s*(.+)$/],
   ['D', /^\s*[-*]\s+\*\*([^*]+?)\*\*\s*:\s*`?(#[0-9a-fA-F]{3,8})`?\s*(.*)$/],
+  ['E', /^\s*\|\s*\**`?([^|`*]+?)`?\**\s*\|\s*`?(#[0-9a-fA-F]{3,8})`?\s*\|(.*)$/],
 ];
+
+// ---------------------------------------------------------------------------
+// Which markdown tables inside the colour section are PALETTES
+//
+// Across the whole pre-re-vendor 137-file corpus exactly ONE table sat inside a
+// colour section — kami's alpha ramp — and it is not a palette, so `REFUSE_LINE`
+// refusing every table row was the right rule on the evidence available. The
+// 2026-08-03 re-vendor then brought in nine files (hud, loom, mission-control,
+// perplexity, slack, tom-modern, trading-terminal, urdu, wechat) whose PRIMARY
+// palette form is a table, and that rule silently discarded 118 palette rows.
+// A rule that was correct became wrong for a subset — so the fix is to narrow
+// it with a discriminator, not to widen it into accepting kami as well.
+//
+// The discriminator is the HEADER ROW, not the row shape, and deliberately so.
+// A positional guess ("name in column 1, hex in column 2") is not safe here:
+// kami's alpha ramp is
+//     | Effective alpha of `#1B365D` over parchment | Solid hex |
+//     | 0.08 | `#EEF2F7` |
+// whose data rows match Pattern E perfectly and would enter the map as a token
+// literally named "0.08". The header is what distinguishes them: a palette
+// table names its second column exactly `Hex`, a ramp does not.
+//
+// Measured over all 151 files — 29 tables live inside a colour section, in 10
+// files, and the rule partitions them cleanly:
+//   EXTRACTED — 27 tables, header column 2 is exactly `Hex`:
+//     `Token | Hex | Usage`  (13)  `Token | Hex | Role`  (11)
+//     `Token | Hex | Name | Role` (1, slack)  `Token | Hex | OKLch | Role` (1,
+//     perplexity)  `Color | Hex | Name | Usage | WCAG Contrast (…)` (1, urdu)
+//   REFUSED — 2 tables:
+//     `Effective alpha of \`#1B365D\` over parchment | Solid hex`  (kami) —
+//        an alpha ramp; column 1 is an opacity, not a token. "Solid hex" is not
+//        `Hex`, which is why the match is on the exact cell text and not on a
+//        substring — a substring test would have swallowed this one.
+//     `Token | Value | Role`  (tom-modern) — box-shadow specs. Refused by the
+//        header for the right reason rather than incidentally: its cells hold
+//        no hex, so a looser rule would have "passed" here by luck and then
+//        mis-fired on the first shadow table that quotes a colour.
+// Rows inside an ACCEPTED table that still carry no hex are refused by Pattern
+// E itself and stay refused: `rgba(255,255,255,0.1)` (slack sidebar overlays)
+// and `var(--surface)` (tom-modern's aliased surface) are not opaque values.
+// ---------------------------------------------------------------------------
+const TABLE_DELIM = /^\s*\|(?:\s*:?-{2,}:?\s*\|)+\s*$/;
+const HEX_COLUMN = 1; // asserted against the header text, never assumed
+
+function tableCells(row) {
+  return row
+    .replace(/^\s*\|/, '')
+    .replace(/\|\s*$/, '')
+    .split('|')
+    .map((c) => c.trim());
+}
+
+function paletteTableRows(lines, range) {
+  const rows = new Set();
+  if (!range) return rows;
+  for (let i = range.start; i < range.end - 1; i += 1) {
+    if (!/^\s*\|/.test(lines[i]) || !TABLE_DELIM.test(lines[i + 1])) continue;
+    const header = tableCells(lines[i]).map((c) => c.replace(/[`*]/g, '').trim().toLowerCase());
+    const isPalette = header.length > HEX_COLUMN && header[HEX_COLUMN] === 'hex';
+    let j = i + 2;
+    while (j < range.end && /^\s*\|/.test(lines[j])) {
+      if (isPalette) rows.add(j);
+      j += 1;
+    }
+    i = j - 1; // skip the body we just consumed; a header can't sit inside it
+  }
+  return rows;
+}
 
 // Lines these patterns must REFUSE rather than mis-parse. Each class was
 // inspected: a gradient ramp (`- **Red**: #FFE5E5 → #EE0005 → #530300`) has no
@@ -247,14 +378,23 @@ const TOKEN_PATTERNS = [
 //   - bare-hex list `- \`#ffffff\` as a page background`  (a "never use" item)
 // The miro pastel block is entirely the dual-value form, so C leaves it at its
 // existing 11-of-18 capture — that is the correct answer, not a shortfall.
+//
+// The `\|` alternative is what refuses table rows, and it is still what refuses
+// MOST of them. It is bypassed for exactly the rows `paletteTableRows` accepted
+// — a narrow, header-proven exemption rather than a loosening of the pattern,
+// so a table nobody has classified is still refused by default.
 const REFUSE_LINE = /→|↔|gradient|linear-gradient|radial-gradient|\|/i;
 
-function extractColorTokens(lines, range) {
+function refuses(line, index, paletteRows) {
+  return REFUSE_LINE.test(line) && !paletteRows.has(index);
+}
+
+function extractColorTokens(lines, range, paletteRows) {
   const tokens = new Map(); // name -> { hex, pattern, line }
   if (!range) return tokens;
   for (let i = range.start; i < range.end; i += 1) {
     const line = lines[i];
-    if (REFUSE_LINE.test(line)) continue;
+    if (refuses(line, i, paletteRows)) continue;
     for (const [tag, re] of TOKEN_PATTERNS) {
       const m = re.exec(line);
       if (!m) continue;
@@ -268,11 +408,11 @@ function extractColorTokens(lines, range) {
 
 // Every distinct hex actually present in the colour section, on lines the
 // extractor did not refuse. Used only to REPORT recall — never to fail.
-function inSectionHexes(lines, range) {
+function inSectionHexes(lines, range, paletteRows) {
   const seen = new Set();
   if (!range) return seen;
   for (let i = range.start; i < range.end; i += 1) {
-    if (REFUSE_LINE.test(lines[i])) continue;
+    if (refuses(lines[i], i, paletteRows)) continue;
     for (const h of lines[i].match(/#[0-9a-fA-F]{3,8}\b/g) || []) seen.add(h.toLowerCase());
   }
   return seen;
@@ -341,6 +481,7 @@ const HEADING_ALIASES = new Map(
   Object.entries({
     'visual theme & atmosphere': 'visual',
     overview: 'visual',
+    'brand identity': 'visual',
     color: 'color',
     colors: 'color',
     'color palette & roles': 'color',
@@ -349,26 +490,33 @@ const HEADING_ALIASES = new Map(
     'typography rules': 'typography',
     spacing: 'spacing',
     'spacing & grid': 'spacing',
-    // A combined heading that occupies the layout slot in the arc lineage.
+    'spacing system': 'spacing',
+    // Combined headings that occupy the layout slot in the arc lineage.
     'spacing & layout': 'layout',
+    'layout & spacing': 'layout',
+    'spacing & layout grid': 'layout',
     layout: 'layout',
     'layout principles': 'layout',
     'layout & composition': 'layout',
     components: 'components',
     'component stylings': 'components',
+    'component styles': 'components',
     depth: 'depth',
     'depth & elevation': 'depth',
     'elevation & depth': 'depth',
     motion: 'motion',
     'motion & interaction': 'motion',
     'interaction & motion': 'motion',
+    'motion & animation': 'motion',
     "do's and don'ts": 'dos-and-donts',
+    "do's & don'ts": 'dos-and-donts',
     'dos and donts': 'dos-and-donts',
     responsive: 'responsive',
     'responsive behavior': 'responsive',
     'responsive behaviour': 'responsive',
     'agent prompt guide': 'agent-guide',
     'voice & brand': 'voice',
+    'brand voice & tone': 'voice',
     'anti-patterns': 'anti-patterns',
     antipatterns: 'anti-patterns',
   })
@@ -440,8 +588,9 @@ function checkStructure(hs) {
 function lintText(slug, text) {
   const lines = text.split('\n');
   const range = colorSectionRange(lines);
+  const paletteRows = paletteTableRows(lines, range);
   const hs = headings(lines);
-  const tokens = extractColorTokens(lines, range);
+  const tokens = extractColorTokens(lines, range, paletteRows);
   const declared = extractDeclaredPair(lines, range);
   const structure = checkStructure(hs);
 
@@ -490,8 +639,27 @@ function lintText(slug, text) {
     accentRatio,
     failures,
     notes,
-    hexesInSection: inSectionHexes(lines, range),
+    hexesInSection: inSectionHexes(lines, range, paletteRows),
+    // Kept so the zero-token NOTE can state a MEASURED reason per file instead
+    // of generalising one file's reason across the whole list.
+    firstUnreadHexLine: firstUnreadHexLine(lines, range, paletteRows),
   };
+}
+
+// The first line in the colour section that carries a hex the extractor did not
+// turn into a token. Evidence for the zero-token NOTE: "there are hexes here,
+// but not in a shape any pattern reads" is a different and far more actionable
+// finding than "there are no hexes here".
+function firstUnreadHexLine(lines, range, paletteRows) {
+  if (!range) return null;
+  for (let i = range.start; i < range.end; i += 1) {
+    const line = lines[i];
+    if (!/#[0-9a-fA-F]{3,8}\b/.test(line)) continue;
+    if (refuses(line, i, paletteRows)) continue;
+    if (TOKEN_PATTERNS.some(([, re]) => re.test(line))) continue;
+    return { line: i + 1, text: line.trim() };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -512,7 +680,9 @@ const FIXTURE_EXPECTATIONS = [
 // Pattern-level cases, kept inline rather than as fixture files because they
 // assert properties of the regex set itself (disjointness, refusal classes)
 // rather than end-to-end file behaviour. `expect` is the pattern tag that must
-// win, or null when every pattern must refuse the line.
+// win, or null when every pattern must refuse the line. The third element marks
+// a line that sits inside a table `paletteTableRows` accepted — Pattern E may
+// only fire there, and every case below is a real corpus line.
 const PATTERN_CASES = [
   ['- **Absolute Black** (`#000000`): Immersive hero canvases', 'A'],
   ['- **Primary:** `#FF5701` — Token from style foundations.', 'B'],
@@ -521,6 +691,25 @@ const PATTERN_CASES = [
   ['- **Primary Blue**: `#1b61c9` white text', 'D'],
   // Names containing an em-dash must still resolve by their own separator.
   ['- **Brand Red — Token** (`#FF2442`): `--primary` and `--color-red`.', 'A'],
+  // Pattern E, all three table shapes the corpus uses. The hex is column 2 in
+  // every one; what differs is what follows it, which E must not care about.
+  //   wechat  — `Token | Hex | Usage`      (no separate human-name column)
+  ['| `--wechat-green` | `#07C160` | Primary brand, CTA buttons, active states |', 'E', { paletteRow: true }],
+  //   slack   — `Token | Hex | Name | Role` (human name in column 3, NOT keyed)
+  ['| `--color-blue` | `#36C5F0` | Sky Blue | Channel icons, links, info states |', 'E', { paletteRow: true }],
+  //   hud     — bare role word as the identifier, no `--custom-property`
+  ['| Background | `#0A0A0A` | Page canvas, primary depth |', 'E', { paletteRow: true }],
+  //   urdu    — identifier is bolded and five columns follow
+  ['| **Primary Brand** | `#0F595E` | Deep Teal / Jungle Green | CTAs | 8.4:1 ✅ AA |', 'E', { paletteRow: true }],
+  // Rows INSIDE an accepted palette table that still must be refused, because
+  // their value is not an opaque hex. These prove the table gate opens the door
+  // for the table, not for every row in it.
+  ['| `--bg-sidebar-hover` | `rgba(255,255,255,0.1)` | Sidebar item hover |', null, { paletteRow: true }],
+  ['| `--surface-warm` | `var(--surface)` | Alternate surface for section rhythm |', null, { paletteRow: true }],
+  // A table row NOT vouched for by the header check stays refused by
+  // REFUSE_LINE even though Pattern E would otherwise match it — this is kami's
+  // alpha ramp, and TABLE_CASES below proves the header is what refuses it.
+  ['| 0.08 | `#EEF2F7` |', null],
   // Refusal classes. Each is a real corpus line; see the REFUSE_LINE comment.
   ['- **Coral**: Light `#ffc6c6` / Dark `#600000`', null],
   ['- **Granite** (`#555555`) and **Graphite** (`#565656`): Deeper gray.', null],
@@ -529,15 +718,83 @@ const PATTERN_CASES = [
   ['- `#ffffff` as a page background', null],
 ];
 
+// Structural cases for the table gate. A single line cannot express these: the
+// whole point of the header discriminator is that identical-looking rows are
+// extracted or refused depending on the header above them, so each case is a
+// minimal document run end-to-end through the real scoper and extractor.
+const TABLE_CASES = [
+  {
+    label: 'wechat shape (`Token | Hex | Usage`) extracts, keyed on the identifier',
+    doc: [
+      '## Color Palette',
+      '### Brand Colors',
+      '| Token | Hex | Usage |',
+      '|---|----|----|',
+      '| `--wechat-green` | `#07C160` | Primary brand, CTA buttons, active states |',
+      '## Typography',
+    ],
+    expect: [['--wechat-green', '#07c160']],
+  },
+  {
+    label: 'slack shape (`Token | Hex | Name | Role`) keys on the identifier, not "Sky Blue"',
+    doc: [
+      '## 2. Color Palette & Roles',
+      '### Logo Accent Colors',
+      '| Token | Hex | Name | Role |',
+      '|---|---|---|---|',
+      '| `--color-blue` | `#36C5F0` | Sky Blue | Channel icons, links, info states |',
+      '## 3. Typography Rules',
+    ],
+    expect: [['--color-blue', '#36c5f0']],
+  },
+  {
+    label: 'kami alpha ramp is REFUSED — its rows match Pattern E, its header does not say `Hex`',
+    doc: [
+      '## Colors',
+      '### Tag tints (solid, NOT rgba)',
+      '| Effective alpha of `#1B365D` over parchment | Solid hex |',
+      '|---|---|',
+      '| 0.08 | `#EEF2F7` |',
+      '| 0.14 | `#E4ECF5` |',
+      '## Typography',
+    ],
+    expect: [],
+  },
+  {
+    label: 'tom-modern shadow table (`Token | Value | Role`) is REFUSED by its header',
+    doc: [
+      '## Colors',
+      '### Shadows (brand-specific)',
+      '| Token | Value | Role |',
+      '|---|---|---|',
+      '| `--tm-shadow-hard` | `8px 8px 0 rgba(150,150,150,0.12)` | Hard offset shadow |',
+      '## Typography',
+    ],
+    expect: [],
+  },
+  {
+    label: 'a palette table outside the colour section is out of scope entirely',
+    doc: [
+      '## Colors',
+      '- **Primary** (`#FF5701`): the one real token.',
+      '## Components',
+      '| Token | Hex | Usage |',
+      '|---|---|---|',
+      '| `--btn-bg` | `#123456` | Button fill |',
+    ],
+    expect: [['Primary', '#ff5701']],
+  },
+];
+
 function runPatternSelfTest() {
   const problems = [];
-  const match = (line) => {
-    if (REFUSE_LINE.test(line)) return null;
+  const match = (line, opts = {}) => {
+    if (REFUSE_LINE.test(line) && !opts.paletteRow) return null;
     for (const [tag, re] of TOKEN_PATTERNS) if (re.test(line)) return tag;
     return null;
   };
-  for (const [line, expect] of PATTERN_CASES) {
-    const got = match(line);
+  for (const [line, expect, opts] of PATTERN_CASES) {
+    const got = match(line, opts);
     if (got !== expect) {
       problems.push(`pattern case expected ${expect || '(refusal)'} but got ${got || '(refusal)'}: ${line}`);
     }
@@ -547,6 +804,14 @@ function runPatternSelfTest() {
   for (const [line] of PATTERN_CASES) {
     const hits = TOKEN_PATTERNS.filter(([, re]) => re.test(line)).map(([t]) => t);
     if (hits.length > 1) problems.push(`patterns ${hits.join('+')} both match, so ordering is load-bearing: ${line}`);
+  }
+  for (const { label, doc, expect } of TABLE_CASES) {
+    const range = colorSectionRange(doc);
+    const got = [...extractColorTokens(doc, range, paletteTableRows(doc, range))].map(([n, t]) => `${n}=${t.hex}`);
+    const want = expect.map(([n, h]) => `${n}=${h}`);
+    if (got.join(', ') !== want.join(', ')) {
+      problems.push(`table case "${label}" expected [${want.join(', ')}] but got [${got.join(', ')}]`);
+    }
   }
   return problems;
 }
@@ -595,7 +860,8 @@ const selfTestProblems = runSelfTest();
 if (argv.has('--self-test')) {
   for (const p of selfTestProblems) console.error(`FAIL self-test ${p}`);
   console.log(
-    `self-test: ${FIXTURE_EXPECTATIONS.length} fixtures + ${PATTERN_CASES.length} pattern cases, ` +
+    `self-test: ${FIXTURE_EXPECTATIONS.length} fixtures + ${PATTERN_CASES.length} pattern cases + ` +
+      `${TABLE_CASES.length} table cases, ` +
       `${selfTestProblems.length} problems`
   );
   process.exit(selfTestProblems.length > 0 ? 1 : 0);
@@ -681,6 +947,13 @@ if (withTokens < MIN_FILES_WITH_TOKENS) {
 if (totalTokens < MIN_TOTAL_TOKENS) {
   failures.push(`extractor recall regressed: ${totalTokens} tokens extracted, floor is ${MIN_TOTAL_TOKENS}.`);
 }
+if (meanCapture < MIN_MEAN_CAPTURE_PCT) {
+  failures.push(
+    `extractor capture RATE regressed: ${meanCapture.toFixed(1)}% mean, floor is ${MIN_MEAN_CAPTURE_PCT}%. ` +
+      `Absolute token counts can rise while capture falls — that is exactly what happened on the 2026-08-03 ` +
+      `re-vendor, so check whether incoming files use a token form no pattern reads.`
+  );
+}
 if (pairs.length < MIN_DECLARED_PAIRS) {
   failures.push(
     `declared-pair recall regressed: ${pairs.length} files yielded a text/surface pair, floor is ${MIN_DECLARED_PAIRS}. ` +
@@ -691,7 +964,7 @@ if (pairs.length < MIN_DECLARED_PAIRS) {
 console.log('Design-system lint');
 console.log(
   `  self-test: ${FIXTURE_EXPECTATIONS.length} fixtures (1 clean, 3 deliberately malformed), ` +
-    `${PATTERN_CASES.length} pattern cases`
+    `${PATTERN_CASES.length} pattern cases, ${TABLE_CASES.length} table cases`
 );
 console.log(`  design systems iterated: ${iterated} (manifest.json accounts for ${expectedCount})`);
 console.log(`  colour section located: ${withSection}/${iterated}`);
@@ -699,11 +972,30 @@ console.log(`  colour tokens extracted: ${totalTokens} across ${withTokens} file
 console.log(`  in-section hex capture: ${meanCapture.toFixed(1)}% mean, ${perfect}/${denom.length} files at 100%`);
 console.log(`  declared text/surface pairs checked at ${TEXT_AA}:1: ${pairs.length}`);
 console.log(`  section schema: ${Object.entries(schemaCounts).map(([k, v]) => `${v} × ${k}`).join(', ')}`);
+// The reason is MEASURED per file, never a single explanation generalised over
+// the list. The previous wording said all ten zero-token files expressed their
+// palette as `{colors.x}` references; that was true of one of them and wrong
+// about the other nine, which were markdown-table palettes the extractor was
+// discarding. A wrong explanation in a gate is worse than none — it is exactly
+// what stops the next person looking.
 if (zeroTokens.length > 0) {
-  console.log(
-    `  NOTE ${zeroTokens.length} file(s) yield no colour token: ${zeroTokens.join(', ')} — ` +
-      `expected for files whose palette is expressed as {colors.x} references rather than literal hexes.`
-  );
+  console.log(`  NOTE ${zeroTokens.length} file(s) yield no colour token, with the measured reason for each:`);
+  for (const r of results.filter((x) => x.tokens.size === 0)) {
+    const ev = r.firstUnreadHexLine;
+    if (!ev) {
+      console.log(
+        `       ${r.slug}: no literal hex anywhere in its colour section — nothing to extract, ` +
+          `not an extractor gap.`
+      );
+      continue;
+    }
+    const snippet = ev.text.length > 96 ? `${ev.text.slice(0, 96)}…` : ev.text;
+    console.log(
+      `       ${r.slug}: ${r.hexesInSection.size} literal hex(es) in the colour section, none on a line ` +
+        `any of the ${TOKEN_PATTERNS.length} patterns reads. First such line ${ev.line}:`
+    );
+    console.log(`         ${snippet}`);
+  }
 }
 for (const n of notes) console.log(`  NOTE ${n}`);
 if (notes.length > 0) {

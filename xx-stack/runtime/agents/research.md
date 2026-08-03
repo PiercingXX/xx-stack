@@ -34,6 +34,8 @@ Use this agent when another agent needs to:
 4. **Synthesize** — produce findings, not raw data dumps
 5. **Flag unknowns** — explicitly call out gaps where you could not find evidence
 
+Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before you synthesize. ~1,800 tokens whose coupling and orthogonality rules let a blast-radius answer name the seams a change crosses instead of listing the files it touches — and whose "prove it, don't assume" rule is the same discipline as the citation rule below.
+
 ## Rules
 
 - Read before concluding. Never infer file contents from filenames.
@@ -59,5 +61,3 @@ Use this agent when another agent needs to:
 ### Recommended next step
 <one concrete action for the calling agent>
 ```
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

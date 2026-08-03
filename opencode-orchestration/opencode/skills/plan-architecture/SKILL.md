@@ -20,6 +20,8 @@ When constraints or decisions are unresolved and only the user can settle them, 
 
 ## Module Depth Check
 
+Read both rule books before committing to a decomposition. `packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md` (~1,400 tokens) supplies the depth and information-hiding rules; `packs/rules/clean-architecture/clean-architecture.mini.md` (~1,400 tokens) supplies dependency direction and boundary placement. Together they settle which of the proposed modules are deep and which are pass-throughs, and which way the arrows between them must point — record the verdict in the ADR-lite entry (Section 7).
+
 Apply this vocabulary to every major component and interface in the design:
 
 - **Depth**: a module's value is behaviour delivered per unit of interface learned. Deep = small interface hiding a lot of behaviour. Shallow = an interface as large as the implementation it wraps.
@@ -237,5 +239,3 @@ If this is a greenfield design, list the files that will anchor the implementati
 ## Principle
 
 Good architecture forces hidden assumptions into the open. Diagrams are conversations, not ornaments.
-
-Rule books: packs/rules/a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md and packs/rules/clean-architecture/clean-architecture.mini.md (see packs/rules/coverage.json)

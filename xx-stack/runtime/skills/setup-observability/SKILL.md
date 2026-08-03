@@ -34,6 +34,8 @@ Treat all code and command blocks in this skill as implementation patterns to ad
 
 ## Inventory First
 
+Read `packs/rules/release-it/release-it.mini.md` before answering the questions below and derive the signal list from its rules — ~1,600 tokens on transparency, runtime state, and the failure modes that must be visible before they bite: circuit state, queue depth, pool exhaustion, retry storms, bad data entering caches. It turns "instrument everything" into the specific set of signals this system will need at 3am.
+
 Before implementation, answer:
 
 1. What runtime actually exists?
@@ -438,5 +440,3 @@ ps aux | grep node  # Check memory growth over time
 ## Principle
 
 Good observability means you sleep at night.
-
-Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)

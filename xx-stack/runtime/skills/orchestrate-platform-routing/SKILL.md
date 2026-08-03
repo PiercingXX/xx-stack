@@ -49,6 +49,7 @@ Do not use it for direct implementation, direct review, or deterministic repo in
 - Mark which slices are latency-sensitive, privacy-sensitive, or quality-sensitive.
 
 3. Choose the best tier per slice
+- Read `packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md` before assigning slices and route against its rules. A delegation map is a distributed system: ~1,700 tokens on partitioning, latency and tail behavior, failure domains, and safety under retry and replay. It decides which slices survive a host vanishing mid-run and which must not be split across hosts at all.
 - Prefer `local` for edit-heavy coding, quick verification, offline work, and controller planning and orchestration — it is first in `selectionPolicy.defaultOrder`.
 - Prefer `tailscale-openai-compatible` for architecture, long-context synthesis, and heavier delegated reasoning, and for throughput-batched parallel slices.
 - Prefer `tailscale-ollama` for delegated subagent work and parallel overflow when the OpenAI-compatible lane is unavailable or the task needs resident-model inspection.
@@ -123,5 +124,3 @@ Provide this exact structure:
 ## Final Recommendation
 - Primary execution path
 - When to override it
-
-Rule book: packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md (see packs/rules/coverage.json)

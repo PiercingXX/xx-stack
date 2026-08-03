@@ -34,6 +34,8 @@ Track only the signals that actually exist for the current system.
 
 ## Rollback Triggers
 
+Read `packs/rules/release-it/release-it.nano.md` (~550 tokens, sized for this lane) before calling a trigger — it separates a real failure signal from noise worth riding out.
+
 - Error rate > baseline by 2x for 5+ minutes
 - P95 latency regression > 40% for 10+ minutes
 - Any critical journey failure (auth, checkout, save)
@@ -86,5 +88,3 @@ Deploy is a hypothesis. Canary is the proof.
 ## Optional Telemetry (Opt-In)
 
 If you add a local telemetry hook, record `skill`, `outcome`, and `durationMs` in your chosen sink.
-
-Rule book: packs/rules/release-it/release-it.nano.md (see packs/rules/coverage.json)

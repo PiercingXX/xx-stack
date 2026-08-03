@@ -64,6 +64,8 @@ Do not commit to a plan structure until ALL exploration outputs are merged into 
 
 ### Phase 3 — Structure
 
+Read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before decomposing, and decompose against it. ~1,800 tokens of decision rules — tracer bullets, orthogonality, good-enough software — which is what separates a slice that is a thin end-to-end path carrying its own gate from a horizontal layer nothing can verify until everything else lands.
+
 From the evidence package, define:
 
 - slice decomposition (what work units)
@@ -144,5 +146,3 @@ Example: *"I produce plans only — for execution, delegate the slice to `build`
 - Use present-continuous form: "Mapping codebase dependencies" not "Map codebase dependencies"
 - Use `blocks` / `blockedBy` for ordered phases
 - Tasks complete only with concrete output (plan section written), not from intent
-
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)

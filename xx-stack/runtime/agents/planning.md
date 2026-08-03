@@ -26,4 +26,4 @@ If invoked directly by a user, delegate to the `plan` agent workflow:
 
 Do not produce a simplified or abbreviated plan. Use the full plan agent workflow.
 
-Rule book: packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md (see packs/rules/coverage.json)
+The alias inherits `plan`'s rule book, not only its steps: read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.mini.md` before Phase 3 (Structure) and decompose against it. ~1,800 tokens on tracer bullets and orthogonality — skipping it is how an alias quietly returns a weaker plan than the agent it aliases.

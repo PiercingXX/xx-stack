@@ -83,7 +83,10 @@ For hard repros, escalate to mechanical narrowing before giving up:
 - **Differential testing**: run the same input through the last-known-good build, config, or environment and diff the behavior to isolate the varying factor
 
 ### Step 5: Fix
-Once you have the root cause:
+
+Once you have the root cause, and before you edit, read `packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md` and follow its legacy loop. It is ~1,400 tokens of decision rules on stating the behavior that must stay unchanged, finding a seam, and breaking the dependency that blocks feedback — it decides whether the smallest safe patch here is a direct edit, a sprout, or a wrap.
+
+Then:
 - patch the smallest surface that addresses the confirmed cause
 - do not create branches or commits unless the user explicitly asks
 
@@ -145,5 +148,3 @@ Once you have the root cause:
 ## Principle
 
 The best fix is one that treats the cause, not the symptom.
-
-Rule book: packs/rules/working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md (see packs/rules/coverage.json)

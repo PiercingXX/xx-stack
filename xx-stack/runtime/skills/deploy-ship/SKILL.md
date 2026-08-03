@@ -55,6 +55,8 @@ Review the diff. Ask: "Changes look good?" (Yes/No/Ask questions)
 
 ### 5. Execute the real release path
 
+Before running anything irreversible, read `packs/rules/release-it/release-it.mini.md` and check this release against its rules. It is ~1,600 tokens of production-failure decision rules — timeouts, retry bounds, blast radius, back pressure, rollback and roll-forward paths — and it turns "the gates are green" into a judgement about how this change behaves when production goes wrong. It also names the failure modes the smoke window in step 11 should be watching for.
+
 Only run push, PR, merge, publish, or deploy steps that are explicitly supported by the current repo and the user request.
 
 ### 6. Verify the shipped surface
@@ -130,5 +132,3 @@ If production issue detected:
 ## Principle
 
 Shipping is not the end — it's the beginning. Monitor the first hour closely.
-
-Rule book: packs/rules/release-it/release-it.mini.md (see packs/rules/coverage.json)
