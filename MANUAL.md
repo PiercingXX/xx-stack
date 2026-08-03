@@ -1,0 +1,758 @@
+# xx-stack Manual
+
+A complete reference for operating, extending, and maintaining this repository.
+
+**Audience.** Someone who has to change this codebase or run it in anger. The
+root `README.md` explains *why* the project exists and gets you to a first
+routing decision in two minutes; this document explains *how everything works*
+and *where the bodies are buried*.
+
+**Status of this document.** Written 2026-08-02 from a five-part audit of all
+817 tracked files. §11 (Defect Register) records every confirmed problem found
+in that audit, including which ones have since been fixed.
+
+---
+
+## Table of contents
+
+1. [What this is](#1-what-this-is)
+2. [Repository topology](#2-repository-topology)
+3. [The single source of truth: inventory.json](#3-the-single-source-of-truth-inventoryjson)
+4. [The MCP server](#4-the-mcp-server)
+5. [Tool reference](#5-tool-reference)
+6. [The runtime layer: skills and agents](#6-the-runtime-layer-skills-and-agents)
+7. [Content packs](#7-content-packs)
+8. [The Hermes subsystem](#8-the-hermes-subsystem)
+9. [Gates, CI, and what they actually prove](#9-gates-ci-and-what-they-actually-prove)
+10. [Configuration reference](#10-configuration-reference)
+11. [Defect register](#11-defect-register)
+12. [Maintenance conventions](#12-maintenance-conventions)
+13. [Troubleshooting](#13-troubleshooting)
+
+---
+
+## 1. What this is
+
+xx-stack is a **headless, local-first MCP control plane**. It answers the
+question *"which of my machines should run this piece of work, and with which
+model?"* and then supervises the work until it finishes, fails, or has to be
+handed to a different machine.
+
+Three properties define the whole design, and every change should preserve them:
+
+- **Headless.** The server routes, supervises, and qualifies. It never becomes
+  a desktop app, an editing REPL, or a workflow engine. It recommends; the
+  calling agent executes.
+- **Local-first.** Cloud lanes are off unless explicitly opted in. Every
+  optional surface degrades cleanly when absent rather than escalating to a
+  paid service.
+- **Single source of truth.** `inventory.json` describes your hardware. Every
+  other registry is generated from it and carries a `_generated` banner.
+
+It ships as an MCP server (47 tools), a prompt/content layer (28 skills, 21
+agents, 2 vendored packs), a standalone Python control plane for Hermes, and a
+CLI.
+
+### Scale
+
+| Thing | Count |
+|---|---|
+| Tracked files | 817 |
+| MCP tools registered | 47 (45 always, 2 behind a flag) |
+| TypeScript source | ~20,000 lines across 50 files |
+| Test files / tests | 18 files, 257 tests (plus 25 Python tests) |
+| Runtime skills | 28 |
+| Runtime agents | 21 (+2 nano variants) |
+| Build/check scripts | 23 |
+
+---
+
+## 2. Repository topology
+
+Three top-level components:
+
+```
+xx-stack/                  ← THE SOURCE OF TRUTH
+  mcp-server/              MCP server (TypeScript, ESM)
+  runtime/                 canonical skills, agents, runbooks, registries
+  adapters/                GENERATED mirrors of runtime/agents — never hand-edit
+  scripts/                 build, check, and sync tooling
+  packs/                   vendored content (design, rules)
+  hooks/                   example lifecycle hooks
+
+opencode-orchestration/    OpenCode-specialized surface
+  opencode/                COPIES of runtime/ content, specialized for OpenCode
+  vscode/                  VS Code prompt surfaces
+  mcp-server -> ../xx-stack/mcp-server    (symlink)
+  scripts    -> ../xx-stack/scripts       (symlink)
+  packs      -> ../xx-stack/packs         (symlink)
+
+hermes-orchestration/      standalone Python control plane (stdlib only)
+```
+
+### The symlink/copy distinction — read this before editing
+
+This trips people up constantly, and the root README currently overstates it
+(see §11, DOC-5).
+
+- `opencode-orchestration/{mcp-server,scripts,packs}` are **symlinks**. Editing
+  "through" them edits the real file in `xx-stack/`. Make the edit at the real
+  path so the diff is legible.
+- `opencode-orchestration/opencode/{agents,skills}` are **full copies**. Edits
+  do **not** propagate. Changing a canonical skill means changing its mirror
+  too, by hand.
+
+There are 15 symlinks in the repo, all tracked as git mode `120000`, all
+resolving correctly. `verify-repo-layout.mjs` asserts the structure.
+
+### Why the copies exist
+
+The canonical `runtime/` content is host-agnostic. The `opencode/` copies are
+specialized: they pin models, rewrite `runtime/` paths to `opencode/`, and use
+OpenCode's permission syntax. The deliberate deltas between a canonical file and
+its mirror are:
+
+1. the `compatibility:` frontmatter line
+2. `model:` pins
+3. `runtime/` → `opencode/` and `adapters/` → `vscode/` path rewrites
+4. `skill: allow` → `skill: {"*": allow}`
+
+**Anything else that differs is drift**, and `check-stack-source-drift.mjs`
+cannot see it — that script compares directory *names* only and says so in its
+own docstring. §11 records the drift this blindness allowed.
+
+---
+
+## 3. The single source of truth: inventory.json
+
+`inventory.json` at the repo root is the only file you edit to describe
+machines, networks, installed runtimes, and optional services.
+
+```
+inventory.json  ──(npm run inventory:sync)──►  xx-stack/runtime/platforms.json
+                                          ├──►  opencode-orchestration/opencode/platforms.json
+                                          └──►  hermes-orchestration/config/orchestration.json
+                                                (only the `lanes` block and cloud-gate fields;
+                                                 `execution` and `proxy` stay hand-tuned)
+```
+
+`npm run inventory:check` fails the build if any generated file is stale. Run
+`npm run inventory:sync` after **any** change to inventory, the schema, or the
+generator.
+
+Note the deliberate asymmetry: `xx-stack/runtime/platforms.json` is generated
+from `inventory.example.json`, not your real `inventory.json`, so a clone never
+ships the maintainer's hardware.
+
+### Schema shape
+
+- `machines[]` — id, network address, `runtimes[]` (kind, port, models), and an
+  optional `services[]` array (currently only `kind: "reader"`; off by default,
+  never routed as a lane, never dialed by the MCP server).
+- `aggregators[]` — proxies that front several runtimes.
+- `cloud` — cloud providers, gated.
+- `policy.cloudEscalation.optIn` — the master cloud gate.
+
+Adding support for a new inference server means one entry in the `RUNTIMES`
+table in `xx-stack/scripts/generate-registries.mjs` and one value in the `kind`
+enum in `inventory.schema.json`. `endpointFamily` (how TypeScript inspects
+models) and `hermesEndpointType` (how Hermes dials it) are deliberately
+separate — Ollama is its own family to TypeScript but plain
+`openai_compatible` to Hermes.
+
+### Tier vocabulary
+
+`xx-stack/runtime/runtime-constants.json` is the authority. There are exactly
+four tiers:
+
+```
+local, tailscale-ollama, tailscale-openai-compatible, cloud
+```
+
+Several documents invent tiers that do not exist (`primary`, `reasoning`,
+`overflow`, `compatibility`) — see §11, CONTENT-4. If you read those names
+anywhere, they are wrong.
+
+---
+
+## 4. The MCP server
+
+`xx-stack/mcp-server/` — TypeScript, ESM (`"type": "module"`), zero runtime
+dependencies beyond the MCP SDK and zod.
+
+### Conventions that are load-bearing
+
+- **ESM imports carry `.js` extensions** even in TypeScript source.
+  `import { x } from "./foo.js"` resolves `foo.ts`.
+- **Tools register in groups.** A module exports
+  `registerXxxTools(server, deps)`, calls `server.tool(name, description,
+  zodSchema, handler)` inside, and is wired from `src/index.ts`.
+  `routing_tools.ts` is the canonical shape to copy.
+- **Runtime logic lives in `*_runtime.ts`; tools are thin wrappers.** The CLI
+  imports the same runtime functions the tools call, so behavior cannot fork.
+  (Three violations of this rule are recorded in §11, MCP-DUP-3.)
+- **Tests are `*.test.ts` beside the runtime file**, using `node:test`. They run
+  against compiled output: `npm test` = `tsc` then `node --test dist/*.test.js`.
+- **Zero new dependencies** without justification. Prefer `node:` built-ins —
+  the repo uses `node:test` over jest and `node:util` `parseArgs` over an
+  argument parser.
+
+### Module map
+
+| Module | Lines | Role |
+|---|---|---|
+| `index.ts` | — | wires every tool group; the only place `register*` is called |
+| `routing_selection_runtime.ts` | 592 | tier scoring, model choice, the cloud gate |
+| `routing_runtime.ts` | 488 | architect/editor split, competitive fan-out, review routing, batch fan-out |
+| `routing_tools.ts` | — | 7 routing tools |
+| `supervisor_completion_tools.ts` | 1002 | continuation/handoff/forced-synthesis prompts, completion gate |
+| `supervisor_session_tools.ts` | 635 | `supervisor_tick`, failover, lease revocation |
+| `supervisor_session_runtime.ts` | 336 | stall detection, backoff, dedupe |
+| `supervisor_store_runtime.ts` | 255 | session persistence |
+| `task_runtime.ts` | 411 | task store, goal contracts, leases |
+| `task_tools.ts` | 408 | 6 task tools |
+| `memory_runtime.ts` | 693 | agent memory, budgeted recall, compaction, CAS writes |
+| `execution_policy.ts` | 683 | the exec gate: denylist → allowlist → process-group spawn |
+| `observability_tools.ts` | 526 | platform listing, health, telemetry, tool search |
+| `cli.ts` | 767 | the `xx` CLI |
+| `repo_map_runtime.ts` | 418 | budget-fitted repo map |
+| `context_selection_runtime.ts` | — | lazy-greedy submodular selection |
+| `output_compaction.ts` | — | head/tail truncation |
+| `hook_tools.ts` | — | `_Stop` / `_PostCompact`, flag-gated |
+| `platform_runtime.ts` | — | registry load, hardware probe, cost lookup |
+| `config_runtime.ts` | 305 | agent profile merge, tool policy |
+
+### The execution gate
+
+Every shelling-out path goes through `validateExecRequest` in
+`execution_policy.ts`. The order is:
+
+1. **Denylist** — `xx-stack/runtime/dangerous-patterns.txt`, 12 POSIX-ERE
+   patterns covering irreversible operations (`rm -rf /`, `dd` to a block
+   device, `mkfs`, fork bombs, `curl | sh`, `git push --force`, repo deletion).
+   Fails open if the file is unreadable, so a broken list never bricks the
+   server — the state is flagged via `getDangerousPatternsStatus()`.
+2. **Allowlist** — context-specific. Internal probes have their own list; hook
+   commands take an explicit `allowedHookCommands`.
+3. **Spawn** — detached on POSIX so the whole process group can be killed with
+   SIGTERM-then-SIGKILL on every exit path, including normal completion.
+   Windows has no process groups and degrades to signalling the direct child.
+
+This is a **seatbelt against accidents, not a sandbox against a malicious
+agent.** It blocks only irreversible operations; locally destructive but
+recoverable commands (`rm -rf node_modules`, `git clean -fdx`) stay allowed
+deliberately, because over-blocking kills agent usefulness. Document that limit
+honestly wherever you describe it.
+
+---
+
+## 5. Tool reference
+
+47 registrations across 12 modules. All names unique; every group reachable
+from `index.ts`.
+
+### Routing (7) — `routing_tools.ts`
+
+| Tool | Purpose |
+|---|---|
+| `route_task` | the core call: description → tier, host, model, reasoning, fallback |
+| `route_task_with_watchdog` | as above, plus live health probes and ranked fallbacks |
+| `route_parallel_tasks` | fan a decomposed task list across lanes |
+| `route_architect_editor` | two-lane split: reasoning model plans, fast model applies |
+| `route_competitive_task` | N distinct lanes for the same prompt, each with a worktree path |
+| `route_review` | picks a reviewer lane whose model differs from the author's |
+| `score_candidates` | ranks competing diffs heuristically |
+
+`route_task`, `route_architect_editor`, and `route_competitive_task` accept a
+**string or an array**. Single input returns today's exact shape; array input
+returns `{results: [...]}` position-aligned, fanned out with concurrency capped
+at 8.
+
+Cloud is excluded from all of them unless `XX_STACK_ALLOW_CLOUD=1` or
+`selectionPolicy.cloudEscalation.optIn` is set.
+
+### Tasks (6) — `task_tools.ts`
+
+`task_create`, `task_get`, `task_list`, `task_update`, `task_suspend`,
+`task_resume`.
+
+Two optional metadata blocks matter:
+
+- **`goalContract`** — `{objective, constraints[], validationCmd?,
+  stopCondition, docsNote?}`. When present, completion evaluation cites the
+  stop condition and expects a `verify_edit` result for the validation command.
+  Carries a mandatory anti-reward-hacking clause: *do not delete, skip, weaken,
+  or narrow tests to make the goal pass.*
+- **`lease`** — `{expiresAt, revoked?}`. Failover revokes the prior lane's
+  lease; a write-back against a dead lease returns a structured `lease_revoked`
+  rejection.
+
+### Supervisor (11) — three modules
+
+Session lifecycle: `supervisor_start_session`, `supervisor_tick`,
+`supervisor_record_event`, `supervisor_abort_session`.
+
+Completion: `supervisor_complete_session`, `supervisor_record_completion_check`,
+`supervisor_emit_continuation_prompt`, `supervisor_emit_handoff_prompt`,
+`supervisor_force_synthesis`.
+
+Inspection: `supervisor_status`, `supervisor_run_self_test`.
+
+**Three terminal states**, deliberately distinguished: `completed`, `failed`,
+and `force_synthesized`. The last is the "budget exhausted, salvage what we
+learned" outcome — it demands an answer from existing evidence only, with
+explicit confidence and unresolved gaps, and is never presented as a normal
+completion.
+
+**Prompt variants** all come from one formatter: `default`, `handoff` (state
+not instructions, with a Traps & Dead Ends section and a verify-don't-trust
+preamble), and `force_synthesis`. Secrets are redacted from rendered lines —
+credential *locations* survive, values never do.
+
+### Memory (6) — `agent_memory_tools.ts`
+
+`agent_memory_append`, `agent_memory_get`, `agent_memory_snapshot_status`,
+`agent_memory_snapshot_sync`, `agent_memory_compaction_prompt`,
+`agent_memory_mark_superseded`.
+
+- `agent_memory_get` takes an optional `tokenBudget`; when supplied, entry
+  selection uses submodular selection (relevant + diverse, not most-recent-N).
+  Omitted, behavior is byte-identical to the original.
+- Compaction never calls a model — it emits a distillation prompt plus
+  candidates; the agent writes rules back and originals are marked superseded
+  in place, never deleted.
+- The two read-modify-write paths accept an optional `expectedHash`; on
+  mismatch they return `write_conflict` with the current hash and write
+  nothing.
+
+### Agent profiles (5) — `agent_profile_tools.ts`
+
+`agent_preflight`, `agent_list_profiles`, `agent_validate_profiles`,
+`agent_filter_tools`, `build_coordinator_contract`.
+
+### Observability (7) — `observability_tools.ts`
+
+`list_platforms`, `list_models`, `get_hardware`, `check_health`,
+`probe_endpoint_compatibility`, `record_telemetry`, `search_tools`.
+
+Telemetry is **off by default** (`runtime/telemetry.json`, `enabled: false`).
+When on, it writes lane, token counts, and estimated cost to a local JSONL
+sink. Cost is estimate-only from `runtime/model-rates.json`; local lanes are 0.
+
+### Repo map, verification, review (3)
+
+- `build_repo_map` — ranked, budget-fitted slice of a codebase. Heuristic
+  scoring (git recency, path proximity, reference counts), respects `.xxignore`
+  and `.gitignore`, no network.
+- `verify_edit` — runs lint/test through the exec gate, returns structured
+  pass/fail with the failing tail. Keeps the full capture in a per-session
+  scratch ring (8 entries, outside the repo) at `fullOutputPath`.
+- `review_to_continuation` — diff + reviewer notes → continuation directive.
+
+### Lifecycle hooks (2) — `hook_tools.ts`, **off by default**
+
+Registered only when `XX_STACK_HOOK_TOOLS=1`. Absent from `tools/list`
+otherwise.
+
+- `_Stop` — a hook-aware harness calls this when the model signals end-of-turn.
+  Empty string = no objection. Non-empty = keep working, naming the concrete
+  unmet stop condition.
+- `_PostCompact` — returns state to re-inject after context compaction, derived
+  entirely from existing stores.
+
+Both must respond fast (callers time out around 2.5s and treat timeout as no
+objection) and must never emit text that reads as operator instructions — the
+output lands at tool-result trust, not system trust.
+
+---
+
+## 6. The runtime layer: skills and agents
+
+### Skills
+
+Canonical: `xx-stack/runtime/skills/<name>/SKILL.md`. Indexed in
+`xx-stack/runtime/SKILLS.md`, which also holds the **Skill Authoring
+Contract**:
+
+- The `description` is a routing contract — what, when, and the differentiator.
+  Never a workflow summary; an agent that reads a step summary in the
+  description skips loading the body.
+- Match instruction strictness to task fragility: loose heuristics → templates
+  → exact scripts.
+- References go one level deep, never chained.
+- Progressive disclosure: inline what every branch needs, link the rest.
+- Test every skill against the weakest model it will run on.
+
+Each skill must carry an activation contract (when to use, when not to), be
+evidence-first, and declare explicit degradation.
+
+### Guidance tiers
+
+Five critical surfaces ship a `~2KB` nano variant containing decision rules and
+gates only — no examples, no output templates:
+
+- Skills: `review-code`, `debug-investigate`, `deploy-ship`
+  (`SKILL.nano.md` beside the canonical)
+- Agents: `execution-orchestrator`, `fast-build` (`<name>.nano.md`)
+
+Hosts pick the variant by the lane's context window. `check-nano-tiers.mjs`
+pins each canonical file's hash, so editing a canonical without reviewing its
+nano fails CI.
+
+### Agents
+
+Canonical: `xx-stack/runtime/agents/<name>.md`, registered in
+`xx-stack/runtime/config.json`. `xx-stack/adapters/agents/*.agent.md` are
+**generated** — run `npm run agents:sync`, never hand-edit.
+
+**Important limitation:** the sync script covers 8 of 21 agents (see §11,
+BUILD-1). A green `agents:check` does not mean all agents are mirrored.
+
+---
+
+## 7. Content packs
+
+### `packs/design`
+
+137 brand design systems, 57 aesthetic skill/design pairs, 31 workflow skills,
+plus evals and its own gates. `DESIGN-CATALOG.md` is generated
+(`npm run design:catalog`) and in sync.
+
+Gates: `npm run design:golden` (5/5 passing) and `npm run design:html-gate`
+(**currently failing 20/67 and wired into nothing** — §11, BUILD-2).
+
+Not Prettier-formatted, by policy — reformatting vendored content obscures real
+diffs against upstream (`.prettierignore`).
+
+### `packs/rules`
+
+11 software-engineering books distilled into decision rules, vendored from
+`ciembor/agent-rules-books` (MIT) at commit `9c87636`, each in three tiers:
+
+| Tier | Size | Use |
+|---|---|---|
+| `nano` | ~300–650 tokens | tight lanes |
+| `mini` | ~950–1800 tokens | default |
+| `full` | ~2800–15600 tokens | reference |
+
+`manifest.json` records tier paths, token estimates (bytes/4), and the
+compatibility matrix. `coverage.json` maps all 49 skills and agents to their
+book set — including **explicit empty entries**, so absence is a decision
+rather than an omission. `check-rules-coverage.mjs` fails when a skill or agent
+is added without a coverage entry.
+
+Two rules the coverage map enforces: never assign two books the manifest marks
+conflicting, and collapse overlapping sets to one.
+
+---
+
+## 8. The Hermes subsystem
+
+`hermes-orchestration/` — Python 3.11+, **standard library only**, no
+dependency on the TypeScript stack.
+
+It routes LLM requests across self-hosted lanes with a premium cloud fallback
+via a local `hermes` CLI, and exposes a loopback-only OpenAI-compatible proxy.
+
+### Commands
+
+```
+health          lane health across the fleet
+route           show the routing decision without executing
+run             execute a task on the chosen lane
+subagents       fan a "A||B||C" task list across lanes
+presets         list named routing presets
+inventory       model inventory, with --probe-tool-calls
+refresh-cache   refresh the capability cache
+bench           benchmark lanes
+serve           run the loopback OpenAI-compatible proxy
+```
+
+### The proxy
+
+```bash
+export HERMES_PROXY_TOKEN="$(openssl rand -hex 24)"
+python3 scripts/hermes_orchestrator.py serve
+# → http://127.0.0.1:8180
+```
+
+Endpoints: `GET /healthz` (no auth), `GET /v1/models`,
+`POST /v1/chat/completions`. Binds loopback only; a bearer token is mandatory
+unless `--no-auth` is passed explicitly; a non-loopback bind prints a warning.
+`stream: true` gets a single-chunk SSE shim — the upstream call is
+non-streaming.
+
+A user systemd unit ships at `systemd/hermes-proxy.service`, reading its token
+from `~/.config/hermes-orchestration/proxy.env`.
+
+### Safety model
+
+The execution path is double-gated: `--execute-approved` **and**
+`execution.allow_shell_execution` (shipped `false`) are both required.
+Commands run with `shell=False` after argv-level allowlist matching, so shell
+metacharacters can never expand.
+
+**Understand the limit:** the allowlist matches a command prefix and then
+permits every remaining argument. Several plausible allowlist entries
+(`find`, `rg`, `cat`) accept arguments that spawn processes or read arbitrary
+files. See §11, HERMES-1 for what was done about this.
+
+---
+
+## 9. Gates, CI, and what they actually prove
+
+### `npm run verify`
+
+```
+layout:verify → agents:check → drift:check → rules:check → nano:check
+              → inventory:check → guardrails:check → test → hermes:test
+```
+
+| Gate | What it proves | Blind spot |
+|---|---|---|
+| `layout:verify` | component layout, symlinks, executable bits | unknown directories (missed `xx-stack/vscode/`) |
+| `agents:check` | 8 named agents match their mirrors | **the other 13 agents entirely** |
+| `drift:check` | canonical and opencode have the same *names* | **all content drift** — says so in its docstring |
+| `rules:check` | coverage map matches the skill/agent surface | — |
+| `nano:check` | nano variants exist, under cap, hashes pinned | — |
+| `inventory:check` | generated registries are current | — |
+| `guardrails:check` | denylist patterns behave; hash pinned | — |
+| `test` | 257 MCP tests | see §11 for what they don't catch |
+| `hermes:test` | 25 Python tests | tests a hand-picked allowlist, not the shipped one |
+
+### What `verify` does NOT run
+
+`lint`, `format:check`, `typecheck`, `design:catalog` staleness,
+`design:golden`, `design:html-gate`.
+
+CI runs lint, format:check, design:catalog, and design:golden in a separate
+job, and `npm test` runs `tsc` first so type errors do fail. But
+**`design:html-gate` runs nowhere**, and the 25 `.mjs`/`.js` scripts are
+Prettier-formatted but never linted.
+
+So the CONTRIBUTING claim *"if `verify` passes locally, CI should pass"* is not
+strictly true. Treat CI as the authority.
+
+### The pre-commit hook
+
+`.githooks/pre-commit` runs the agent mirror check and nothing else. Enable it
+with `git config core.hooksPath .githooks`.
+
+---
+
+## 10. Configuration reference
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `XX_STACK_REPO` | repo root override; defaults to `~/.config/opencode/skills/xx-stack` |
+| `XX_STACK_ALLOW_CLOUD` | `1` opts into cloud lanes |
+| `XX_STACK_HOOK_TOOLS` | `1` registers `_Stop` / `_PostCompact` |
+| `XX_STACK_DANGEROUS_PATTERNS_FILE` | override the denylist path |
+| `XX_STACK_SCRATCH_DIR` | base for `verify_edit` full-output artifacts |
+| `XX_STACK_HOOK_EVENT/_SESSION_ID/_TASK_ID` | passed to lifecycle hooks |
+| `HERMES_PROXY_TOKEN` | bearer token for the Hermes proxy |
+| `HERMES_PRIORITY` | lane priority override |
+
+A family of `XX_STACK_BENCH_*`, `XX_STACK_OLLAMA_*`, `XX_STACK_LLAMA_CPP_*`,
+and threshold variables drive the reliability harness and promotion gates.
+
+### Key files
+
+| Path | Role | Edit? |
+|---|---|---|
+| `inventory.json` | hardware truth | **yes — the only one** |
+| `xx-stack/runtime/platforms.json` | generated registry | no |
+| `opencode-orchestration/opencode/platforms.json` | generated registry | no |
+| `hermes-orchestration/config/orchestration.json` | `lanes` generated; `execution`/`proxy` hand-tuned | partially |
+| `xx-stack/runtime/config.json` | agent registration, permissions | yes |
+| `xx-stack/runtime/telemetry.json` | telemetry sink; off by default | yes |
+| `xx-stack/runtime/model-rates.json` | cost estimation table | yes |
+| `xx-stack/runtime/dangerous-patterns.txt` | exec denylist | yes, with tests |
+| `.xxignore` | agent *context* boundary | yes |
+| `.gitignore` | what must not be committed | yes |
+
+`.xxignore` and `.gitignore` are different boundaries. `.xxignore` tells agents
+what not to sweep into context; `.gitignore` governs commits. A large vendored
+or generated surface belongs in both.
+
+---
+
+## 11. Defect register
+
+Findings from the 2026-08-02 audit. Every entry was confirmed with file:line
+evidence or command output. Severity: **CRITICAL** (data loss or security),
+**BUG**, **RISK**, **DEAD**, **STALE**, **NIT**.
+
+Status is updated as fixes land; see git history for the commits.
+
+### MCP server
+
+| ID | Severity | Finding |
+|---|---|---|
+| MCP-1 | CRITICAL | `readSupervisorStore`/`readTaskStore` end in a bare `catch` returning an **empty store**. That covers parse errors and EACCES, not just ENOENT. Every handler is read→mutate→write-whole-document, so one transient bad read makes the next write **truncate all sessions/tasks**. Worst case: `supervisor_status`, a pure inspection tool, writes unconditionally. |
+| MCP-2 | CRITICAL | `parseAgentProfile` always emits every key including `undefined` values; `mergeAgentProfiles` spreads them over the base. Any agent merely *mentioned* in user config loses its repo `model`/`mode` and has `toolPolicy.deny` overwritten with `[]`. An empty allow-list means allow-all — **a restricted agent silently becomes unrestricted.** |
+| MCP-3 | CRITICAL | `execution_policy.ts` loads the denylist via `new URL(...).pathname`, which is percent-encoded. An install path containing a space or `#` makes `readFileSync` throw and the loader **fail open to an empty denylist**. Also broken on Windows. |
+| MCP-4 | BUG | The task **lease fence is enforced on 1 of 3 write paths**. `task_suspend` and `task_resume` mutate the same task with no lease check, so the at-most-one-live-instance invariant does not hold. Leases are also not revoked on `supervisor_abort_session` or `supervisor_complete_session`. |
+| MCP-5 | BUG | `compactOutput` overruns its own cap (reserves 24 chars for a 28+ char marker) and, for any cap ≲62, returns the **full uncapped string with an empty `dropped` list** — the inverse of its documented contract. |
+| MCP-6 | BUG | `lookupModelCost` does exact-key lookup against a **glob-keyed** rate table (`ollama/*`, `sglang/*`), so every local-lane entry is unreachable and cost reports `unknown-model` instead of 0. |
+| MCP-7 | BUG | Path traversal: `log_worker.ts` joins an unsanitized `sessionId` into a `.jsonl` path. A session id of `../../../tmp/x` writes outside the log dir. Same class in `sanitizeNameForPath`, which permits `.`. |
+| MCP-8 | BUG | `review_to_continuation` passes a hardcoded `null` memory-sync status alongside a truthy flag, so it **always reports "no memory drift"**; it also renders every note twice, and runs `git diff` with no `cwd` (wrong repo) embedding the raw diff unredacted. |
+| MCP-9 | BUG | `_Stop` writes to the filesystem and runs an unbounded O(n·m) LCS on an append-only file, against its own "two file reads, no walks" contract and a ~2.5s budget. |
+| MCP-10 | BUG | `agent_memory_append` is the one memory write path with **no concurrency control** — read-then-write, so concurrent appends lose data. Every other path grew a CAS precondition. |
+| MCP-11 | BUG | `progressObserved` sets status `running`, then a stale `cooldownUntil` overrides it to `cooldown` in the same tick. After any fallback, **real progress reports as cooldown** for the whole backoff window. |
+| MCP-12 | BUG | External lifecycle hooks are awaited **inside** the non-reentrant task-store mutex. Any hook calling back into task tools deadlocks permanently. |
+| MCP-13 | BUG | `search_tools`' `TOOL_CATALOG` is hardcoded and **11 tools behind registration** — the tool-discovery surface is a stale second registry. |
+| MCP-14 | BUG | `repo_map_runtime.ts` interpolates a repo-controlled filename into an `execSync` shell string. A tracked file named with `"` or `` $( ) `` executes arbitrary shell. |
+| MCP-15 | RISK | `verify_edit`'s allowlist includes `node` and `npx`, which grant arbitrary execution and route around the denylist. |
+| MCP-16 | RISK | `record_telemetry` returns `"recorded"` without awaiting the write, and the writer discards errors. |
+| MCP-DUP-1 | DEAD | Two identical `estimateTokens` — `repo_map_runtime.ts` defines its own while already importing the module that exports it. |
+| MCP-DUP-2 | DEAD | Repo-root resolution copy-pasted 4× with divergent behavior, while the intended shared helper `repoRegistryPath` sits **unreferenced**. |
+| MCP-DUP-3 | DEAD | `cli.ts` states it forks zero logic, then copy-pastes `filterTasks`, `summarizePlatforms`, and `diagnoseHosts` from the tool handlers. Only the CLI copies are tested. |
+| MCP-DEAD-1 | DEAD | `invalidateRegistryCache`, `repoRegistryPath`, `ScopedWork.fleetWide` — zero references repo-wide. |
+| MCP-DEAD-2 | DEAD | `supervisor_run_self_test` asserts `sessionCount >= 0` — cannot fail, including when the store is unreadable. |
+| MCP-TEST-1 | BUG | `review_tools.test.ts` **reimplements the logic inline and asserts against its own reimplementation**; it never imports `review_tools.ts`. The tool has zero real coverage and three confirmed bugs. |
+| MCP-TEST-2 | RISK | 28 of 46 runtime modules are never imported by any test, including `supervisor_session_tools.ts` (635 lines) and `config_runtime.ts`. |
+
+### Hermes
+
+| ID | Severity | Finding |
+|---|---|---|
+| HERMES-1 | CRITICAL | The **shipped allowlist is bypassable to arbitrary execution**: `find -exec /bin/sh` (the `+` terminator is not in the metacharacter guard), `rg --pre`, and `cat ~/.hermes/config.yaml` — where the docs say premium credentials live. Double-gated behind two off-by-default flags, but the allowlist is documented as the safety boundary. |
+| HERMES-2 | CRITICAL | `subagents_allow_cloud_default` code default is `True` while config says `false`. If the key is dropped during regeneration, cloud delegation silently enables for every subagent. **A cloud gate must fail closed.** |
+| HERMES-3 | BUG | `hmac.compare_digest` on a non-ASCII bearer token raises `TypeError` **pre-auth**, crashing the handler thread for any unauthenticated caller. |
+| HERMES-4 | BUG | `HTTPError` body is read but never closed — an fd leak on every failed upstream call in a long-running proxy. |
+| HERMES-5 | BUG | The proxy does not drain the request body on 401/404 paths; with HTTP/1.1 keep-alive the next pipelined request is parsed from the undrained body. |
+| HERMES-6 | BUG | Request body read is unbounded and untimed — a large `Content-Length` parks a thread indefinitely. |
+| HERMES-7 | BUG | `resolve_api_key` runs `subprocess.run(..., shell=True)` with **no timeout**; a hanging credential helper blocks the calling thread forever. |
+| HERMES-8 | DEAD | The strict tool-call gate requires `task_profile == "default"`, which **no shipped preset uses**. The entire strict branch is dead in production while two docs promise it is on by default. |
+| HERMES-9 | DEAD | `proxy.log_prompts` is plumbed through three layers and **never read**. |
+| HERMES-10 | DEAD | Five `policy.*` keys are generated from inventory and read by nothing — including cloud-gate-sounding names, a misleading control surface. |
+| HERMES-11 | RISK | Generated `primary_lane_order` is raw object order, not priority order; adding a machine in the wrong position silently stops honoring priority. |
+| HERMES-12 | BUG | Proxy total-failure requests write no telemetry at all. |
+| HERMES-TEST-1 | BUG | The safety tests use a hand-picked 4-command allowlist, **not the shipped one** — which is exactly why HERMES-1 went unnoticed. |
+| HERMES-TEST-2 | BUG | 19 temp directories leak into `/tmp` per suite run. |
+
+### Build, CI, tooling
+
+| ID | Severity | Finding |
+|---|---|---|
+| BUILD-1 | BUG | `sync-vscode-agents.mjs` hardcodes 8 agent specs; the repo has 21. `agents:check` reports green having verified 8 and **silently skipped 13**. `check-rules-coverage.mjs` shows the right pattern: derive the expected set by reading the directory. |
+| BUILD-2 | BUG | `design:html-gate` **fails 20/67 files** and is wired into neither `verify` nor CI, while CONTRIBUTING advertises it as a gate. |
+| BUILD-3 | RISK | The 25 `.mjs`/`.js` scripts are never linted (`lint` is `--ext .ts` only). |
+| BUILD-4 | RISK | `.skippy/` — a live agent workspace holding session traces and **verbatim user prompt history** — is not gitignored. One `git add -A` publishes it. |
+| BUILD-5 | DEAD | `harness-watch.mjs` has zero references, while `harness:watch` reimplements it as an inferior shell loop that spins forever on failure. |
+| BUILD-6 | RISK | Empty-directory vacuous passes in `check-stack-source-drift.mjs` and `check-rules-coverage.mjs`: an empty set compares equal and reports PASS. |
+| BUILD-7 | RISK | Unguarded `JSON.parse` and deep property access in `toggle-lane.mjs` turn a malformed inventory into an uncaught stack trace. |
+
+### Content and documentation
+
+| ID | Severity | Finding |
+|---|---|---|
+| CONTENT-1 | BUG | Four OpenCode agents (`build`, `execution-orchestrator`, `fast-build`, `plan`) **begin without the opening `---`**, so their frontmatter does not parse. These are the four primary-mode agents. |
+| CONTENT-2 | BUG | The OpenCode `execution-orchestrator` mirror is missing ~120 lines of behavioral guardrails present in canonical: the entire Multi-Agent Dispatch section (concurrency and spawn-depth caps, result merge contract), Task Phase Model, Context Compression, Autonomous Outer Loop Mode. |
+| CONTENT-3 | BUG | The OpenCode supervisor runbook is missing ~90 lines documenting **shipped code**: goal contract gate, terminal states, forced synthesis, failover handoff, lease invariants, heartbeat pattern. |
+| CONTENT-4 | BUG | Documents reference tiers that do not exist (`primary`, `reasoning`, `overflow`, `compatibility`). `parallel-execution-orchestrator` instructs an agent to select by ids that can never match. |
+| CONTENT-5 | BUG | A path cluster pointing at directories that do not and will not exist: `.xx-stack/skills/`, `.xx-stack/platforms.json`, `.xx-stack/config.json`, and `~/.config/xx-stack/...` — the code reads `~/.config/opencode/...`. |
+| CONTENT-6 | BUG | `runtime/model-recommendations.json` matches on providers (`self-hosted-api`, `local-catalog-api`, `compatibility-api`) that exist in **no** shipped registry — every profile is unreachable. The OpenCode mirror, which matches on VRAM thresholds, is the correct side. |
+| CONTENT-7 | BUG | `design-system-pick.prompt.md` is an adapter surface for a skill that does not exist. |
+| CONTENT-8 | BUG | Registry orphans: `parallel-execution-orchestrator` is unregistered in canonical `config.json`; `design-engineer` is unregistered in the OpenCode config — each registered on the other side. |
+| CONTENT-9 | STALE | Content drift in 4 skill mirrors (`write-docs` 139 lines, `audit-security` 66, `setup-observability` 32, `train-model-knowledge-injection` 8) and 5 agent mirrors — canonical received generalization edits the mirrors never got. Canonical is correct in every case. |
+| CONTENT-10 | STALE | `design-prototype` exists on disk with a full SKILL.md and a coverage entry but appears in **no** index — not `SKILLS.md`, not the OpenCode twin, not `config.json`. |
+| CONTENT-11 | STALE | `xx-stack/vscode/` contains exactly one file, a pre-rename fossil superseded by the `adapters/` copy, unknown to the layout verifier. |
+| CONTENT-12 | STALE | Count drift: "138 design systems" (actual 137) across 12 files; "33 tools" (actual 47) in 2; "58 tests" (actual 257) in CONTRIBUTING. |
+| CONTENT-13 | STALE | `CHANGELOG.md` stops at 1.63.0 with no Unreleased section, 74 commits behind. |
+| DOC-5 | NIT | README says the second folder "symlinks into" the first; `opencode/agents` and `opencode/skills` are full copies. |
+| HERMES-DOC-1 | BUG | Two items I marked "shipped" in the hermes TODO reconciliation were only partially true: `attempts` never reaches `routing.jsonl` (the event has no such field), and `proxy.log_prompts` credits a control that is never read. |
+
+---
+
+## 12. Maintenance conventions
+
+### Adding an MCP tool
+
+1. Put pure logic in `<area>_runtime.ts` with a `*.test.ts` beside it.
+2. Register the tool in `<area>_tools.ts` inside the existing
+   `registerXxxTools`, using `server.tool(name, description, zodSchema, handler)`.
+3. Wire the group in `index.ts` only if it is a new group.
+4. Add the tool to `TOOL_CATALOG` in `observability_tools.ts` — this is
+   currently manual and drifts (MCP-13).
+5. `npm run verify`.
+
+### Adding a skill
+
+1. `xx-stack/runtime/skills/<name>/SKILL.md` with the frontmatter contract.
+2. Mirror to `opencode-orchestration/opencode/skills/<name>/SKILL.md`, applying
+   only the four deliberate deltas.
+3. Register in `xx-stack/runtime/SKILLS.md` **and** the OpenCode twin.
+4. Add a `packs/rules/coverage.json` entry — an explicit `books: []` if no rule
+   book applies. `rules:check` fails without one.
+5. `npm run verify`.
+
+### Adding an agent
+
+1. `xx-stack/runtime/agents/<name>.md`, register in `runtime/config.json`.
+2. Mirror to the OpenCode tree and register there too.
+3. `npm run agents:sync` — but note it only knows 8 agents (BUILD-1).
+4. Coverage entry, then `npm run verify`.
+
+### Changing hardware
+
+Edit `inventory.json` only. Then `npm run inventory:sync` and
+`npm run inventory:check`.
+
+### Changing the exec denylist
+
+Edit `xx-stack/runtime/dangerous-patterns.txt` **and**
+`xx-stack/scripts/check-dangerous-patterns.mjs` in the same commit — the script
+pins the file's hash, so a pattern change without a test update fails CI. That
+coupling is deliberate.
+
+### Iron rules
+
+- `inventory.json` is the only hardware truth.
+- Never hand-edit `xx-stack/adapters/agents/*`.
+- Never add a code path that reaches a cloud provider without passing through
+  `cloudRoutingAllowed()`, and never change its default.
+- New runtime dependencies in `mcp-server` need justification; prefer `node:`
+  built-ins.
+- No silent truncation or silent capping anywhere — log what was dropped.
+
+---
+
+## 13. Troubleshooting
+
+**`inventory:check` fails / "generated file is stale."** Run
+`npm run inventory:sync`. This also fires if Prettier reformatted a generated
+registry — regenerate rather than hand-editing.
+
+**`drift:check` passes but the OpenCode surface behaves differently.** Expected:
+that gate compares names, not content. Diff the pair by hand, normalizing the
+four deliberate deltas.
+
+**`agents:check` is green but my new agent has no mirror.** Also expected
+(BUILD-1) — the script only knows 8 agents.
+
+**A tool is registered but `search_tools` can't find it.** `TOOL_CATALOG` is
+maintained by hand and drifts (MCP-13).
+
+**Routing always picks the same host.** Tier scoring is keyword-based; check
+whether your description matches the keyword table in
+`routing_selection_runtime.ts`. Note the seed strings used by
+`route_architect_editor` may not score as intended.
+
+**Cloud never gets selected.** By design. Set `XX_STACK_ALLOW_CLOUD=1` or
+`policy.cloudEscalation.optIn` in `inventory.json`.
+
+**The exec gate blocks something reasonable.** Check
+`runtime/dangerous-patterns.txt` first, then the context-specific allowlist. The
+denylist should only carry irreversible operations; if it is blocking something
+recoverable, that is a bug in the list.
+
+**Hermes proxy returns 502.** The response body carries an `attempts` array with
+a per-lane reason. Note those reasons are **not** written to `routing.jsonl`
+(HERMES-DOC-1), so the HTTP response is the only place to see them.
+
+**Tests pass locally but CI fails.** `verify` does not run lint, format, or the
+design gates. Run `npm run lint && npm run format:check` too.
