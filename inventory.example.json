@@ -61,6 +61,15 @@
           "notes": "Enable if you run llama-server locally on :8080.",
           "models": []
         }
+      ],
+      "services": [
+        {
+          "id": "reader",
+          "kind": "reader",
+          "port": 3000,
+          "enabled": false,
+          "notes": "Optional self-hosted reader (ghcr.io/jina-ai/reader:oss): URL -> LLM-friendly markdown, preferred by research-deep's visit action when enabled. See xx-stack/runtime/READER-SERVICE-RUNBOOK.md. When absent or disabled, research degrades to plain fetch — never to a cloud reader."
+        }
       ]
     },
 

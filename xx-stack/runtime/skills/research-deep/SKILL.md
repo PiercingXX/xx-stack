@@ -73,7 +73,12 @@ Each round: pick **one** action, execute it, update the gap queue and ledger.
   Offline: repo and docs search (`grep`, `docs/`, `build_repo_map`, local
   artifacts).
 - **visit** — read one specific source found by search: a file, a doc, a URL.
-  Extract findings into the ledger with citations.
+  Extract findings into the ledger with citations. For URLs, prefer a local
+  reader service when the inventory declares one enabled (a machine's
+  `services` entry with `kind: "reader"` — see
+  `runtime/READER-SERVICE-RUNBOOK.md`): it returns LLM-friendly markdown.
+  When none is declared, disabled, or unreachable, fall back to plain fetch —
+  absence degrades, it never escalates to a cloud reader.
 - **reflect** — reread the ledger against the gap queue: close answered gaps,
   add newly exposed ones, drop gaps the original question no longer needs.
 - **answer** — draft the final answer. Only legal when every open gap blocking
