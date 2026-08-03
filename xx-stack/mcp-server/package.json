@@ -3,7 +3,10 @@
   "version": "1.63.0",
   "description": "MCP server for xx-stack platform routing — multi-provider inventory, health checks, task routing, and supervision",
   "main": "dist/index.js",
-  "bin": "dist/index.js",
+  "bin": {
+    "mcp-server": "dist/index.js",
+    "xx": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
