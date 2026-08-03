@@ -7,19 +7,23 @@ root `README.md` explains *why* the project exists and gets you to a first
 routing decision in two minutes; this document explains *how everything works*
 and *where the bodies are buried*.
 
-**Status of this document.** Written 2026-08-02 from a five-part audit of all
-tracked files, revised after those fixes landed, and revised again 2026-08-03
-after a six-source upstream review round (see `UPSTREAM-BORROW-TODO.md` tasks
-30-45) and the two rounds of fixes that followed it. §11 records every confirmed problem and its current status: everything
-is **fixed** unless its row says otherwise, and the open items — all of them
-judgment calls rather than defects — are collected in §11.1.
+**Status of this document.** Current as of 2026-08-03. §11 is a defect
+register: every confirmed problem this codebase has had, what it actually
+broke, and its status. Everything there is **fixed** unless its row says
+otherwise; the handful of genuinely open items — all judgment calls rather
+than defects — are collected in §11.1.
 
-One correction worth carrying: §11.1 used to assert that nothing in it was a
-correctness risk. That was wrong. Three vendored design systems were shipping
-body text at 1.06:1 against their own declared surface, and no gate read those
-files at all. Both are fixed; the claim is corrected in place rather than
-quietly dropped, because "we checked and found nothing" and "we never looked"
-are different statements and this document should not confuse them.
+The register is kept rather than pruned on purpose. Several entries record a
+gate that was green while proving nothing, or a fix whose cause was addressed
+while its *reporting* was not, so the same class of bug recurred invisibly.
+Those are worth more as a record of how this codebase fails than as history.
+
+One correction is carried in place rather than quietly dropped: §11.1 used to
+assert that nothing in it was a correctness risk. That was wrong — three
+vendored design systems were shipping body text at 1.06:1 contrast against
+their own declared surface, and no gate read those files at all. Both are
+fixed. "We checked and found nothing" and "we never looked" are different
+statements, and this document should not blur them.
 
 ---
 
@@ -67,14 +71,14 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 901 |
+| Tracked files | 899 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
 | TypeScript source | ~24,000 lines |
-| Test files / tests | 31 files, 465 tests (plus 58 Python tests) |
+| Test files / tests | 32 files, 542 tests (plus 83 Python tests) |
 | Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
-| Brand design systems | 151 (pinned to open-design `e1c277c`) |
+| Brand design systems | 151 (vendored, pinned to `e1c277c`) |
 
 These counts drift. Regenerate them rather than trusting them:
 `grep -rhoP 'server\.tool\(\s*\n?\s*"\K[^"]+' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
@@ -468,28 +472,35 @@ plus evals and its own gates. `DESIGN-CATALOG.md` is generated
 Gates: `npm run design:golden` (5/5) and `npm run design:html-gate` (67/67, in
 CI). Both green.
 
-**This pack is vendored, not authored here** — a correction to an earlier
-belief recorded in this manual. It was described as clean-room reinterpretation
-because the files say "Design System Inspired by Apple"; a byte-level audit
-found 138 of 151 `design-systems/` files **identical** to
-`nexu-io/open-design` at the pinned commit `e1c277c5`. That framing is upstream's, not ours. The pack
-redistributes, which is why Apache-2.0's requirement to ship the license text
-applies to it:
+**This pack is vendored third-party content, not engineering authored here.**
+That distinction matters for how you treat it. A byte-level audit found 138 of
+151 `design-systems/` files identical to their source at the pinned commit
+`e1c277c5`; the "Design System Inspired by Apple" framing in those files is the
+source project's, not a description of work done here. Because the pack
+redistributes that content, Apache-2.0's requirement to ship the license text
+applies:
 
-| Upstream | License | Supplies |
+| Source project | License | Supplies |
 |---|---|---|
 | `nexu-io/open-design` | Apache-2.0 | 150 of 151 design systems, all 31 workflow skills |
 | `bergside/awesome-design-skills` | MIT | all 57 design skills |
 | `VoltAgent/awesome-design-md` | MIT | one file (`bmw-m`) |
 | op7418 (歸藏) | MIT | `workflow-skills/guizang-ppt/` |
 
-License texts are vendored under `packs/design/licenses/`; per-subtree
-provenance, including what could **not** be established, is in
+License texts live in `packs/design/licenses/`; per-subtree provenance —
+including what could **not** be established — is in
 `packs/design/manifest.json`. Open licensing questions are in §11.1.
 
-Not Prettier-formatted, by policy — reformatting vendored content would destroy
-byte-comparability against upstream, which is the only way to tell our edits
-from upstream's (`.prettierignore`).
+**The gates over this pack, and the fixes to its content, are ours.**
+`design:systems-lint` (§9) parses all 151 systems and found four shipping
+illegible body text; those repairs, the `craft/` rule engine, and the HTML
+quality gate were built here.
+
+Not Prettier-formatted, by policy: reformatting vendored files would destroy
+byte-comparability against their source, which is the only way to distinguish
+a local edit from a change made upstream (`.prettierignore`). That comparison
+is what the provenance record in the manifest is built on, and what makes a
+future re-vendor safe.
 
 ### `packs/design/craft` — cross-cutting quality rules
 
@@ -499,9 +510,8 @@ discipline, accessibility baseline, RTL/bidi, form validation, laws of UX).
 A third axis alongside brand systems (what a brand looks like) and workflow
 skills (how to build an artifact type): rules that hold regardless of brand.
 
-Skills opt in per-file via `od.craft.requires` — upstream's own convention,
-not one invented here — so a skill pays context tokens only for the rulebooks
-it names. `design:craft-refs` fails when a slug does not resolve.
+Skills opt in per-file via `od.craft.requires`, so a skill pays context tokens
+only for the rulebooks it names. `design:craft-refs` fails when a slug does not resolve.
 
 **Licensing has two hops and they are scoped differently.** The subtree is
 Apache-2.0 from open-design. Three of the 11 rulebooks additionally derive from
@@ -511,14 +521,14 @@ The narrower reading is recorded in `manifest.json` rather than by editing the
 vendored README.
 
 `craft/anti-ai-slop-rules.json` holds 18 rules as **attributed data** read by an
-MIT engine — no upstream code is ported, which is what keeps the licence
-boundary at the pack boundary. Two upstreams feed it, tagged per rule
+MIT engine written here — no third-party code is compiled in, which keeps the
+licence boundary at the pack boundary. Two sources feed the values, tagged per rule
 (open-design and `google-labs-code/stitch-skills`), and 15 refusals are recorded
 with reasons. Two worth knowing: the pure-black ban was refused because 59 of
 our 151 design systems name `#000000` as deliberate brand vocabulary, and the
-two upstreams flatly disagree about `picsum.photos` — open-design bans it,
-stitch recommends it; open-design's ruling was kept and the disagreement
-recorded so it does not read as an oversight.
+the two sources flatly disagree about `picsum.photos` — one bans it, the other
+recommends it. The ban was kept and the disagreement recorded, so it does not
+read as an oversight.
 
 ### How `packs/rules` reaches a model
 
@@ -656,7 +666,7 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 | `guardrails:check` | denylist patterns behave; file hash pinned | pattern *coverage* — it proves the listed patterns work, not that the list is complete |
 | `lint` | `.ts`, `.mjs`, and `.js` | — |
 | `format:check` | `mcp-server/src` and `scripts` only | everything else, deliberately (`packs/` is vendored) |
-| `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two upstreams disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
+| `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two rule sources disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
 | `design:craft-refs` | every `od.craft.requires` slug resolves to a rulebook | — |
 | `design:anti-slop-test` | each rule fires at its declared severity on slop fixtures and not on clean ones | — |
 | `design:systems-lint` | all 151 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
@@ -910,6 +920,19 @@ here rather than quietly dropped.
 | The pack shipped a rule saying "never animate `width`" alongside six example decks animating `width`. | `animate-layout-property` promoted P1 → P0 and all six converted to `transform: scaleX()`. Example decks are what agents copy from, so an advisory would have outlived the rule. Zero hits remain. |
 | The rules pack had no working delivery mechanism. | 11 vendored books, a 49-entry coverage map and a CI gate validating it — reachable only through a bare noun phrase on the last line of each file. All 62 pointers rewritten as imperative instructions sited at the decision the book would change. Documented in §7, because "it has one now" is less useful to the next reader than "it did not, and the failure was invisible". |
 | 118 palette tokens were silently dropped after the re-vendor, and mean capture fell 96.0% → 91.8% while every regression floor passed. | Markdown tables in a colour section were refused because in the original 137-file corpus exactly one existed and it was an alpha ramp — correct on the evidence then, inverted by 9 of 14 incoming brands. Table extraction added with a header-cell discriminator matched exactly (`kami`'s ramp would otherwise register a token named `0.08`, and its "Solid hex" header defeats a substring test). A capture **rate** floor was added: count floors cannot detect a capture regression while the corpus grows. |
+| **Forced synthesis ran on evidence the agent authored, then told the model to cite only that evidence.** An agent that invented its evidence list could cite it perfectly — on the salvage path, reached exactly when budget is exhausted and the incentive to inflate peaks. | The prompt now opens with facts read from persisted state (continuation count, elapsed, recorded events, contract validation outcomes) and labels caller-supplied evidence unverified, with the rule that a recorded fact beats a claim. No clock read and sorted checks, so the render is byte-identical for identical state. Scoped precisely: the *strict* completion path was already grounded — it demands a real `verify_edit` result for the contract's command. |
+| `_Stop` did not carry the null-result clause — the one surface that applies the pressure the clause exists to relieve. | A prospecting task whose honest answer is "nothing worth changing" has an unmet stop condition by construction, so `_Stop` objected until the rejection budget was spent and the cheapest escape was to invent a diff. The clause now renders there, nested under an existing bullet so it spends none of that budget. |
+| `build_repo_map` read every file with no size or binary guard, and its `.gitignore` negation handling silently re-excluded files git deliberately re-included. | A 20 MB binary was ranked, selected and returned **as code context**; a 1 GB file would have killed the server. 2 MiB cap plus a NUL sniff over git's own 8000-byte prefix, so the verdict matches `git diff` rather than inventing a second definition. The redundant second ignore pass is gone on the git path. A third latent bug surfaced: a bare directory name excluded nothing, because the matcher compared `vendor` against `lib.ts`. |
+| That file had two prior silent-drop defects whose causes were fixed while their *reporting* was not — so the next cause recurred invisibly, twice. | `build_repo_map` now returns its negative space: considered, ignored, unreadable, oversized, binary, empty, dropped-for-budget, dropped-for-scale, truncated. The reporting is the actual fix; the cause fix alone had already failed twice. |
+| `build_repo_map` missed its own recorded performance criterion by 65%. | One `git log` spawn **per file** — 733 spawns, 3.1s against a recorded 2s bound. One `git log -z --name-only` walk replaces them: 0.53s, verified to reproduce per-file timestamps exactly on 75/75 sampled files. Candidate selection capped at 1000, measured at 3.2× the adversarial packing bound and where the O(K²) stage still fits the time budget. |
+| `contextWindow` was parsed into every model descriptor and read by nothing, while the repo map hardcoded an 8000-token budget. | The budget now derives from the routed model's real window at 25% of nameplate — which is what 8000 already implied for a 32k window, so behavior is preserved for the model class that number was written for and scales for the rest. Explicit budgets still win; unknown windows still yield exactly 8000. |
+| `compactOutput` inflated its output and reported the inflation as a saving. | 20 bytes became 80; a 4-byte input claimed 22 bytes truncated and severed its own marker mid-word. It survived because the tests counted **lines** while output quadrupled in **bytes** — the third instance of a gate measuring the wrong unit. Collapse is now per-run and byte-measured, with a whole-function never-worse postcondition proven across a 3,936-case sweep. |
+| `verify_edit` output bypassed the repo's own redaction policy and landed in a world-readable tmpdir. | The highest-variance untrusted text in the system — arbitrary lint and test stdout, exactly where a failing DB test prints its DSN — reached the model raw. The travelling view is now redacted; the local capture stays greppable at `0600`. Wiring that in enlarged an existing over-redaction flaw, so the auth-scheme pattern now requires a credential shape: a tsc error reading `token expected here` is no longer mangled. |
+| `redactSecrets` left credentials embedded in URL userinfo. | `postgres://admin:hunter2@db.internal/prod` passed every pass: value patterns enumerate vendor formats, the key-name pass wants a secret-ish noun, the auth-scheme pass wants a literal `Bearer`. The structural dotenv pass caught it only when a caller named a dotenv path — and the production callers pass none. Now always-on, greedy to the last `@` so a password containing `@` is covered, username kept so a handoff can still say which user on which host. |
+| `hermes bench` could be won by a broken model. | It never inspected the reply, so a repetition loop emitted tokens fast and scored **4.3× faster** than a healthy answer — and the qualification matrix names this bench as its input with per-lane throughput thresholds. Now gated on `finish_reason` and a repeated-trigram ratio, with estimates never sharing a field with measurements and every exclusion visible. |
+| `atomicWriteTextFile` never fsynced, as sole writer for both durable stores. | Atomic rename gives visibility, not durability. Now fsyncs the file before rename with a best-effort directory sync. Cost recorded honestly: 0.17ms → 4.09ms per write on ext4, unchanged on tmpfs — noted because benchmarking it in `/tmp` concludes it is free. |
+| Appends could concatenate into an unparseable record. | Three sites appended without checking the file ended in a newline, so a torn write merged with the next record. The healing newline now rides in the same write, which is the point — a separate append reopens the window it closes. |
+| The entire 47-tool surface used a registration API deprecated in the SDK already depended on, and our own docs named it the pattern to copy. | Migrated to `registerTool`. Every tool now declares read-only, destructive, idempotent and open-world hints — previously **zero** did, so a client could not distinguish `list_platforms` from `verify_edit`, which undercut the tool-policy story. Declared once per tool beside the catalog entry with a fail-closed default, and a drift test that fails on an undeclared tool, an over-declared one, uniform hints, or a stray deprecated call site. |
 | The em-dash token form was unextracted. | Pattern `C` added; capture 95.7% → 96.0%, and the regression floors were tightened from loose values to the exact baseline — a loose floor cannot tell a broken pattern from edited content. **Corrects an error in this document**: the gap was recorded as affecting `xiaohongshu` *and* `miro`. It was xiaohongshu-only. Miro's six misses are the dual-value form (`Light #ffc6c6 / Dark #600000`), which is a correct refusal and stays refused — which is also why files-at-100% did not move. |
 | Routing ranked lanes on nameplate hardware only, while `monitor-memory.ts` already computed live residency and memory pressure and threw them away. | Task 38. The arithmetic is extracted to a pure `host_memory_runtime.ts` shared by the CLI and the router, retiring a fork before it existed. The probe rides the existing health fan-out (no new network call) and `hostCapacityScore` stays nameplate-only. Bounded at 4 points against a smallest cross-tier gap of 9.1, so it settles the one case nameplate scoring cannot — two runtimes on the same box, 0.25 apart — and provably nothing else. Scope is honest: `supportsResidentModelInspection` is true for Ollama only, so this improves one lane family. |
 | Deck skills had no rule keeping build instructions out of rendered content. | Task 41. A production control is honored by *what you build*, never by *what you write*: "make slide 4 a bar chart" picks a layout and is spent, rather than shipping as the headline. The `deck` profile turned out to have four skills, not the two expected — `weekly-update` does not read like a deck but has the highest chart-instruction-leak risk of them. |
