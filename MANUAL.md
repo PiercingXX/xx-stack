@@ -10,7 +10,7 @@ and *where the bodies are buried*.
 **Status of this document.** Written 2026-08-02 from a five-part audit of all
 tracked files, revised after those fixes landed, and revised again 2026-08-03
 after a six-source upstream review round (see `UPSTREAM-BORROW-TODO.md` tasks
-30-45). §11 records every confirmed problem and its current status: everything
+30-45) and the two rounds of fixes that followed it. §11 records every confirmed problem and its current status: everything
 is **fixed** unless its row says otherwise, and the open items — all of them
 judgment calls rather than defects — are collected in §11.1.
 
@@ -67,10 +67,10 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 879 |
+| Tracked files | 887 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
 | TypeScript source | ~24,000 lines |
-| Test files / tests | 29 files, 443 tests (plus 58 Python tests) |
+| Test files / tests | 31 files, 465 tests (plus 58 Python tests) |
 | Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
@@ -628,6 +628,26 @@ undetected.
 do fail), `design:catalog` staleness (it mutates the tree, so CI checks it
 separately), and the Node 20/22 matrix. Treat CI as the final authority.
 
+### One gate limit worth knowing
+
+`design:html-gate` runs in **sweep mode** in CI — no `--skill` argument. That is
+deliberate and correct: a directory sweep is looking at seeds and reference
+examples, not at deliverables, and holding a sprite sheet to deliverable
+criteria would be wrong. But it has a consequence worth stating plainly.
+
+The four *acceptance* criteria — `minSectionCount`, `mustHaveH1`, `mustHaveCta`,
+`requiredAny` — only fire when a caller names a skill, which is how an agent
+invokes the gate on its own output. In CI they never run, so **they have no
+regression coverage**. They are correct rules with no test protecting them.
+
+The category flag `requireSemanticLayout` is different and does fire in sweep,
+because "what kind of surface is this" is as true of a seed as of a deliverable.
+
+Related: `mustNotInclude` appears in `quality-gates.json`-adjacent config but is
+read **only** by `evaluate-golden-tasks.mjs`. The HTML gate implements four
+profile keys and that is not one of them, so adding it to a profile produces
+dead config that reads like a working rule.
+
 ### Every mirror surface is now gated
 
 `agents:check` covers **36 mirrors across both components** — it drives
@@ -807,8 +827,7 @@ here rather than quietly dropped.
 | The design pack pins no upstream commit for `design-systems/` and `workflow-skills/`. | OPEN | The **window** is now recorded (`9ee2c19..483e00d`, 57 commits sharing one tree) and `craft/` pins `dceac12`, so this is narrower than it was. What remains: nothing in the pack distinguishes commits *inside* that window, so a single sha would be invention. Resolving it means re-vendoring at a pinned sha — which must not silently revert the 12 design-system and 10 workflow-skill files now recorded as our edits. |
 | Apache-2.0 §4(b) notice placement for modified files. | OPEN | 12 design systems and 10 workflow-skill files are recorded centrally in `manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call, not a defect. |
 | Trademark posture for ~100 brand names in `design-systems/`. | OPEN | Nominative descriptive use is normally fine and the risk is inherited from upstream, but no explicit decision is recorded in this repo. |
-| 14 accent-on-surface pairs sit below 3:1. | OPEN | `design:systems-lint` reports these and deliberately does not fail on them: a brand primary used as a CTA fill is non-text, and these are upstream design choices. Treating them as defects means editing 14 brand primaries — a design decision. |
-| The em-dash token form is unextracted. | NIT | 11 lines, concentrated in `xiaohongshu` and `miro`, use `- **Surface** (`#FFF`) — `--bg`. …`. Adding a pattern would raise extractor capture above the measured 95.7% baseline. Left deliberately so the baseline is not moved silently. |
+| 14 accent-on-surface pairs sit below 3:1. | OPEN | `design:systems-lint` reports these and deliberately does not fail: a brand primary used as a CTA fill is non-text, and these are upstream design choices. Treating them as defects means editing 14 brand primaries — a design decision, not a repair. |
 | The `full` tier of all 11 rule books is unused. | NIT — **do not "fix"** | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only when a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody deletes content that is deliberately on standby. |
 
 ### 11.2 Closed since the audit
@@ -820,6 +839,9 @@ here rather than quietly dropped.
 | `packs/design/craft/` and `licenses/` were unknown to the layout verifier. | 30 → 52 checks, per-file rather than per-directory — the 11 rulebook slugs *are* the `od.craft.requires` vocabulary, so a rename silently breaks every skill bound to it. |
 | `drift:check` printed an `OPEN` waiver every run for the `design-system-pick` brand list. | Resolved as a rotted list, with git evidence: `d458c02` removed `claude` from both copies symmetrically but *added* two entries to only one. Five slugs were broken; **all 121 brand ids now resolve**, where five brands were previously unselectable by any agent — including the one the waiver was arguing about, which was itself a wrong slug. |
 | The pack shipped a rule saying "never animate `width`" alongside six example decks animating `width`. | `animate-layout-property` promoted P1 → P0 and all six converted to `transform: scaleX()`. Example decks are what agents copy from, so an advisory would have outlived the rule. Zero hits remain. |
+| The em-dash token form was unextracted. | Pattern `C` added; capture 95.7% → 96.0%, and the regression floors were tightened from loose values to the exact baseline — a loose floor cannot tell a broken pattern from edited content. **Corrects an error in this document**: the gap was recorded as affecting `xiaohongshu` *and* `miro`. It was xiaohongshu-only. Miro's six misses are the dual-value form (`Light #ffc6c6 / Dark #600000`), which is a correct refusal and stays refused — which is also why files-at-100% did not move. |
+| Routing ranked lanes on nameplate hardware only, while `monitor-memory.ts` already computed live residency and memory pressure and threw them away. | Task 38. The arithmetic is extracted to a pure `host_memory_runtime.ts` shared by the CLI and the router, retiring a fork before it existed. The probe rides the existing health fan-out (no new network call) and `hostCapacityScore` stays nameplate-only. Bounded at 4 points against a smallest cross-tier gap of 9.1, so it settles the one case nameplate scoring cannot — two runtimes on the same box, 0.25 apart — and provably nothing else. Scope is honest: `supportsResidentModelInspection` is true for Ollama only, so this improves one lane family. |
+| Deck skills had no rule keeping build instructions out of rendered content. | Task 41. A production control is honored by *what you build*, never by *what you write*: "make slide 4 a bar chart" picks a layout and is spent, rather than shipping as the headline. The `deck` profile turned out to have four skills, not the two expected — `weekly-update` does not read like a deck but has the highest chart-instruction-leak risk of them. |
 | The manifest overstated the refero attribution and disagreed with itself on the authored-here count. | Refero scoped to the verified 3 of 11 rulebooks (~10% of bytes, corroborated by upstream timing); authored-here count reconciled 93 → 79 with the discrepancy explained. |
 
 
