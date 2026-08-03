@@ -399,6 +399,60 @@ export function buildWorktreeResumeNotice(
   ].join(" ");
 }
 
+/**
+ * The two mandatory clauses, rendered together. They are a pair by design:
+ * ANTI_REWARD_HACKING_CLAUSE forbids degrading the verifier, and
+ * NULL_RESULT_VALID_CLAUSE keeps the honest "nothing to change" answer
+ * available. Shipping one without the other leaves the agent squeezed from
+ * exactly one side, so there is one function that emits both and no caller
+ * that emits either alone.
+ */
+export function renderGoalContractClauseLines(indent = "  "): string[] {
+  return [
+    `${indent}- anti-reward-hacking: ${ANTI_REWARD_HACKING_CLAUSE}`,
+    `${indent}- null-result: ${NULL_RESULT_VALID_CLAUSE}`,
+  ];
+}
+
+/**
+ * The single goal-contract renderer.
+ *
+ * `_PostCompact` used to hand-roll its own, emitting objective, stop condition
+ * and validation command while silently dropping `constraints[]` and both
+ * mandatory clauses (D1). That inverted the intent: the hook fires right after
+ * a compaction, when the agent has just lost its working memory and is under
+ * maximum pressure to close out, and it handed back the goal with precisely
+ * the two guardrails that hold at that moment removed. Every surface that
+ * renders a contract now comes through here.
+ *
+ * `includeClauses: false` lets a budget-constrained caller emit the clause pair
+ * once for a whole payload rather than once per contract — but it must emit it,
+ * via `renderGoalContractClauseLines`. The escape hatch is about placement, not
+ * about whether the clauses ship.
+ */
+export function renderGoalContractLines(
+  contract: GoalContract,
+  options: { indent?: string; includeClauses?: boolean } = {}
+): string[] {
+  const indent = options.indent ?? "  ";
+  const lines: string[] = [`${indent}- objective: ${contract.objective}`];
+  lines.push(`${indent}- constraints (must NOT change):`);
+  for (const constraint of contract.constraints) {
+    lines.push(`${indent}  - ${constraint}`);
+  }
+  if (contract.validationCmd) {
+    lines.push(`${indent}- validation-cmd (run via verify_edit): ${contract.validationCmd}`);
+  }
+  lines.push(`${indent}- stop-condition: ${contract.stopCondition}`);
+  if (contract.docsNote) {
+    lines.push(`${indent}- docs-note: ${contract.docsNote}`);
+  }
+  if (options.includeClauses !== false) {
+    lines.push(...renderGoalContractClauseLines(indent));
+  }
+  return lines;
+}
+
 export function buildResumeDirective(
   task: PersistentTask,
   linkedSession: SupervisorSessionState | undefined
@@ -420,22 +474,8 @@ export function buildResumeDirective(
   }
   lines.push(`- worktree-note: ${buildWorktreeResumeNotice(task.parentCwd, task.worktreePath)}`);
   if (task.goalContract) {
-    const contract = task.goalContract;
     lines.push("- goal-contract:");
-    lines.push(`  - objective: ${contract.objective}`);
-    lines.push("  - constraints (must NOT change):");
-    for (const constraint of contract.constraints) {
-      lines.push(`    - ${constraint}`);
-    }
-    if (contract.validationCmd) {
-      lines.push(`  - validation-cmd (run via verify_edit): ${contract.validationCmd}`);
-    }
-    lines.push(`  - stop-condition: ${contract.stopCondition}`);
-    if (contract.docsNote) {
-      lines.push(`  - docs-note: ${contract.docsNote}`);
-    }
-    lines.push(`  - anti-reward-hacking: ${ANTI_REWARD_HACKING_CLAUSE}`);
-    lines.push(`  - null-result: ${NULL_RESULT_VALID_CLAUSE}`);
+    lines.push(...renderGoalContractLines(task.goalContract));
   }
   if (task.lease) {
     lines.push("- lease:");

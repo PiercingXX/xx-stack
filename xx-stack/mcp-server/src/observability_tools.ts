@@ -376,8 +376,8 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     name: "build_repo_map",
     category: "context",
     description:
-      "Return the most relevant slice of a codebase for a token budget, ranked by git recency, path proximity, and reference counts",
-    keywords: ["repo", "map", "context", "budget", "files", "codebase"],
+      "Return the most relevant slice of a codebase for a token budget, ranked by git recency, path proximity, and reference counts, with an `omissions` report naming every excluded class (ignored, unreadable, oversized, binary, empty, dropped-for-budget, truncated) — though the absence of an omission is not a completeness guarantee",
+    keywords: ["repo", "map", "context", "budget", "files", "codebase", "omissions"],
   },
   {
     name: "verify_edit",

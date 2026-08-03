@@ -16,6 +16,7 @@ import hmac
 import http.client
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -424,6 +425,25 @@ def parse_chat_content(lane_name: str, data: Dict[str, Any]) -> str:
     return str(content)
 
 
+def parse_finish_reason(data: Dict[str, Any]) -> Optional[str]:
+    """Return choices[0].finish_reason, or None when the provider omits it.
+
+    Absent is NOT the same as "stop": several OpenAI-compatible servers (and the
+    hermes CLI lane, which has no HTTP envelope at all) never populate the field.
+    Callers must distinguish "ended normally" from "we were not told".
+    """
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    reason = first.get("finish_reason")
+    if isinstance(reason, str) and reason:
+        return reason
+    return None
+
+
 def select_probe_model(lane: Lane, models: List[str]) -> str:
     for candidate in lane_model_candidates(lane):
         if candidate in models:
@@ -557,7 +577,9 @@ def call_chat(
             ok, detail = run_hermes_cli_oneshot(lane, timeout, candidate_model, combined_prompt)
             latency_ms = int((time.monotonic() - start) * 1000)
             if ok:
-                return detail, candidate_model, {"latency_ms": latency_ms, "usage": {}}
+                # The CLI lane has no completion envelope, so finish_reason is
+                # genuinely unknown rather than "stop".
+                return detail, candidate_model, {"latency_ms": latency_ms, "usage": {}, "finish_reason": None}
             failures.append(f"{candidate_model}:{detail}")
         raise OrchestratorError(
             f"{lane.name} chat call failed for configured models {lane_model_candidates(lane)}: {failures}"
@@ -583,7 +605,12 @@ def call_chat(
             failures.append(f"{candidate_model}:{status}:{data}")
             continue
         usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-        return parse_chat_content(lane.name, data), candidate_model, {"latency_ms": latency_ms, "usage": usage}
+        meta = {
+            "latency_ms": latency_ms,
+            "usage": usage,
+            "finish_reason": parse_finish_reason(data),
+        }
+        return parse_chat_content(lane.name, data), candidate_model, meta
 
     raise OrchestratorError(
         f"{lane.name} chat call failed for configured models {lane_model_candidates(lane)}: {failures}"
@@ -1470,6 +1497,117 @@ BENCH_FILLER = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Bench output-validity gate
+#
+# Rule borrowed (idea only, no code) from drumih/turbo-fieldfare,
+# docs/COMMUNITY_BENCHMARKS.md, Apache-2.0: a benchmark run is only publishable
+# if the output is coherent and ended normally, "so a repetition loop cannot
+# become a published speed result".
+#
+# Why this exists: tokens_per_sec is the qualification input in
+# model-qualification-matrix.md. Without a gate, a model stuck in a repetition
+# loop emits many tokens very fast and scores as the BEST lane, and a reply
+# truncated at --max-tokens scores identically to a complete one.
+# ---------------------------------------------------------------------------
+
+# Below this many word tokens the n-gram statistics below are not meaningful, so
+# non-degeneracy cannot be certified in either direction. The bench prompt asks
+# for a one-paragraph summary; a reply under 12 words did not produce one.
+BENCH_MIN_REPLY_TOKENS = 12
+
+# A >=12-token reply built from fewer than 8 distinct words is not a paragraph.
+# Real English prose has a type-token ratio near 1.0 at this length, so this
+# floor only bites on short loops, where the trigram statistic is still weak.
+BENCH_MIN_DISTINCT_TOKENS = 8
+
+# Repeated-trigram ceiling (seq-rep-3). In the neural text degeneration
+# literature the repeated-n-gram rate for human prose sits near zero (low single
+# digit percent) while greedy-decoded repetition loops run ~0.7-1.0. Rejecting
+# above 0.5 therefore leaves an order-of-magnitude margin against false
+# positives while still catching any true loop, which drives the ratio toward
+# 1.0. A model that legitimately repeats one boilerplate sentence inside a
+# 200-token answer lands near 0.1 and passes.
+BENCH_MAX_REPEATED_TRIGRAM_RATIO = 0.5
+
+BENCH_TOKEN_RE = re.compile(r"[0-9a-z]+(?:'[0-9a-z]+)?")
+
+
+def bench_word_tokens(text: str) -> List[str]:
+    """Deterministic, offline word tokenizer for the degeneracy check."""
+    return BENCH_TOKEN_RE.findall(text.lower())
+
+
+def repeated_ngram_ratio(tokens: List[str], n: int = 3) -> float:
+    """Fraction of n-gram positions occupied by an n-gram seen earlier.
+
+    0.0 means every n-gram is unique (normal prose); values approaching 1.0 mean
+    the text is a loop. Returns 0.0 when there are too few tokens to form an
+    n-gram, so callers must apply their own length floor first.
+    """
+    if len(tokens) < n + 1:
+        return 0.0
+    grams = [tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1)]
+    return 1.0 - (len(set(grams)) / len(grams))
+
+
+def evaluate_bench_sample(reply: str, finish_reason: Optional[str]) -> Dict[str, Any]:
+    """Decide whether one bench reply may contribute to a published speed number.
+
+    Returns a verdict dict that is embedded verbatim in the bench report, so an
+    excluded sample is always visible with its reason rather than dropped.
+    """
+    tokens = bench_word_tokens(reply or "")
+    distinct = len(set(tokens))
+    repeated = repeated_ngram_ratio(tokens, 3)
+    verdict: Dict[str, Any] = {
+        "finish_reason": finish_reason,
+        "finish_reason_reported": finish_reason is not None,
+        "reply_word_tokens": len(tokens),
+        "distinct_word_tokens": distinct,
+        "repeated_trigram_ratio": round(repeated, 4),
+        "publishable": False,
+        "exclusion_reason": "",
+        "exclusion_detail": "",
+    }
+
+    # 1. End-of-turn check. "length" means the reply was cut at --max-tokens, so
+    #    it is a truncated measurement, not a complete one.
+    if finish_reason == "length":
+        verdict["exclusion_reason"] = "truncated"
+        verdict["exclusion_detail"] = "finish_reason=length: reply hit --max-tokens"
+        return verdict
+    if finish_reason is not None and finish_reason != "stop":
+        verdict["exclusion_reason"] = "abnormal_finish"
+        verdict["exclusion_detail"] = f"finish_reason={finish_reason}"
+        return verdict
+
+    # 2. Degeneracy checks (deterministic and offline; no model judges this).
+    if len(tokens) < BENCH_MIN_REPLY_TOKENS:
+        verdict["exclusion_reason"] = "too_short"
+        verdict["exclusion_detail"] = (
+            f"{len(tokens)} word tokens < {BENCH_MIN_REPLY_TOKENS}; non-degeneracy not certifiable"
+        )
+        return verdict
+    if distinct < BENCH_MIN_DISTINCT_TOKENS:
+        verdict["exclusion_reason"] = "degenerate_output"
+        verdict["exclusion_detail"] = (
+            f"{distinct} distinct word tokens < {BENCH_MIN_DISTINCT_TOKENS}"
+        )
+        return verdict
+    if repeated > BENCH_MAX_REPEATED_TRIGRAM_RATIO:
+        verdict["exclusion_reason"] = "degenerate_output"
+        verdict["exclusion_detail"] = (
+            f"repeated-trigram ratio {repeated:.3f} > {BENCH_MAX_REPEATED_TRIGRAM_RATIO}"
+        )
+        return verdict
+
+    # finish_reason absent is not a failure, but it is not a clean stop either.
+    # The sample counts, and the report says how many samples were unverified.
+    verdict["publishable"] = True
+    return verdict
+
+
 def command_bench(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
     lane_key = args.lane or (self_hosted_lane_keys(cfg)[0] if self_hosted_lane_keys(cfg) else "")
     if not lane_key or lane_key not in cfg.get("lanes", {}):
@@ -1487,12 +1625,7 @@ def command_bench(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
         + filler
     )
 
-    latencies_ms: List[float] = []
-    completion_tokens = 0
-    errors = 0
-    total_wall_seconds = 0.0
-
-    def one_request(_: int) -> Tuple[Optional[float], int]:
+    def one_request(_: int) -> Dict[str, Any]:
         try:
             reply, _, meta = call_chat(
                 lane,
@@ -1502,26 +1635,108 @@ def command_bench(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
                 temperature=0.1,
                 max_tokens=args.max_tokens,
             )
-        except OrchestratorError:
-            return None, 0
+        except OrchestratorError as exc:
+            return {"error": str(exc)}
         usage = meta.get("usage") or {}
-        tokens = usage.get("completion_tokens")
-        if not isinstance(tokens, int):
-            tokens = max(1, len(reply) // 4)
-        return float(meta.get("latency_ms") or 0), tokens
+        reported = usage.get("completion_tokens")
+        sample = evaluate_bench_sample(reply, meta.get("finish_reason"))
+        # Estimates and measurements never share a field. A consumer reading
+        # completion_tokens_measured is reading provider-reported usage only.
+        if isinstance(reported, int) and not isinstance(reported, bool):
+            sample["completion_tokens"] = reported
+            sample["completion_tokens_estimated"] = None
+            sample["tokens_estimated"] = False
+        else:
+            sample["completion_tokens"] = None
+            sample["completion_tokens_estimated"] = max(1, len(reply) // 4)
+            sample["tokens_estimated"] = True
+        sample["latency_ms"] = float(meta.get("latency_ms") or 0)
+        return sample
 
-    for iteration in range(1, args.iterations + 1):
+    def run_iteration() -> Tuple[List[Dict[str, Any]], float]:
         start = time.monotonic()
         with ThreadPoolExecutor(max_workers=args.parallel) as pool:
             results = list(pool.map(one_request, range(args.parallel)))
-        total_wall_seconds += time.monotonic() - start
-        for latency, tokens in results:
-            if latency is None:
+        return results, time.monotonic() - start
+
+    # Warmup: recorded separately rather than discarded. The first request pays
+    # cold model load (seconds on the sglang lane); folding that into
+    # total_wall_seconds understates steady-state throughput, and the matrix
+    # thresholds describe production steady state with the model already
+    # resident. Keeping the cold number visible makes load cost a lane property
+    # you can read, instead of a silently dropped iteration.
+    warmup_seconds = 0.0
+    warmup_errors = 0
+    warmup_iterations = max(0, int(getattr(args, "warmup", 1)))
+    for _ in range(warmup_iterations):
+        warm_results, elapsed = run_iteration()
+        warmup_seconds += elapsed
+        warmup_errors += sum(1 for s in warm_results if s.get("error"))
+    if warmup_iterations:
+        print(
+            f"warmup {warmup_iterations} iteration(s) in {warmup_seconds:.2f}s "
+            f"(excluded from timing; {warmup_errors} error(s))",
+            file=sys.stderr,
+        )
+
+    latencies_ms: List[float] = []
+    measured_tokens = 0
+    estimated_tokens = 0
+    errors = 0
+    total_wall_seconds = 0.0
+    samples_total = 0
+    excluded_samples: List[Dict[str, Any]] = []
+    exclusions_by_reason: Dict[str, int] = {}
+    finish_reason_unreported = 0
+    any_estimated = False
+
+    for iteration in range(1, args.iterations + 1):
+        results, elapsed = run_iteration()
+        total_wall_seconds += elapsed
+        for index, sample in enumerate(results):
+            if sample.get("error"):
                 errors += 1
                 continue
-            latencies_ms.append(latency)
-            completion_tokens += tokens
+            samples_total += 1
+            if not sample["finish_reason_reported"]:
+                finish_reason_unreported += 1
+            if not sample["publishable"]:
+                reason = sample["exclusion_reason"]
+                exclusions_by_reason[reason] = exclusions_by_reason.get(reason, 0) + 1
+                excluded_samples.append({"iteration": iteration, "slice": index, **sample})
+                print(
+                    f"  EXCLUDED iteration {iteration} slice {index}: "
+                    f"{reason} ({sample['exclusion_detail']})",
+                    file=sys.stderr,
+                )
+                continue
+            latencies_ms.append(sample["latency_ms"])
+            if sample["tokens_estimated"]:
+                any_estimated = True
+                estimated_tokens += sample["completion_tokens_estimated"]
+            else:
+                measured_tokens += sample["completion_tokens"]
         print(f"iteration {iteration}/{args.iterations} done", file=sys.stderr)
+
+    samples_publishable = samples_total - len(excluded_samples)
+
+    def rate(tokens: int) -> Optional[float]:
+        if tokens <= 0 or total_wall_seconds <= 0:
+            return None
+        return round(tokens / total_wall_seconds, 2)
+
+    # A run only qualifies a model if every sample ended normally, was coherent,
+    # and nothing errored. Exclusions are reported either way; they just cannot
+    # become a published speed result.
+    blockers: List[str] = []
+    if samples_publishable <= 0:
+        blockers.append("no_publishable_samples")
+    if excluded_samples:
+        blockers.append("excluded_samples_present")
+    if errors:
+        blockers.append("request_errors")
+    if measured_tokens <= 0:
+        blockers.append("no_provider_reported_token_counts")
 
     latencies_ms.sort()
     result = {
@@ -1532,16 +1747,51 @@ def command_bench(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
         "parallel_slices": args.parallel,
         "iterations": args.iterations,
         "prompt_profile": args.profile,
-        "gpu_residency_pass": None,
         "p50_latency_ms": percentile(latencies_ms, 0.50),
         "p95_latency_ms": percentile(latencies_ms, 0.95),
-        "tokens_per_sec": round(completion_tokens / total_wall_seconds, 2) if total_wall_seconds > 0 else 0.0,
-        "completion_tokens_total": completion_tokens,
+        # Measured and estimated throughput are separate fields on purpose.
+        # tokens_per_sec is provider-reported usage only; it is null when the
+        # provider reported none, so a consumer can never mistake an estimate
+        # for a measurement.
+        "tokens_per_sec": rate(measured_tokens),
+        "tokens_per_sec_estimated": rate(estimated_tokens),
+        "completion_tokens_measured": measured_tokens,
+        "completion_tokens_estimated": estimated_tokens,
+        "tokens_estimated": any_estimated,
         "error_count": errors,
-        "lane_classification": "",
+        "samples_total": samples_total,
+        "samples_publishable": samples_publishable,
+        "samples_excluded": len(excluded_samples),
+        "exclusions_by_reason": exclusions_by_reason,
+        "excluded_samples": excluded_samples,
+        "finish_reason_unreported_samples": finish_reason_unreported,
+        "validity_gate": {
+            "min_reply_tokens": BENCH_MIN_REPLY_TOKENS,
+            "min_distinct_tokens": BENCH_MIN_DISTINCT_TOKENS,
+            "max_repeated_trigram_ratio": BENCH_MAX_REPEATED_TRIGRAM_RATIO,
+        },
+        "publishable": not blockers,
+        "publish_blockers": blockers,
+        "warmup_iterations": warmup_iterations,
+        "warmup_seconds": round(warmup_seconds, 3),
+        "warmup_errors": warmup_errors,
+        "total_wall_seconds": round(total_wall_seconds, 3),
+        # Operator-supplied fields; see model-qualification-matrix.md for why the
+        # bench provably cannot produce these two.
+        "gpu_residency_pass": None,
+        "gpu_residency_method": "not_measured_by_bench",
+        "lane_classification": None,
+        "lane_classification_reason": "lane thresholds are unset; see model-qualification-matrix.md",
         "notes": "gpu_residency requires on-host nvidia-smi telemetry; run alongside this bench",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+    if not result["publishable"]:
+        print(
+            f"NOT PUBLISHABLE: {', '.join(blockers)} "
+            f"({len(excluded_samples)} of {samples_total} samples excluded, {errors} error(s))",
+            file=sys.stderr,
+        )
 
     output_dir = Path(args.output)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -2016,7 +2266,13 @@ def build_parser() -> argparse.ArgumentParser:
     bench = sub.add_parser("bench", help="Benchmark a lane: latency percentiles and throughput")
     bench.add_argument("--lane", default="", help="Lane key to benchmark (default: highest-priority self-hosted)")
     bench.add_argument("--parallel", type=int, default=2, help="Concurrent requests per iteration")
-    bench.add_argument("--iterations", type=int, default=3, help="Number of iterations")
+    bench.add_argument("--iterations", type=int, default=3, help="Number of timed iterations")
+    bench.add_argument(
+        "--warmup",
+        type=int,
+        default=1,
+        help="Warmup iterations run before timing starts (excluded from timing; 0 disables)",
+    )
     bench.add_argument("--context-tokens", type=int, default=4000, help="Approximate prompt size in tokens")
     bench.add_argument("--max-tokens", type=int, default=256, help="Max completion tokens per request")
     bench.add_argument("--profile", default="synthesis-long", help="Prompt profile label for the report")

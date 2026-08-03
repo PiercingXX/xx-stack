@@ -407,6 +407,55 @@ test("redactSecrets scrubs auth-scheme tokens that the assignment pass would str
   assert.equal(redactSecrets(location), location);
 });
 
+test("the auth-scheme pass does not mangle ordinary prose after a scheme word", () => {
+  // The credential alphabet includes every lowercase letter, so `{8,}` accepted
+  // an English word: a tsc diagnostic came back corrupted, which is the
+  // redactor's own failure mode inverted. `verify_edit` now routes compiler and
+  // test-runner output through this pass, so a damaged message is a damaged
+  // repair loop.
+  const diagnostics = [
+    "error TS2304: Cannot find name 'token expected here'",
+    "Expected token identifier but found something",
+    "digest computed over payload contents",
+    "basic auth is required",
+    "bearer required for this endpoint",
+  ];
+  for (const line of diagnostics) {
+    assert.equal(redactSecrets(line), line, `diagnostic must survive byte-intact: ${line}`);
+  }
+});
+
+test("tightening the auth-scheme pass did not narrow what it redacts", () => {
+  // Every credential shape the pass covered before still goes. The rule is
+  // deliberately weak — one digit, one uppercase letter, one of `._~+/=-`, or
+  // 16+ characters — because real credentials always clear that bar.
+  const credentials = [
+    ["Authorization: Bearer eyJhbGciOiJI.eyJzdWIiOiIxMjM.SflKxwRJSMeKKF2QT4", "eyJhbGciOiJI"],
+    ["authorization: bearer short1234567890abcdef", "short1234567890abcdef"],
+    ["Proxy-Authorization: Bearer tok_live_9999abcd", "tok_live_9999abcd"],
+    ["Authorization: Basic dXNlcjpwYXNzd29yZA==", "dXNlcjpwYXNzd29yZA=="],
+    ["authorization: bearer abcdefghijklmnopqrst", "abcdefghijklmnopqrst"],
+    ["Authorization: Bearer sk-proj-abcdef123456789", "sk-proj-abcdef123456789"],
+  ] as const;
+  for (const [line, secret] of credentials) {
+    const out = redactSecrets(line);
+    assert.ok(!out.includes(secret), `credential survived redaction: ${out}`);
+    assert.match(out, /\[redacted-secret\]/);
+  }
+});
+
+test("redacting an assignment value keeps the quote that closes the line around it", () => {
+  // `\S+` swallowed a quote opened before the key, so an assert diff line lost
+  // its closing delimiter. The value still goes; the punctuation stays.
+  assert.equal(redactSecrets("+ 'password: hunter2'"), "+ 'password: [redacted-secret]'");
+  assert.equal(redactSecrets('- "token: abc12345"'), '- "token: [redacted-secret]"');
+  // A value that carries its own quotes is unchanged — the quotes are inside
+  // the redacted span, not around it.
+  assert.equal(redactSecrets('password: "hunter2"'), "password: [redacted-secret]");
+  // An apostrophe that is part of the value is not a delimiter.
+  assert.equal(redactSecrets("password: hunter2"), "password: [redacted-secret]");
+});
+
 // --- Redaction by file shape (dotenv) --------------------------------------
 //
 // The value-pattern and key-name passes are unbounded-by-construction. These
