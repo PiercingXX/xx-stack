@@ -8,8 +8,10 @@ routing decision in two minutes; this document explains *how everything works*
 and *where the bodies are buried*.
 
 **Status of this document.** Written 2026-08-02 from a five-part audit of all
-817 tracked files. §11 (Defect Register) records every confirmed problem found
-in that audit, including which ones have since been fixed.
+tracked files, then revised the same day after the resulting fixes landed. §11
+(Defect Register) records every confirmed problem found in that audit and its
+current status. Everything in the register is **fixed** unless its row says
+otherwise; the open items are collected in §11.1.
 
 ---
 
@@ -57,13 +59,17 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 817 |
+| Tracked files | 838 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
-| TypeScript source | ~20,000 lines across 50 files |
-| Test files / tests | 18 files, 257 tests (plus 25 Python tests) |
+| TypeScript source | ~24,000 lines |
+| Test files / tests | 27 files, 361 tests (plus 58 Python tests) |
 | Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 |
+
+These counts drift. Regenerate them rather than trusting them:
+`grep -rhoP 'server\.tool\(\s*\n?\s*"\K[^"]+' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
+for tools, `npm test` for the suite size, `git ls-files | wc -l` for the total.
 
 ---
 
@@ -505,33 +511,48 @@ files. See §11, HERMES-1 for what was done about this.
 
 ```
 layout:verify → agents:check → drift:check → rules:check → nano:check
-              → inventory:check → guardrails:check → test → hermes:test
+              → inventory:check → guardrails:check → lint → format:check
+              → design:golden → design:html-gate → test → hermes:test
 ```
 
 | Gate | What it proves | Blind spot |
 |---|---|---|
-| `layout:verify` | component layout, symlinks, executable bits | unknown directories (missed `xx-stack/vscode/`) |
-| `agents:check` | 8 named agents match their mirrors | **the other 13 agents entirely** |
-| `drift:check` | canonical and opencode have the same *names* | **all content drift** — says so in its docstring |
+| `layout:verify` | component layout, symlinks, executable bits | only the layouts it knows; an unmapped directory is invisible (this is how `xx-stack/vscode/` rotted unnoticed) |
+| `agents:check` | every canonical agent is mirrored or explicitly opted out | — (was 8 of 21 before the audit) |
+| `drift:check` | canonical and opencode have the same *names* | **all content drift** — it says so in its own docstring. See below. |
 | `rules:check` | coverage map matches the skill/agent surface | — |
-| `nano:check` | nano variants exist, under cap, hashes pinned | — |
+| `nano:check` | nano variants exist, under cap, canonical hashes pinned, mirrors identical | — |
 | `inventory:check` | generated registries are current | — |
-| `guardrails:check` | denylist patterns behave; hash pinned | — |
-| `test` | 257 MCP tests | see §11 for what they don't catch |
-| `hermes:test` | 25 Python tests | tests a hand-picked allowlist, not the shipped one |
+| `guardrails:check` | denylist patterns behave; file hash pinned | pattern *coverage* — it proves the listed patterns work, not that the list is complete |
+| `lint` | `.ts`, `.mjs`, and `.js` | — |
+| `format:check` | `mcp-server/src` and `scripts` only | everything else, deliberately (`packs/` is vendored) |
+| `design:golden` / `design:html-gate` | design pack evals and HTML quality | — |
+| `test` | MCP suite | see §11 for the classes it historically missed |
+| `hermes:test` | Python suite, against the *shipped* allowlist | — |
 
-### What `verify` does NOT run
+**The one gate you must not trust for content.** `drift:check` compares
+directory *names* between canonical and the OpenCode mirror. It does not read
+the files. Every content-drift defect in §11 passed it. Until it grows a
+`--content` mode, diff mirrored pairs by hand after normalizing the four
+deliberate deltas from §2:
 
-`lint`, `format:check`, `typecheck`, `design:catalog` staleness,
-`design:golden`, `design:html-gate`.
+```bash
+diff <(grep -v '^compatibility:' xx-stack/runtime/skills/NAME/SKILL.md) \
+     <(grep -v '^compatibility:' opencode-orchestration/opencode/skills/NAME/SKILL.md)
+```
 
-CI runs lint, format:check, design:catalog, and design:golden in a separate
-job, and `npm test` runs `tsc` first so type errors do fail. But
-**`design:html-gate` runs nowhere**, and the 25 `.mjs`/`.js` scripts are
-Prettier-formatted but never linted.
+### What `verify` still does NOT cover
 
-So the CONTRIBUTING claim *"if `verify` passes locally, CI should pass"* is not
-strictly true. Treat CI as the authority.
+`typecheck` as a named step (though `npm test` runs `tsc` first, so type errors
+do fail), `design:catalog` staleness (it mutates the tree, so CI checks it
+separately), and the Node 20/22 matrix. Treat CI as the final authority.
+
+### Surfaces with no gate at all
+
+- `opencode-orchestration/vscode/agents/` — hand-maintained mirrors with no
+  sync script and no check. They drift silently. (`xx-stack/adapters/agents/`
+  *is* generated and gated.)
+- Pack content beyond the design pack's own two gates.
 
 ### The pre-commit hook
 
@@ -585,7 +606,21 @@ Findings from the 2026-08-02 audit. Every entry was confirmed with file:line
 evidence or command output. Severity: **CRITICAL** (data loss or security),
 **BUG**, **RISK**, **DEAD**, **STALE**, **NIT**.
 
-Status is updated as fixes land; see git history for the commits.
+**All 59 entries below are FIXED**, in commits `7928da7` and `c29cb37`. The
+descriptions are kept in the past tense as a record of what went wrong and why
+— several describe failure modes worth recognizing again. Anything still open
+is in §11.1.
+
+Two things are worth carrying forward from how these were found:
+
+- **Passing tests proved very little.** 257 tests were green while the store
+  could be truncated by a read error, a restricted agent could silently become
+  unrestricted, and the exec denylist could fail open. Every one of these
+  needed a test written specifically to fail first.
+- **Three gates were green because they checked almost nothing** —
+  `agents:check` covered 8 of 21 agents, `search_tools`' catalog was 11 tools
+  stale, and a supervisor self-test asserted `count >= 0`. A green gate is a
+  claim; check what it actually iterates over.
 
 ### MCP server
 
@@ -661,10 +696,25 @@ Status is updated as fixes land; see git history for the commits.
 | CONTENT-9 | STALE | Content drift in 4 skill mirrors (`write-docs` 139 lines, `audit-security` 66, `setup-observability` 32, `train-model-knowledge-injection` 8) and 5 agent mirrors — canonical received generalization edits the mirrors never got. Canonical is correct in every case. |
 | CONTENT-10 | STALE | `design-prototype` exists on disk with a full SKILL.md and a coverage entry but appears in **no** index — not `SKILLS.md`, not the OpenCode twin, not `config.json`. |
 | CONTENT-11 | STALE | `xx-stack/vscode/` contains exactly one file, a pre-rename fossil superseded by the `adapters/` copy, unknown to the layout verifier. |
-| CONTENT-12 | STALE | Count drift: "138 design systems" (actual 137) across 12 files; "33 tools" (actual 47) in 2; "58 tests" (actual 257) in CONTRIBUTING. |
+| CONTENT-12 | STALE | Count drift: "138 design systems" (actual 137) across 12 files; "33 tools" (actual 47) in 2; and a test count in CONTRIBUTING that was stale by 4x. Hardcoded counts in prose rot silently — §1 now carries the commands to regenerate them instead. |
 | CONTENT-13 | STALE | `CHANGELOG.md` stops at 1.63.0 with no Unreleased section, 74 commits behind. |
 | DOC-5 | NIT | README says the second folder "symlinks into" the first; `opencode/agents` and `opencode/skills` are full copies. |
-| HERMES-DOC-1 | BUG | Two items I marked "shipped" in the hermes TODO reconciliation were only partially true: `attempts` never reaches `routing.jsonl` (the event has no such field), and `proxy.log_prompts` credits a control that is never read. |
+| HERMES-DOC-1 | BUG | Two items marked "shipped" in the hermes TODO reconciliation were only partially true: `attempts` never reached `routing.jsonl` (the event had no such field), and `proxy.log_prompts` credited a control that was never read. Both now true: the field is written, and the dead key is gone. |
+
+### 11.1 Still open
+
+Found while fixing the above, or deliberately deferred. Nothing here is a data
+loss or security risk.
+
+| Item | Severity | Why it is still open |
+|---|---|---|
+| `log_worker.logEvent` swallows every write error in a bare `catch`. | RISK | `record_telemetry` now awaits the write and reports `accepted` / `best-effort` rather than falsely claiming `recorded`, so the lie is gone — but a full disk still resolves successfully. Making it fully honest means deciding whether a telemetry write failure should ever be able to fail a caller's operation, which is a policy question, not a bug fix. |
+| `hardwareCache` caches partial probe results permanently. | NIT | Each of the three hardware probes is independently try/caught, so if `free` or `lspci` is transiently missing at first call, the incomplete result is cached for the life of the process. Correct fix is to cache only when all probes succeed, or memoize per probe — it changes probe semantics, so it was left alone. |
+| `search_tools` categories are a stretch for some tools. | NIT | `build_repo_map` and `verify_edit` are filed under `observability` because widening the category enum is a public schema change. The catalog is complete and now gated; only the taxonomy is imperfect. |
+| `packs/design` has no LICENSE or source manifest. | RISK | The README and `.prettierignore` both promise per-pack licenses, and only 1 of 225 design subtrees has one (`packs/rules` does it correctly, recording repo, commit, and license). The content is framed as clean-room reinterpretation ("inspired by"), so the exposure is documentary rather than certainly infringing — but it is a real gap and the upstream (`nexu-io/open-design`) is identifiable. **Needs a human decision**, which is why it was not auto-fixed. |
+| `design-skills/index.json` has 114 broken paths. | STALE | Every entry points at `skills/<slug>/…`; the real layout is `design-skills/<slug>/…`. Nothing reads the file — the catalog generator explicitly filters it out — so it is inert. It is upstream's index carried over without the rename applied; deleting it or regenerating it is a call about how closely to track upstream. |
+| The `full` tier of all 11 rule books is unused. | NIT | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only if a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody "cleans up" content that is deliberately on standby. |
+| `drift:check` cannot see content. | RISK | The single highest-leverage remaining improvement: a `--content` mode that diffs bodies after normalizing the four deliberate deltas would have caught every content-drift defect in this register. See §9. |
 
 ---
 
@@ -731,11 +781,23 @@ registry — regenerate rather than hand-editing.
 that gate compares names, not content. Diff the pair by hand, normalizing the
 four deliberate deltas.
 
-**`agents:check` is green but my new agent has no mirror.** Also expected
-(BUILD-1) — the script only knows 8 agents.
+**`agents:check` fails on an agent I just added.** Working as intended. The
+check derives its set from the directory, so a new agent must either be mirrored
+(`npm run agents:sync`) or added to the `NOT_MIRRORED` opt-out in
+`sync-vscode-agents.mjs` with a reason. Silence used to be the failure mode
+here; noise is the fix.
 
-**A tool is registered but `search_tools` can't find it.** `TOOL_CATALOG` is
-maintained by hand and drifts (MCP-13).
+**A tool is registered but `search_tools` can't find it.** Add it to
+`TOOL_CATALOG` in `observability_tools.ts` — the catalog is still hand-written.
+A test now fails when a registered tool has no entry, so you will hear about it
+before CI does. Deliberately hidden tools (`_Stop`, `_PostCompact`) belong in
+the test's exemption set, not the catalog.
+
+**A store tool returns `store_unavailable`.** The state file exists but could
+not be read or parsed. The payload carries the exact path and errno. This is
+deliberate: the readers used to treat any read failure as "empty store", and
+the next write would then persist that emptiness over your real state.
+Fix or remove the file; do not expect the server to route around it.
 
 **Routing always picks the same host.** Tier scoring is keyword-based; check
 whether your description matches the keyword table in
@@ -750,9 +812,20 @@ whether your description matches the keyword table in
 denylist should only carry irreversible operations; if it is blocking something
 recoverable, that is a bug in the list.
 
-**Hermes proxy returns 502.** The response body carries an `attempts` array with
-a per-lane reason. Note those reasons are **not** written to `routing.jsonl`
-(HERMES-DOC-1), so the HTTP response is the only place to see them.
+**Hermes proxy returns 502.** The response body carries an `attempts` array
+with a per-lane reason, and the same reasons are now written to
+`logs/routing.jsonl` along with an `ok: false` record — failed requests used to
+be invisible in telemetry.
 
-**Tests pass locally but CI fails.** `verify` does not run lint, format, or the
-design gates. Run `npm run lint && npm run format:check` too.
+**A Hermes command I expect to be allowed is refused.** The allowlist screens
+every argument, not just the command prefix: flags that spawn processes
+(`-exec`, `--pre`, `--ext-diff`) are denied outright, and every path argument
+must resolve inside the working directory. `find` and `rg` were removed from
+the shipped list entirely — their escape hatches are too numerous and too
+version-dependent for a denylist to be a boundary. Re-adding them is a
+deliberate choice to trade safety for reach.
+
+**Tests pass locally but CI fails.** `verify` now runs lint, format, and both
+design gates, so this should be rare. The remaining gaps are the Node 20/22
+matrix and `design:catalog` staleness (it mutates the tree, so CI checks it
+separately).
