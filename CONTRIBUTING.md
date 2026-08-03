@@ -79,6 +79,18 @@ you add a CLI entrypoint, add it to that list explicitly.
 Lint must be **clean of errors**. Warnings are allowed but should not grow;
 `npm run lint` currently reports zero of both.
 
+### Dependencies and Portability
+
+- **Dependency budget.** A new runtime dependency in `xx-stack/mcp-server`
+  needs justification in the PR — what it does that a `node:` built-in cannot,
+  and why vendoring or writing it is worse. Prefer built-ins (the repo already
+  uses `node:test` over jest and `node:util` `parseArgs` over an argument
+  parser). Dev-only tooling gets more latitude, but the same question applies.
+- **Prefer web-standard APIs** (`fetch`, Web Streams, Web Crypto) over
+  Node-specific equivalents where they are genuinely equivalent, so the server
+  stays portable to Bun/Deno without a rewrite. This is applied
+  opportunistically — when you touch a file anyway — not as a churn campaign.
+
 ### Agent Development
 
 Canonical agent contracts live in `xx-stack/runtime/agents/`. The files under
@@ -139,7 +151,7 @@ Add tests for new functionality. The design pack has its own gates:
 
 ### The `.xxignore` file
 
-`.xxignore` is the repo-local *agent context* boundary — it tells agents what not
+`.xxignore` is the repo-local _agent context_ boundary — it tells agents what not
 to sweep into context. It is not a substitute for `.gitignore`, which governs
 what must not be committed. If you add a large vendored or generated surface,
 add it to both.
