@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 
+import { ContextCandidate, selectContext } from "./context_selection_runtime.js";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -74,7 +76,7 @@ function matchGlobLike(path: string, pattern: string, anchored: boolean): boolea
   if (pattern.startsWith("**/")) {
     const rest = pattern.slice(3);
     let p = path;
-    while (true) {
+    for (;;) {
       if (simpleMatch(p, rest)) return true;
       const idx = p.indexOf("/");
       if (idx < 0) break;
@@ -124,16 +126,15 @@ function simpleMatch(path: string, pattern: string): boolean {
  * Get all tracked files in a git repo, respecting ignore patterns.
  * Uses `git ls-files` for speed and correctness.
  */
-async function discoverFiles(
-  root: string,
-  ignorePatterns: string[]
-): Promise<string[]> {
+async function discoverFiles(root: string, ignorePatterns: string[]): Promise<string[]> {
   let output: string;
   try {
-    output = execSync(
-      "git ls-files --cached --others --exclude-standard",
-      { cwd: root, encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }
-    );
+    output = execSync("git ls-files --cached --others --exclude-standard", {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 10000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
   } catch {
     // Not a git repo or git unavailable — fall back to filesystem walk
     return discoverFilesByWalk(root, ignorePatterns);
@@ -149,10 +150,7 @@ async function discoverFiles(
  * Fallback: walk the filesystem to discover files.
  * Used when git is not available.
  */
-async function discoverFilesByWalk(
-  root: string,
-  ignorePatterns: string[]
-): Promise<string[]> {
+async function discoverFilesByWalk(root: string, ignorePatterns: string[]): Promise<string[]> {
   const results: string[] = [];
 
   async function walk(dir: string): Promise<void> {
@@ -194,10 +192,11 @@ interface FileSignals {
 function getGitTimestamp(filePath: string, cwd: string): number {
   try {
     const rel = relative(cwd, filePath);
-    const out = execSync(
-      `git log -1 --format=%ct -- "${rel}" 2>/dev/null || echo "0"`,
-      { cwd, encoding: "utf8", timeout: 5000 }
-    );
+    const out = execSync(`git log -1 --format=%ct -- "${rel}" 2>/dev/null || echo "0"`, {
+      cwd,
+      encoding: "utf8",
+      timeout: 5000,
+    });
     const ts = parseInt(out.trim(), 10);
     return Number.isFinite(ts) ? ts * 1000 : 0;
   } catch {
@@ -208,11 +207,7 @@ function getGitTimestamp(filePath: string, cwd: string): number {
 function countReferences(filePath: string): number {
   try {
     const content = readFileSync(filePath, "utf8");
-    const importPatterns = [
-      /(?:import|export)\s+/g,
-      /require\s*\(/g,
-      /from\s+['"]/g,
-    ];
+    const importPatterns = [/(?:import|export)\s+/g, /require\s*\(/g, /from\s+['"]/g];
     let count = 0;
     for (const re of importPatterns) {
       const matches = content.match(re);
@@ -296,54 +291,49 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
 
   signals.sort((a, b) => b.proximityScore - a.proximityScore);
 
-  const selected: RepoMapFile[] = [];
-  let runningTokens = 0;
+  // -------------------------------------------------------------------------
+  // Budget fitting via submodular context selection (context_selection_runtime).
+  // The heuristic score above stays the relevance signal; coverage/diversity
+  // come from cheap lexical similarity over file contents. minGain is
+  // -Infinity so the repo-map contract is unchanged: fill the budget rather
+  // than stop at the first non-positive marginal gain.
+  // -------------------------------------------------------------------------
 
+  const contents = new Map<string, string>();
+  const candidates: ContextCandidate[] = [];
   for (const s of signals) {
     const fullPath = join(resolvedRoot, s.path);
     let fileContent = "";
-    let fileTokens = 0;
     try {
       fileContent = readFileSync(fullPath, "utf8");
-      fileTokens = estimateTokens(fileContent);
     } catch {
-      fileTokens = 0;
+      continue;
     }
+    if (fileContent.length === 0) continue;
+    contents.set(s.path, fileContent);
+    candidates.push({
+      id: s.path,
+      text: fileContent,
+      tokens: estimateTokens(fileContent),
+      relevance: s.proximityScore,
+    });
+  }
 
-    if (fileTokens === 0) continue;
+  const selection = selectContext({
+    candidates,
+    tokenBudget,
+    minGain: Number.NEGATIVE_INFINITY,
+    weights: { relevance: 2, coverage: 1, diversity: 1 },
+  });
+  const chosen = new Set(selection.selected.map((item) => item.id));
 
-    // If this file alone exceeds the remaining budget, include a truncated range
-    const remaining = tokenBudget - runningTokens;
-    if (runningTokens + fileTokens > tokenBudget) {
-      if (remaining <= 0) break;
+  // Preserve the existing output contract: files ordered by heuristic score.
+  const selected: RepoMapFile[] = [];
+  let runningTokens = selection.tokensEstimated;
 
-      // Truncate the file to fit within remaining budget
-      const lines = fileContent.split("\n");
-      const totalLines = lines.length;
-      // Estimate how many lines fit: proportional to token ratio
-      const lineBudget = Math.max(1, Math.floor((remaining / fileTokens) * totalLines));
-      const truncatedContent = lines.slice(0, lineBudget).join("\n");
-      const truncatedTokens = estimateTokens(truncatedContent);
-
-      const ranges = [{ startLine: 1, endLine: lineBudget }];
-
-      let symbols: string[] | undefined;
-      if (includeSymbols) {
-        symbols = extractSymbols(truncatedContent);
-      }
-
-      selected.push({
-        path: s.path,
-        score: s.proximityScore,
-        ranges,
-        symbols,
-      });
-
-      runningTokens += truncatedTokens;
-      break;
-    }
-
-    const ranges = [{ startLine: 1, endLine: fileContent.split("\n").length }];
+  for (const s of signals) {
+    if (!chosen.has(s.path)) continue;
+    const fileContent = contents.get(s.path) ?? "";
 
     let symbols: string[] | undefined;
     if (includeSymbols) {
@@ -353,11 +343,50 @@ export async function buildRepoMap(options: BuildRepoMapOptions): Promise<RepoMa
     selected.push({
       path: s.path,
       score: s.proximityScore,
-      ranges,
+      ranges: [{ startLine: 1, endLine: fileContent.split("\n").length }],
       symbols,
     });
+  }
 
-    runningTokens += fileTokens;
+  // Existing contract: when budget remains but the best-ranked unselected
+  // file is too large to fit whole, include a truncated head of it.
+  const remaining = tokenBudget - runningTokens;
+  if (remaining > 0) {
+    const next = signals.find((s) => !chosen.has(s.path) && contents.has(s.path));
+    if (next) {
+      const fileContent = contents.get(next.path) ?? "";
+      const lines = fileContent.split("\n");
+      // Take whole lines while they fit the remaining token budget
+      // (~4 chars per token), so tokensEstimated never exceeds tokenBudget.
+      const charBudget = remaining * 4;
+      let usedChars = 0;
+      let lineBudget = 0;
+      for (const line of lines) {
+        const lineChars = line.length + (lineBudget > 0 ? 1 : 0); // +1 for "\n"
+        if (usedChars + lineChars > charBudget) break;
+        usedChars += lineChars;
+        lineBudget += 1;
+      }
+
+      if (lineBudget > 0) {
+        const truncatedContent = lines.slice(0, lineBudget).join("\n");
+        const truncatedTokens = estimateTokens(truncatedContent);
+
+        let symbols: string[] | undefined;
+        if (includeSymbols) {
+          symbols = extractSymbols(truncatedContent);
+        }
+
+        selected.push({
+          path: next.path,
+          score: next.proximityScore,
+          ranges: [{ startLine: 1, endLine: lineBudget }],
+          symbols,
+        });
+
+        runningTokens += truncatedTokens;
+      }
+    }
   }
 
   return {

@@ -43,14 +43,18 @@ test("buildRepoMap respects token budget", async () => {
   await withTempRepo(async (root) => {
     // Create 5 files of roughly 200 chars each (~50 tokens each)
     for (let i = 0; i < 5; i++) {
-      const content = `// file ${i}\nconst x${i} = ${i};\nexport function fn${i}() { return ${i}; }\n`.repeat(10);
+      const content =
+        `// file ${i}\nconst x${i} = ${i};\nexport function fn${i}() { return ${i}; }\n`.repeat(10);
       await writeAndCommit(root, `src/file${i}.ts`, content);
     }
 
     const result = await buildRepoMap({ root, tokenBudget: 80 });
     assert.ok(result.files.length > 0, "should return at least one file");
     assert.ok(result.files.length < 5, "should truncate before including all files");
-    assert.ok(result.tokensEstimated <= 80, `tokensEstimated ${result.tokensEstimated} should be within budget of 80`);
+    assert.ok(
+      result.tokensEstimated <= 80,
+      `tokensEstimated ${result.tokensEstimated} should be within budget of 80`
+    );
     assert.equal(result.method, "heuristic");
   });
 });
@@ -72,7 +76,10 @@ test("buildRepoMap respects .xxignore patterns", async () => {
     const result = await buildRepoMap({ root, tokenBudget: 8000 });
     const paths = result.files.map((f) => f.path);
     assert.ok(paths.includes("src/index.ts"), "should include tracked file");
-    assert.ok(!paths.some((p) => p.startsWith("node_modules/")), "should exclude node_modules files");
+    assert.ok(
+      !paths.some((p) => p.startsWith("node_modules/")),
+      "should exclude node_modules files"
+    );
   });
 });
 
@@ -140,10 +147,7 @@ test("buildRepoMap returns empty result for empty repo", async () => {
 // ---------------------------------------------------------------------------
 
 test("buildRepoMap throws for non-existent root", async () => {
-  await assert.rejects(
-    () => buildRepoMap({ root: "/nonexistent/path" }),
-    /Repo root not found/
-  );
+  await assert.rejects(() => buildRepoMap({ root: "/nonexistent/path" }), /Repo root not found/);
 });
 
 // ---------------------------------------------------------------------------
@@ -162,7 +166,10 @@ test("acceptance: buildRepoMap on real repo root returns under 2 seconds", async
   assert.ok(result.files.length > 0, "should return files from the real repo");
   assert.equal(result.method, "heuristic");
   assert.ok(result.tokensEstimated > 0, "should have non-zero token estimate");
-  assert.ok(result.tokensEstimated <= 4000, `tokensEstimated ${result.tokensEstimated} should be within budget of 4000`);
+  assert.ok(
+    result.tokensEstimated <= 4000,
+    `tokensEstimated ${result.tokensEstimated} should be within budget of 4000`
+  );
 });
 
 test("acceptance: focusPaths measurably reorders results on real repo", async () => {
