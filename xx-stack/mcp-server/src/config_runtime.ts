@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-import { PATH_CONSTANTS, resolveRepoFilePath } from "./runtime_constants.js";
+import { PATH_CONSTANTS, resolveRepoFilePath, xxStackRepoRoot } from "./runtime_constants.js";
 
 export type AgentMemoryScope = "user" | "project" | "local";
 
@@ -62,10 +62,7 @@ export function getUserConfigPath(): string {
 }
 
 export function getRepoConfigPath(): string {
-  return resolveRepoFilePath(
-    process.env.XX_STACK_REPO || resolve(homedir(), ".config/opencode/skills/xx-stack"),
-    PATH_CONSTANTS.configFile
-  );
+  return resolveRepoFilePath(xxStackRepoRoot(), PATH_CONSTANTS.configFile);
 }
 
 export interface ReadJsonResult {
