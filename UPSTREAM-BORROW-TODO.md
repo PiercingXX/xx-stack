@@ -4,6 +4,8 @@ Ideas worth pulling into xx-stack, harvested from a review of Orca (stablyai), A
 
 Guiding constraint: xx-stack is a headless, local-first MCP control plane. It routes, supervises, and qualifies — it does not become a desktop app. Every task below respects that: no GUI, cloud stays opt-in, inventory.json stays the single source of truth, and the full npm run verify pipeline must stay green.
 
+Status (2026-08-03): tasks 1-29 LANDED. Tasks 30-45 harvested from a six-source review round (open-design, dyad, ComfyUI, google-labs-code stitch/jules/design.md, presenton); most are landed, the rest carry an explicit status on their heading line. Read a task's status before acting on it. Two are marked NOT TAKEN with reasons — those are decisions, not backlog. Earlier note follows.
+
 Status (2026-08-02): ALL tasks 1-29 are LANDED — every borrow from the Aider, Orca, Titus-AI, mattpocock, agent-rules-books, jina-ai, remix-run, davidondrej and block/buzz reviews has been built and shipped behind a green npm run verify. Nothing here is an open queue. Task descriptions below are kept as the rationale record for what was built and why — read them as history. New harvests append below with the next free number (30).
 
 Ground rules for whoever executes (Skippy):
@@ -778,3 +780,132 @@ Explicitly NOT borrowing
     docs/critique-theater.md and the Critique Theater feature — a multi-persona review surface in the desktop app. The transferable idea (diverse reviewers) is already Task 23's reviewer-diversity routing, done properly against the live registry rather than as fixed personas.
     docs/agent-adapters.md, docs/new-agent-runtime-acp.md, prompt composition internals — host-adapter concerns; adapters/ and opencode-orchestration/ already own that, same call as jina-ai's per-tool install docs and buzz's harness binaries.
     Upstream's repo guards (pnpm guard, lint:craft, check-design-system-manifests.ts) as code. The contracts they enforce are worth copying; their implementations assume a pnpm monorepo with packages/contracts. Write the equivalents in xx-stack/scripts/ (Tasks 30, 33).
+
+From dyad-sh/dyad (reviewed 2026-08-03)
+
+Reviewed dyad: a local, open-source AI app builder — Electron desktop app, model-agnostic, positioned against hosted tools like v0/Lovable/Bolt. License is split: root is Apache-2.0, but everything under src/pro/ is FSL-1.1-ALv2 and not vendorable — which unfortunately covers the best agent-loop material (the search/replace edit applier and its pass/fail corpus). ~85% of the repo is renderer/GUI/Supabase/Vercel plumbing, out of scope by construction. Where it is genuinely local-first it is thinner than xx-stack, not deeper: its Ollama and LM Studio handlers are 116 and 58 lines that list models off /api/tags and do zero capability detection, zero reliability qualification, zero per-model quirk handling. On model abstraction — the axis where a match was expected — nothing came back.
+
+The borrows came from an unexpected place: dyad's failure-classification discipline. It consistently distinguishes "the thing ran and said no" from "the thing could not run", and it redacts by file shape rather than value shape. Both are places xx-stack was collapsing a distinction it needed.
+
+34. verify_edit: distinguish "could not run" from "failed" — LANDED
+
+Goal. Four-state outcome (pass | fail | could_not_run | denied) with a machine-readable reason code, and completion evaluation that treats could_not_run as neither.
+
+Why. Every non-zero path mapped to ok:false, so a denied command buried execution_policy_denied: in an output string callers had to substring-match, and `npm test` failing because node_modules was missing was byte-indistinguishable from the suite reporting real failures. This is routing-shaped: xx-stack dispatches to heterogeneous machines, so the lane that got the task is exactly the one most likely to be missing the toolchain. Confirmed worse than predicted — before the fix a supervised session reported completed on a validation that never executed.
+
+Landed. Classification happens in runCommand from structured error properties, never re-parsed strings. could_not_run never satisfies a stopCondition and never counts as a code failure; it surfaces as validation_could_not_run on a distinct event channel.
+
+35. Redact secrets by file shape, not just value shape — LANDED
+
+Goal. When text belongs to a dotenv-shaped file, redact every assignment's value regardless of how the key or value looks.
+
+Why. Value-pattern redaction is unbounded-by-construction — it catches only formats someone enumerated. Three leaks confirmed empirically against the shipped redactor: DATABASE_URL=postgres://admin:hunter2@..., STRIPE_KEY=sk_live_... (sk_ not the enumerated sk-), SMTP_PASS=hunter2 (the key list had password, not pass). review_to_continuation pipes a git diff through redaction into a continuation prompt sent to another lane, possibly cloud.
+
+Landed. Key names deliberately survive so a handoff can still say DATABASE_URL is set in .env.production. Pathless calls are byte-identical to before.
+
+36. Action-risk taxonomy for "stop and ask the human" — NOT TAKEN
+
+Their mcp_consent_policy.ts is the best-articulated version of this taxonomy in an open codebase: classification by the action's real effect never the tool's self-declared safety, a split between what user intent can downgrade and what it cannot, and a deferred-effect category (schedules, webhooks, triggers) most such lists miss.
+
+Passed on. xx-stack's exec gate is deliberately binary — allowed or denied — and "ask the human" implies an interactive consent surface a headless control plane does not own. Same call already made against buzz's approval gates. Revisit only if xx-stack ever grows a caller-side consent contract.
+
+Explicitly NOT borrowing
+
+    The entire GUI/Electron surface, and all of src/pro/** (FSL-licensed).
+    Model/provider abstraction — a 679-line switch over 12 provider SDKs, each a runtime dep. inventory.json -> generated registries -> endpointFamily is better factored at zero dependency cost.
+    createFallback mid-stream failover — supervisor_session_runtime already bans host/model pairs by cooldown and re-plans candidates with health pings, which is more.
+    socket_firewall.ts — interesting supply-chain idea (pnpm minimum-package-release-age), but needs network and npx to function at all.
+    workers/code_explorer/ — a real ts.Program symbol index. Language-locked and dependency-heavy; build_repo_map is deliberately heuristic-first and zero-dep.
+    src/distributed_machines/ — a false friend: Electron main<->renderer actors, not multi-host.
+    sanitizeMcpToolResult — excellent, but a consumer-side defense; xx-stack is the server.
+
+From Comfy-Org/ComfyUI (reviewed 2026-08-03)
+
+Reviewed ComfyUI: a node-graph GUI for diffusion models — on its face the excluded category verbatim. But the execution core is a well-built scheduler and the memory manager is the real thing, and two of xx-stack's own surfaces turned out to be half-built in exactly the places ComfyUI is complete.
+
+37. Ready-set, wave assignment, and cycle detection over the task graph — LANDED
+
+Goal. Make blockedBy load-bearing.
+
+Why. blockedBy was write-only state: declared in task_runtime.ts, sanitized in task_tools.ts, and read by nothing else in the repo. Consequences, each verified: a typo'd blocker ID was a permanent silent deadlock with no diagnostic; cycles were accepted and stored; _Stop objected on tasks that could not be started, violating its own documented contract; and route_parallel_tasks instructed callers to declare blocking edges then fanned everything out at once.
+
+Landed. New pure task_graph_runtime.ts. Cycle detection returns the named path (a -> b -> a), not a boolean — the difference between a usable and a useless diagnostic. Writes are rejected before a deadlock persists; dangling blockers are reported, never auto-pruned.
+
+The guardrail, encoded in code and enforced by test: xx-stack computes and returns a schedule, it never executes one. Their ExecutionList async loop and unblockedEvent are the half that would make this a workflow engine and are deliberately excluded. A test decompiles the built module and fails on async, Promise, spawn, child_process, fetch, and fs.
+
+38. Live residency and memory-pressure in watchdog lane ranking — DEFERRED
+
+Goal. Prefer a lane where the chosen model is already resident; demote a lane whose resident footprint plus context headroom exceeds usable VRAM.
+
+Why. Lane ranking is nameplate-only today — hostCapacityScore reads static registry fields. Meanwhile monitor-memory.ts already computes usableVramGb, per-model resident footprint from /api/ps, contextHeadroomGb and an overload boolean, and routing never sees any of it. On a small local fleet, routing to the box that already has the 30B model warm instead of one that must evict and cold-load it is worth seconds to tens of seconds per task.
+
+Deferred, honestly scoped: generate-registries sets supportsResidentModelInspection true for Ollama and false for every other runtime, so this improves one lane family. Worth doing, not worth overselling.
+
+39. Terminal is terminal — LANDED
+
+Goal. Classify before mutating on cancel-shaped paths; terminal is a genuine no-op; report what actually happened.
+
+Why. supervisor_abort_session set status unconditionally, so aborting a session that finished ten minutes ago rewrote its terminal record, pushed an event, and returned interrupted as though it had stopped live work. task_suspend had the same shape and could resurrect a done task, undoing applyForceSynthesisOutcome.
+
+Landed. already_terminal is a third outcome distinct from both interrupted and missing. Deliberately did NOT port their running-vs-pending distinction: with no kill channel that is unknowable from the control plane, and reporting a guess is worse than reporting honestly.
+
+Explicitly NOT borrowing
+
+    The node-graph GUI, canvas, frontend package management, subgraph editor.
+    Output caching keyed by transitive input signature — mechanically elegant, no honest consumer. The only candidate is memoizing verify_edit, and caching test results is hostile to the anti-reward-hacking clause: "tests passed (from cache)" is precisely what a goal contract exists to prevent.
+    RAMPressureCache eviction scoring, CacheProvider plugin protocol — distributed cache infrastructure.
+    Torch/CUDA memory internals — the lane's runtime owns the GPU; xx-stack never loads weights.
+    folder_paths.py model catalog — xx-stack addresses models by name per endpoint, never opens a weight file.
+    Custom-node registry — the in-repo half is importlib over a directory with no versioning; packs/ with a manifest, coverage map and CI drift gate is already stronger.
+    HTTP/WebSocket API, --listen, /free model-unload endpoint — a server for a browser client, and an actuator on the GPU host. Lanes own their own memory.
+
+From google-labs-code (stitch, jules, design.md — reviewed 2026-08-03)
+
+Reviewed four Google Labs repos plus the hosted Stitch product and presenton.ai. Two premises turned out wrong and are worth recording: presenton is fully open source (Apache-2.0, source reviewed, not a behavioral review), and Stitch's product is closed but Google publishes real Apache-2.0 tooling around it.
+
+40. WCAG contrast and structural checks for the design systems — LANDED (see 43/44)
+
+41. Content vs production-control firewall for deck skills (upstream: presenton) — NOT YET TAKEN
+
+Goal. Add to the deck-profile workflow skills: slide content is audience-facing only — visual and layout instructions are production controls, honored through layout choice, never rendered as slide text. Plus data-shape layout rules (numeric table -> chart layout; no image in source -> no image layout) and a plain-text speaker-note convention.
+
+Why. Presenton enforces this at both the schema layer and the prompt layer, independently — which is evidence they hit it hard. The failure is concrete: a user says "make slide 4 a bar chart" and the deck ships a slide titled "make slide 4 a bar chart". Our deck skills say nothing about it. simple-deck already has a plan-before-render step with theme rhythm rules, so "plan first" and "adjacent slides must differ" are NOT borrows — the firewall and the data-shape table are.
+
+Effort: S. Risk: Low. Note guizang-ppt is vendored MIT with a documented exemption; prefer not to edit it.
+
+42. Null-result as a valid contract outcome (upstream: jules-action) — LANDED
+
+Goal. State that for prospecting goals, "I looked and there is nothing worth changing" is a valid completion.
+
+Why. ANTI_REWARD_HACKING_CLAUSE guarded exactly one direction — degrading the verifier so a goal passes. Jules' scheduled-agent prompts encode the inverse as a hard rule in three independent places ("Do not open a PR if you do not have a validated and impactful change"), because it is the characteristic failure of a standing agent with nothing to do. It bites us in a specific place: a prospecting task whose honest answer is "none" has an unmet stopCondition by construction, so _Stop objects at every end-turn until the caller's rejection budget is spent — and the cheapest way to silence the objection is to invent a diff.
+
+Landed. Prompt layer only, no schema change. Both clauses now render together, with a worked prospecting contract in the runbook showing a stopCondition a null result can satisfy.
+
+43. Design-system token extractor + declared-pair contrast gate — IN PROGRESS
+
+Goal. Parse the existing prose of all 137 design systems into a token map without modifying a byte, then apply WCAG contrast to pairs the prose explicitly declares.
+
+Why. Nothing validates the 137 design systems. design:golden proves 5 eval tasks; design:html-gate proves 67 generated artifacts. The pack's largest and most-consumed surface has no gate. Measured, it catches 3 real defects: bold ships Text #111827 on Surface #111111 (1.06:1) with prose saying "Keep body copy on Text (#111827) for legibility"; pacman 1.18:1; energetic 2.11:1.
+
+The critical constraint: check DECLARED pairs only. Bucketing tokens by H3 role and cross-producing was measured at 3114 pairs, 1633 below AA — 52.4% false positives, because a dark-mode system legitimately holds light text tokens and light surface tokens that are never paired. Google's rule works precisely because components.<x>.{backgroundColor,textColor} is an explicit pair.
+
+44. Structural schema check for design systems — IN PROGRESS
+
+Calibrated to our two lineage schemas, not Google's CANONICAL_ORDER — which flags 79/137 for one systematic difference (Components before Layout). That is divergence, not defect. Passes 137/137 on day one, so it is only defensible as a rider on 43 and must be tested against malformed fixtures, never against the corpus.
+
+45. PHILOSOPHY.md doctrine into craft/ — NOT YET TAKEN
+
+Three arguments worth distilling, attributed, in house voice. The most important: upstream explicitly rejects treating token values as rendering instructions — "The token values serve as context and are not rendering instructions." That is a direct counter-argument to task 33's premise and should be read before task 33 is actioned. Also: "'Modern, clean, trustworthy, premium' evokes nothing specific. A model creates something in the center of what those words describe" — the missing why behind anti-ai-slop-rules.json's 18 checkable rules. And: a long list of don'ts is a sign the description was too vague to carry them.
+
+Explicitly NOT borrowing
+
+    @google/design.md as a dependency — 9 direct runtime deps pulling the whole unified/remark ecosystem, a zod major-version conflict with what we run, alpha format version. And it would do nothing: the linter returns NO_YAML_FOUND on 136 of our 137 files, because it parses only YAML front matter or yaml code fences. We have 1 file with front matter.
+    8 of the 11 design.md lint rules — structurally dead against prose-only files; 6 read a YAML token tree that exists in 1 of 137 files.
+    Google's CANONICAL_ORDER constant — see 44.
+    YAML front matter across the 137 files — MANUAL §7 makes byte-comparability the only way to distinguish our edits from upstream's, and the provenance record was reconstructed from those exact bytes. Reconsider only as a re-vendor, never an in-place rewrite.
+    stitch-sdk in any form — all 14 capabilities are network calls to stitch.googleapis.com requiring a Google API key or OAuth token, with no local or degraded path. A typed client for a remote MCP server, not a library.
+    stitch-skills as skills — they require the hosted Stitch MCP server. Only taste-design's self-contained rule values transferred, into anti-ai-slop-rules.json.
+    jules-action — 85 lines of composite action whose terminal step is a bare curl to jules.googleapis.com with no -f, so an HTTP 401/500 exits 0 and the workflow reports green. No correlation handle, no polling, no verification, no idempotency. On every axis xx-stack is ahead by a category.
+    jules-awesome-list — NO LICENSE FILE. Default copyright, all rights reserved; nothing in it is vendorable regardless of merit. Content is ~60 one-line prompt fragments with no structure to harvest.
+    presenton's outline->structure->content pipeline as architecture — a service pipeline with a database between phases. The useful residue is task 41.
+    presenton's layouts.json, PPTX/PDF export, image/icon generation services, mem0 memory — absolute-coordinate slide model, heavy deps, required network calls, and a memory surface materially less careful than agent_memory_*.
