@@ -1,35 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { guardedExecFile } from "./execution_policy.js";
-import { registerVerifyEditTools } from "./verify_edit_tools.js";
+import {
+  getVerifyEditScratchDir,
+  listFullOutputArtifacts,
+  registerVerifyEditTools,
+  resetFullOutputArtifacts,
+  writeFullOutputArtifact,
+} from "./verify_edit_tools.js";
 
-// Replicate the truncation logic to test it in isolation (same as in verify_edit_tools.ts).
-const OUTPUT_CAP = 4096;
+// Artifacts must never land in the repo: pin the scratch base at a temp dir
+// for the whole file. (Default is <os tmpdir>/xx-stack-scratch/verify-edit-<pid>.)
+process.env.XX_STACK_SCRATCH_DIR = join(tmpdir(), `xx-stack-verify-edit-scratch-${process.pid}`);
 
-function truncateFailingTail(full: string): string {
-  if (full.length <= OUTPUT_CAP) return full;
-  return "... [truncated " + (full.length - OUTPUT_CAP) + " bytes] ...\n" + full.slice(-OUTPUT_CAP);
-}
-
-test("truncateFailingTail keeps short output unchanged", () => {
-  const short = "hello world";
-  assert.equal(truncateFailingTail(short), short);
-});
-
-test("truncateFailingTail truncates long output to last 4096 bytes with prefix", () => {
-  // Build a string that is exactly 5000 bytes (well over the cap).
-  const long = "A".repeat(5000);
-  const result = truncateFailingTail(long);
-  assert.ok(result.startsWith("... [truncated"), "should start with truncation notice");
-  assert.ok(result.endsWith("A".repeat(OUTPUT_CAP)), "should end with last 4096 bytes");
-  assert.equal(result.length, "... [truncated 904 bytes] ...\n".length + OUTPUT_CAP);
-});
+/** Same constant as verify_edit_tools.ts — the inline view budget. */
+const VIEW_CAP = 4096;
 
 test("guardedExecFile rejects blocked commands through validateExecRequest", async () => {
   // guardedExecFile with context "hook" and no allowed commands should block
@@ -61,19 +53,17 @@ test("guardedExecFile allows commands on the allowlist", async () => {
   assert.equal(stdout.trim(), "hello-verify");
 });
 
-test("truncateFailingTail on real oversized output", async () => {
-  // Generate a real oversized output by running a command that produces
-  // more than 4096 bytes, then verify truncation.
+test("guardedExecFile captures oversized real output in full", async () => {
   const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-edit-"));
   try {
-    // Write a file with 6000 lines to trigger large output from a real command.
     const bigFile = join(dir, "big.txt");
     const lineCount = 6000;
     const lines: string[] = [];
     for (let i = 0; i < lineCount; i++) {
       lines.push(`line ${i} of oversized output for truncation test`);
     }
-    await writeFile(bigFile, lines.join("\n") + "\n");
+    const contents = lines.join("\n") + "\n";
+    await writeFile(bigFile, contents);
 
     const { stdout } = await guardedExecFile(
       "cat",
@@ -82,19 +72,52 @@ test("truncateFailingTail on real oversized output", async () => {
       { context: "hook", allowedHookCommands: ["cat"] }
     );
 
-    // The output should be well over 4096 bytes.
-    assert.ok(stdout.length > OUTPUT_CAP, `expected output > ${OUTPUT_CAP}, got ${stdout.length}`);
+    assert.ok(stdout.length > VIEW_CAP, `expected output > ${VIEW_CAP}, got ${stdout.length}`);
+    assert.equal(stdout, contents, "capture-then-truncate means the gate keeps the full capture");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
-    // Now apply truncation to the real output.
-    const truncated = truncateFailingTail(stdout);
-    assert.ok(truncated.startsWith("... [truncated"), "real oversized output should be truncated");
-    assert.ok(truncated.endsWith(stdout.slice(-OUTPUT_CAP)), "should end with real tail");
+// --- scratch artifact ring --------------------------------------------------
+
+test("the artifact ring keeps the newest 8 captures and evicts the oldest", () => {
+  resetFullOutputArtifacts();
+  try {
+    const written: string[] = [];
+    for (let i = 0; i < 9; i++) {
+      const path = writeFullOutputArtifact("test", `capture ${i}`);
+      assert.ok(path, "artifact write should succeed in the scratch dir");
+      written.push(path!);
+    }
+
+    const held = listFullOutputArtifacts();
+    assert.equal(held.length, 8, "the ring holds at most 8 artifacts");
+    assert.equal(existsSync(written[0]!), false, "the oldest artifact must be evicted from disk");
+    for (const path of written.slice(1)) {
+      assert.equal(existsSync(path), true, `newer artifact ${path} must survive`);
+    }
+    assert.deepEqual(held, written.slice(1), "the ring holds the newest 8, oldest first");
+  } finally {
+    resetFullOutputArtifacts();
+  }
+});
+
+test("artifacts live under the per-session scratch dir, never the repo", () => {
+  resetFullOutputArtifacts();
+  try {
+    const path = writeFullOutputArtifact("lint", "scratch-location-probe");
+    assert.ok(path);
     assert.ok(
-      truncated.length <= "... [truncated ...] ...\n".length + OUTPUT_CAP + 20,
-      `truncated length ${truncated.length} should be near cap + prefix`
+      path!.startsWith(getVerifyEditScratchDir()),
+      "artifact path must be inside the session scratch dir"
+    );
+    assert.ok(
+      !path!.includes("/xx-stack/mcp-server/src"),
+      "artifacts must never be written into the repo tree"
     );
   } finally {
-    // Cleanup handled by OS temp dir policy.
+    resetFullOutputArtifacts();
   }
 });
 
@@ -107,7 +130,12 @@ type VerifyEditArgs = {
   compactOptions?: { cap?: number; stripAnsi?: boolean; collapseRepeats?: boolean };
 };
 
-type CmdResult = { ok: boolean; output: string } | null;
+type CmdResult = {
+  ok: boolean;
+  output: string;
+  truncated: boolean;
+  fullOutputPath?: string;
+} | null;
 type VerifyEditPayload = { lint: CmdResult; test: CmdResult; compacted?: string[] };
 
 /** Register verify_edit on a capture-only server stub and return a driver
@@ -151,6 +179,8 @@ test("verify_edit returns a structured failure payload on a failing test command
     assert.equal(payload.lint, null, "no lintCmd given, lint should be null");
     assert.ok(payload.test, "test result should be present");
     assert.equal(payload.test!.ok, false, "failing command must report ok: false");
+    assert.equal(payload.test!.truncated, false, "small output is not truncated");
+    assert.equal(payload.test!.fullOutputPath, undefined, "no artifact when nothing was dropped");
     assert.ok(
       payload.test!.output.includes("AssertionError: intentional failure marker"),
       "failure payload should carry the command's stderr"
@@ -164,12 +194,14 @@ test("verify_edit returns a structured failure payload on a failing test command
   }
 });
 
-test("verify_edit truncates an oversized failure payload to the failing tail", async () => {
+test("verify_edit returns a head+tail view and keeps the full capture on disk", async () => {
   const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-edit-tool-"));
+  resetFullOutputArtifacts();
   try {
     await writeFile(
       join(dir, "fail-big.js"),
-      'for (let i = 0; i < 300; i++) console.error("noise line " + i + " " + "x".repeat(40));\n' +
+      'console.error("HEAD-MARKER");\n' +
+        'for (let i = 0; i < 300; i++) console.error("noise line " + i + " " + "x".repeat(40));\n' +
         'console.error("FINAL-TAIL-MARKER");\n' +
         "process.exit(1);\n"
     );
@@ -178,19 +210,40 @@ test("verify_edit truncates an oversized failure payload to the failing tail", a
     const payload = await verifyEdit({ cwd: dir, testCmd: "node fail-big.js" });
 
     assert.equal(payload.test!.ok, false);
+    assert.equal(payload.test!.truncated, true, "oversized output must be flagged as truncated");
     assert.ok(
-      payload.test!.output.startsWith("... [truncated"),
-      "oversized failure output should be truncated with the notice prefix"
+      payload.test!.output.length <= VIEW_CAP + 64,
+      `view must stay within the cap, got ${payload.test!.output.length}`
     );
+    assert.ok(
+      payload.test!.output.includes("... [truncated"),
+      "the view must carry an explicit truncation marker"
+    );
+    assert.ok(payload.test!.output.includes("HEAD-MARKER"), "the head must survive truncation");
     assert.ok(
       payload.test!.output.includes("FINAL-TAIL-MARKER"),
       "the failing tail — what a continuation prompt needs — must survive truncation"
     );
     assert.ok(
-      !payload.test!.output.includes("noise line 0 "),
-      "the head of the oversized output should be dropped"
+      !payload.test!.output.includes("noise line 150 "),
+      "the middle of the oversized output should be dropped from the view"
     );
+
+    const fullPath = payload.test!.fullOutputPath;
+    assert.ok(fullPath, "a truncated result must point at the full capture");
+    assert.ok(
+      fullPath!.startsWith(getVerifyEditScratchDir()),
+      "the artifact must live in the session scratch dir"
+    );
+    const full = await readFile(fullPath!, "utf8");
+    assert.ok(
+      full.includes("noise line 150 "),
+      "the full capture must contain what the view dropped"
+    );
+    assert.ok(full.includes("HEAD-MARKER") && full.includes("FINAL-TAIL-MARKER"));
+    assert.ok(full.length > payload.test!.output.length, "the capture must exceed the view");
   } finally {
+    resetFullOutputArtifacts();
     await rm(dir, { recursive: true, force: true });
   }
 });
@@ -218,12 +271,46 @@ test("verify_edit reports lint pass and test fail independently in one payload",
 });
 
 test("verify_edit surfaces an execution-policy denial as a structured failure", async () => {
-  const verifyEdit = captureVerifyEditTool([]);
-  const payload = await verifyEdit({ cwd: tmpdir(), testCmd: "forbidden-tool --flag" });
+  resetFullOutputArtifacts();
+  try {
+    const verifyEdit = captureVerifyEditTool([]);
+    const payload = await verifyEdit({ cwd: tmpdir(), testCmd: "forbidden-tool --flag" });
 
-  assert.equal(payload.test!.ok, false, "a policy-denied command must report ok: false");
-  assert.ok(
-    payload.test!.output.startsWith("execution_policy_denied:"),
-    "denial reason should be the payload, verbatim"
-  );
+    assert.equal(payload.test!.ok, false, "a policy-denied command must report ok: false");
+    assert.ok(
+      payload.test!.output.startsWith("execution_policy_denied:"),
+      "denial reason should be the payload, verbatim"
+    );
+    assert.equal(payload.test!.truncated, false, "a denial is not a truncated capture");
+    assert.equal(payload.test!.fullOutputPath, undefined, "a denial writes no artifact");
+    assert.deepEqual(listFullOutputArtifacts(), [], "a denial must not touch the artifact ring");
+  } finally {
+    resetFullOutputArtifacts();
+  }
+});
+
+test("caller-supplied compaction still reports what it dropped", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-edit-tool-"));
+  resetFullOutputArtifacts();
+  try {
+    await writeFile(
+      join(dir, "repeat.js"),
+      'for (let i = 0; i < 12; i++) console.log("identical line");\n'
+    );
+
+    const verifyEdit = captureVerifyEditTool(["node"]);
+    const payload = await verifyEdit({
+      cwd: dir,
+      testCmd: "node repeat.js",
+      compactOptions: { collapseRepeats: true },
+    });
+
+    assert.equal(payload.test!.ok, true);
+    assert.ok(payload.test!.output.includes("identical lines collapsed"));
+    assert.ok(payload.compacted && payload.compacted.length > 0, "dropped notes must be reported");
+    assert.equal(payload.test!.truncated, false, "collapsing is not truncation");
+  } finally {
+    resetFullOutputArtifacts();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

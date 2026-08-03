@@ -1,6 +1,5 @@
-import { execFile } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { promisify } from "node:util";
 
 import {
   asRecord,
@@ -11,7 +10,6 @@ import {
   toStringArray,
 } from "./config_runtime.js";
 
-const execFileAsync = promisify(execFile);
 const MAX_EXEC_ARG_COUNT = 32;
 const MAX_EXEC_ARG_LENGTH = 1024;
 const SAFE_HOOK_ARG_PATTERN = /^[a-zA-Z0-9_./:@%+=,-]+$/;
@@ -311,10 +309,261 @@ export function validateExecRequest(
   return { allowed: true, reason: "ok" };
 }
 
+// --- Guarded subprocess execution ------------------------------------------
+//
+// Doctrine (borrowed from buzz-dev-mcp): ephemeral processes, process-group
+// kill on EVERY exit path, bounded capture.
+//
+// Node's execFile() timeout signals only the direct child, so a command that
+// forks workers (any real test runner) strands grandchildren that keep eating
+// a lane after the gate has given up. We therefore spawn detached on POSIX —
+// which makes the child a process-group leader with pgid === pid — and tear
+// the whole group down with kill(-pid) using a SIGTERM-then-SIGKILL grace
+// period on timeout, spawn error, abort, AND normal completion (a command can
+// exit 0 while leaving background children behind).
+//
+// Windows has no process groups: detached there would pop a console window,
+// so we degrade cleanly to signalling the direct child, i.e. today's behavior.
+
+/** Hard cap on captured stdout+stderr per guarded exec. Beyond this the
+ *  streams are still drained (so the child never blocks) but not retained. */
+export const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
+
+/** Grace between SIGTERM and SIGKILL when tearing a process group down. */
+const KILL_GRACE_MS = 2_000;
+
+/** POSIX gets real process groups; Windows does not. */
+const SUPPORTS_PROCESS_GROUPS = process.platform !== "win32";
+
+export interface GuardedExecOptions {
+  timeout?: number;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  /** Optional cancellation. Aborting tears the process group down too. */
+  signal?: AbortSignal;
+}
+
+/** Error shape mirrors what promisify(execFile) rejected with, so callers that
+ *  read err.stdout / err.stderr / err.code keep working unchanged. */
+interface GuardedExecError extends Error {
+  code?: number | string | null;
+  signal?: NodeJS.Signals | null;
+  killed?: boolean;
+  stdout?: string;
+  stderr?: string;
+  cmd?: string;
+}
+
+function captureCapMarker(): string {
+  return `\n... [capture cap reached: output beyond ${MAX_CAPTURE_BYTES} bytes dropped] ...\n`;
+}
+
+function runGuardedProcess(
+  command: string,
+  args: string[],
+  options: GuardedExecOptions
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const detached = SUPPORTS_PROCESS_GROUPS;
+    let child: ChildProcess;
+    try {
+      child = spawn(command, args, {
+        cwd: options.cwd,
+        env: options.env,
+        detached,
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let capturedBytes = 0;
+    let cappedStream: "stdout" | "stderr" | null = null;
+    let settled = false;
+    let timedOut = false;
+    let aborted = false;
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    let forceSettleTimer: NodeJS.Timeout | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
+
+    const collect = (which: "stdout" | "stderr", chunks: Buffer[], chunk: Buffer): void => {
+      if (cappedStream !== null) return;
+      const remaining = MAX_CAPTURE_BYTES - capturedBytes;
+      if (chunk.length >= remaining) {
+        if (remaining > 0) chunks.push(chunk.subarray(0, remaining));
+        capturedBytes = MAX_CAPTURE_BYTES;
+        cappedStream = which;
+        return;
+      }
+      chunks.push(chunk);
+      capturedBytes += chunk.length;
+    };
+
+    /** Signal the whole group on POSIX, the direct child elsewhere.
+     *  Returns true when something was actually signalled. */
+    const signalGroup = (signal: NodeJS.Signals): boolean => {
+      const pid = child.pid;
+      if (pid === undefined) return false;
+      if (detached) {
+        try {
+          process.kill(-pid, signal);
+          return true;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          // ESRCH: the group is already empty — nothing left to reap.
+          if (code === "ESRCH") return false;
+          // Anything else (EPERM): fall through to the direct-child kill.
+        }
+      }
+      try {
+        return child.kill(signal);
+      } catch {
+        return false;
+      }
+    };
+
+    const terminateGroup = (): void => {
+      if (!signalGroup("SIGTERM")) return;
+      if (killTimer) return;
+      killTimer = setTimeout(() => signalGroup("SIGKILL"), KILL_GRACE_MS);
+      killTimer.unref();
+    };
+
+    const onAbort = (): void => {
+      aborted = true;
+      terminateGroup();
+      scheduleForceSettle();
+    };
+
+    const detachAbort = (): void => {
+      options.signal?.removeEventListener("abort", onAbort);
+    };
+
+    const settle = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (forceSettleTimer) clearTimeout(forceSettleTimer);
+      detachAbort();
+      // Every exit path sweeps the group; killTimer intentionally survives so
+      // the SIGKILL escalation still lands on stragglers.
+      terminateGroup();
+      action();
+    };
+
+    const buildOutput = (): { stdout: string; stderr: string } => {
+      const marker = cappedStream === null ? "" : captureCapMarker();
+      return {
+        stdout:
+          Buffer.concat(stdoutChunks).toString("utf8") + (cappedStream === "stdout" ? marker : ""),
+        stderr:
+          Buffer.concat(stderrChunks).toString("utf8") + (cappedStream === "stderr" ? marker : ""),
+      };
+    };
+
+    const failure = (
+      message: string,
+      code: number | string | null | undefined,
+      signal: NodeJS.Signals | null,
+      killed: boolean
+    ): GuardedExecError => {
+      const { stdout, stderr } = buildOutput();
+      const error: GuardedExecError = new Error(message);
+      error.code = code;
+      error.signal = signal;
+      error.killed = killed;
+      error.stdout = stdout;
+      error.stderr = stderr;
+      error.cmd = [command, ...args].join(" ");
+      return error;
+    };
+
+    /** If the group refuses to die, do not hang the lane waiting for stdio. */
+    const scheduleForceSettle = (): void => {
+      if (forceSettleTimer) return;
+      forceSettleTimer = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        settle(() =>
+          reject(
+            failure(
+              aborted
+                ? `guarded_exec_aborted: ${command}`
+                : `Command failed: ${[command, ...args].join(" ")}`,
+              null,
+              "SIGKILL",
+              true
+            )
+          )
+        );
+      }, KILL_GRACE_MS * 2);
+      forceSettleTimer.unref();
+    };
+
+    child.stdout?.on("data", (chunk: Buffer) => collect("stdout", stdoutChunks, chunk));
+    child.stderr?.on("data", (chunk: Buffer) => collect("stderr", stderrChunks, chunk));
+    child.stdout?.on("error", () => {});
+    child.stderr?.on("error", () => {});
+
+    if (options.timeout && options.timeout > 0) {
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        terminateGroup();
+        scheduleForceSettle();
+      }, options.timeout);
+      timeoutTimer.unref();
+    }
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        onAbort();
+      } else {
+        options.signal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
+
+    child.on("error", (error) => {
+      settle(() => reject(error));
+    });
+
+    child.on("close", (code, signal) => {
+      settle(() => {
+        const commandLine = [command, ...args].join(" ");
+        if (aborted) {
+          reject(failure(`guarded_exec_aborted: ${commandLine}`, code ?? null, signal, true));
+          return;
+        }
+        if (timedOut) {
+          reject(
+            failure(`Command failed: ${commandLine}`, code ?? null, signal ?? "SIGTERM", true)
+          );
+          return;
+        }
+        if (code === 0) {
+          resolve(buildOutput());
+          return;
+        }
+        const { stderr } = buildOutput();
+        reject(
+          failure(
+            `Command failed: ${commandLine}\n${stderr}`,
+            code ?? signal ?? null,
+            signal,
+            signal !== null
+          )
+        );
+      });
+    });
+  });
+}
+
 export async function guardedExecFile(
   command: string,
   args: string[],
-  options: { timeout?: number; cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  options: GuardedExecOptions = {},
   guard: { context: ExecValidationContext; allowedHookCommands?: string[] }
 ): Promise<{ stdout: string; stderr: string }> {
   const validation = validateExecRequest(
@@ -327,7 +576,8 @@ export async function guardedExecFile(
     const detail = validation.pattern ? `:${validation.pattern}` : "";
     throw new Error(`execution_policy_denied:${validation.reason}${detail}`);
   }
-  return execFileAsync(command, args, options);
+  // Policy gate above is unchanged; everything below is the hardened runner.
+  return runGuardedProcess(command, args, options);
 }
 
 export async function emitLifecycleHooks(

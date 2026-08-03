@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   findDangerousPattern,
@@ -7,6 +11,7 @@ import {
   guardedExecFile,
   loadDangerousPatternsFromFile,
   parseDangerousPatterns,
+  resetDangerousPatternsCache,
   validateExecRequest,
   INTERNAL_VRAM_PROBE,
 } from "./execution_policy.js";
@@ -213,3 +218,266 @@ test("guardedExecFile rejects a catastrophic command with the pattern in the rea
     }
   );
 });
+
+// ---------------------------------------------------------------------------
+// Hardened runner: process-group kill on every exit path (Task 28).
+//
+// These exercise real subprocesses, so they are POSIX-only — Windows has no
+// process groups and degrades to signalling the direct child.
+// ---------------------------------------------------------------------------
+
+const POSIX_ONLY =
+  process.platform === "win32" ? "POSIX only — no process groups on Windows" : false;
+
+const HOOK_GUARD = { context: "hook" as const, allowedHookCommands: ["bash"] };
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means it exists but belongs to someone else — still alive.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Bounded wait for a pid to disappear. Returns true once it is gone. */
+async function waitForProcessExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (!processAlive(pid)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+/** Best-effort teardown so a failing assertion never leaks a sleeper. */
+function reap(pid: number): void {
+  if (pid <= 0) return;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* already gone */
+  }
+}
+
+async function readPidFile(path: string, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const value = Number((await readFile(path, "utf8")).trim());
+      if (Number.isInteger(value) && value > 0) return value;
+    } catch {
+      /* not written yet */
+    }
+    if (Date.now() >= deadline) return 0;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+test(
+  "a timed-out command that forked a sleeping child leaves no survivors",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-orphan-"));
+    const script = join(dir, "forker.sh");
+    const pidFile = join(dir, "child.pid");
+    // The sleeper inherits stdio, so `wait` holds the shell open past the
+    // timeout — exactly the test-runner-forks-workers shape that strands
+    // grandchildren under execFile's direct-child-only timeout kill.
+    await writeFile(script, 'sleep 120 &\necho $! > "$1"\nwait\n');
+
+    let grandchildPid = 0;
+    try {
+      await assert.rejects(
+        () => guardedExecFile("bash", [script, pidFile], { timeout: 1_000 }, HOOK_GUARD),
+        (err: unknown) => {
+          const error = err as { killed?: boolean; message?: string };
+          return error.killed === true;
+        }
+      );
+
+      grandchildPid = await readPidFile(pidFile, 2_000);
+      assert.ok(grandchildPid > 0, "the forked sleeper must have recorded its pid");
+
+      const gone = await waitForProcessExit(grandchildPid, 10_000);
+      assert.equal(
+        gone,
+        true,
+        `grandchild ${grandchildPid} survived the timeout — process-group kill did not land`
+      );
+    } finally {
+      reap(grandchildPid);
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  "normal completion still sweeps a lingering background child",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-linger-"));
+    const script = join(dir, "linger.sh");
+    const pidFile = join(dir, "child.pid");
+    // stdio redirected away, so the shell can exit 0 immediately while the
+    // sleeper lingers in the group.
+    await writeFile(script, 'sleep 120 >/dev/null 2>&1 &\necho $! > "$1"\nexit 0\n');
+
+    let grandchildPid = 0;
+    try {
+      const { stdout } = await guardedExecFile(
+        "bash",
+        [script, pidFile],
+        { timeout: 10_000 },
+        HOOK_GUARD
+      );
+      assert.equal(stdout, "", "the shell itself produced no output");
+
+      grandchildPid = await readPidFile(pidFile, 2_000);
+      assert.ok(grandchildPid > 0, "the backgrounded sleeper must have recorded its pid");
+
+      const gone = await waitForProcessExit(grandchildPid, 10_000);
+      assert.equal(gone, true, `background child ${grandchildPid} survived normal completion`);
+    } finally {
+      reap(grandchildPid);
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+test("aborting a guarded exec tears the process group down", { skip: POSIX_ONLY }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-abort-"));
+  const script = join(dir, "forker.sh");
+  const pidFile = join(dir, "child.pid");
+  await writeFile(script, 'sleep 120 &\necho $! > "$1"\nwait\n');
+
+  let grandchildPid = 0;
+  try {
+    const controller = new AbortController();
+    const pending = guardedExecFile(
+      "bash",
+      [script, pidFile],
+      { timeout: 60_000, signal: controller.signal },
+      HOOK_GUARD
+    );
+    grandchildPid = await readPidFile(pidFile, 5_000);
+    assert.ok(grandchildPid > 0, "the forked sleeper must have recorded its pid");
+    controller.abort();
+
+    await assert.rejects(() => pending, /guarded_exec_aborted/);
+    const gone = await waitForProcessExit(grandchildPid, 10_000);
+    assert.equal(gone, true, `grandchild ${grandchildPid} survived the abort`);
+  } finally {
+    reap(grandchildPid);
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a non-zero exit rejects with stdout and stderr attached", { skip: POSIX_ONLY }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-exit-"));
+  const script = join(dir, "fail.sh");
+  await writeFile(script, "echo out-marker\necho err-marker >&2\nexit 3\n");
+  try {
+    await assert.rejects(
+      () => guardedExecFile("bash", [script], { timeout: 10_000 }, HOOK_GUARD),
+      (err: unknown) => {
+        const error = err as { code?: unknown; stdout?: string; stderr?: string };
+        assert.equal(error.code, 3, "exit code must survive on the error");
+        assert.ok(error.stdout?.includes("out-marker"), "stdout must be attached to the error");
+        assert.ok(error.stderr?.includes("err-marker"), "stderr must be attached to the error");
+        return true;
+      }
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test(
+  "output beyond execFile's old 1MB maxBuffer is captured, not an error",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-bigout-"));
+    const script = join(dir, "big.sh");
+    await writeFile(script, "head -c 2000000 /dev/zero | tr '\\0' 'a'\n");
+    try {
+      const { stdout } = await guardedExecFile("bash", [script], { timeout: 30_000 }, HOOK_GUARD);
+      assert.equal(stdout.length, 2_000_000, "the explicit capture cap replaced the 1MB maxBuffer");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// The policy gate is untouched: denial still happens BEFORE anything spawns.
+// ---------------------------------------------------------------------------
+
+test(
+  "a non-allowlisted command is denied without spawning anything",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-nospawn-"));
+    const script = join(dir, "marker.sh");
+    const marker = join(dir, "ran.marker");
+    await writeFile(script, 'touch "$1"\n');
+    try {
+      await assert.rejects(
+        () =>
+          guardedExecFile(
+            "bash",
+            [script, marker],
+            { timeout: 5_000 },
+            { context: "hook", allowedHookCommands: [] }
+          ),
+        /^Error: execution_policy_denied:hook_command_not_allowlisted$/
+      );
+      assert.equal(existsSync(marker), false, "a denied command must never reach the spawn path");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  "the deny layer still short-circuits an allowlisted command before spawn",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-denyspawn-"));
+    const script = join(dir, "marker.sh");
+    const marker = join(dir, "ran.marker");
+    const patternFile = join(dir, "patterns.txt");
+    await writeFile(script, 'touch "$1"\n');
+    await writeFile(patternFile, "# test denylist\nmarker\\.sh\n");
+
+    const previous = process.env.XX_STACK_DANGEROUS_PATTERNS_FILE;
+    process.env.XX_STACK_DANGEROUS_PATTERNS_FILE = patternFile;
+    resetDangerousPatternsCache();
+    try {
+      await assert.rejects(
+        () =>
+          guardedExecFile(
+            "bash",
+            [script, marker],
+            { timeout: 5_000 },
+            { context: "hook", allowedHookCommands: ["bash"] }
+          ),
+        /^Error: execution_policy_denied:dangerous_command_blocked:/
+      );
+      assert.equal(
+        existsSync(marker),
+        false,
+        "the denylist must still gate the spawn path, ahead of the allowlist"
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.XX_STACK_DANGEROUS_PATTERNS_FILE;
+      } else {
+        process.env.XX_STACK_DANGEROUS_PATTERNS_FILE = previous;
+      }
+      resetDangerousPatternsCache();
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
