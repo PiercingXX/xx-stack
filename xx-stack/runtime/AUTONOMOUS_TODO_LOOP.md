@@ -56,6 +56,24 @@ If that wrapper exits with `runner-unhealthy`, treat the current OpenCode runtim
 
 Use preflight when the host runner might hang or fail before your real stack prompt is even processed.
 
+## Goal Contract (required shape for loop items)
+
+Every item registered for autonomous/supervised execution carries an explicit five-part goal contract, captured at task registration (`task_create` / `task_update`, field `goalContract`):
+
+1. `objective` — one sentence stating what the item achieves.
+2. `constraints` — what must NOT change while pursuing the objective.
+3. `validationCmd` (optional but strongly recommended) — the exact shell command that proves progress. Run it through `verify_edit`; the supervisor completion path expects a `verify_edit` result for this exact command in the completion evidence.
+4. `stopCondition` — the verifiable condition that defines done. Completion evaluation cites this stop condition; the completion judge and forced synthesis evaluate against it.
+5. `docsNote` (optional) — the docs commitment: what documentation must be updated when the goal is met.
+
+Mandatory anti-reward-hacking clause, carried by every contract and binding on every loop iteration:
+
+> do not delete, skip, weaken, or narrow tests to make the goal pass
+
+Meta-prompting rule: before writing the contract, inspect the repo and surface hidden constraints (build/test commands, conventions, invariants, files other work depends on) so the contract reflects reality rather than assumptions. A contract written without that inspection is a guess, not a contract.
+
+When a linked task carries a contract, `supervisor_complete_session` refuses `completed` until the completion evidence references the contract's `validationCmd` (reason code `goal_contract_validation_evidence_missing`), and the finalized result cites each contract's stop condition.
+
 ## Generated State
 
 The runner creates state under `.xx-stack/loops/<todo-name>/` by default:
