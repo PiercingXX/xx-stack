@@ -67,13 +67,14 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 887 |
+| Tracked files | 901 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
 | TypeScript source | ~24,000 lines |
 | Test files / tests | 31 files, 465 tests (plus 58 Python tests) |
 | Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
+| Brand design systems | 151 (pinned to open-design `e1c277c`) |
 
 These counts drift. Regenerate them rather than trusting them:
 `grep -rhoP 'server\.tool\(\s*\n?\s*"\K[^"]+' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
@@ -490,6 +491,44 @@ two upstreams flatly disagree about `picsum.photos` — open-design bans it,
 stitch recommends it; open-design's ruling was kept and the disagreement
 recorded so it does not read as an oversight.
 
+### How `packs/rules` reaches a model
+
+This is worth stating plainly because it was broken until 2026-08-03 and the
+failure was invisible.
+
+**No code reads this pack.** There is no loader, no injection, nothing in the
+MCP server or the scripts that opens a rule book. `rules:check` validates that
+the 49-entry coverage map matches the skill and agent surface — it proves the
+*map* is complete, not that anything consumes it.
+
+The only delivery path is the instruction each covered skill and agent carries.
+Until 2026-08-03 that instruction was a bare noun phrase on the last line of the
+file — `Rule book: packs/rules/refactoring/refactoring.mini.md` — with no verb,
+no trigger, and no placement. An agent finishing a 150-line skill had nothing
+telling it to open another file, so the books were almost certainly never read.
+
+All 62 are now imperative, sited at the decision the book would change, naming
+the assigned tier and its token cost:
+
+> Before you write a structural finding or change a line yourself, read
+> `packs/rules/refactoring/refactoring.mini.md` and judge the change against its
+> decision rules. It is ~1,300 tokens of smell vocabulary and safe-change
+> discipline, not a book summary — it separates a real S2 from a matter of
+> taste, and it catches the case where a "cleanup" in the diff has quietly
+> changed behavior.
+
+Two rules that came out of doing it. **Cost is stated, never hedged** — "consider
+reading if you have budget" guarantees the instruction is skipped, which is how
+the citation form failed. And **nano tiers are decided per surface, not by
+symmetry**: `fast-build` takes a ~309-token nano book, `execution-orchestrator`
+takes none, because its assigned `mini` is three times the size of the entire
+nano file and a lane that cannot afford the canonical skill certainly cannot
+afford that.
+
+**The coverage map has never been validated for fit.** `rules:check` proves every
+skill and agent has an entry; nothing checks the entry is the *right* book.
+Rewriting the instructions surfaced three weak assignments — see §11.1.
+
 ### `packs/rules`
 
 11 software-engineering books distilled into decision rules, vendored from
@@ -828,6 +867,7 @@ here rather than quietly dropped.
 | Apache-2.0 §4(b) notice placement for modified files. | OPEN | 12 design systems and 10 workflow-skill files are recorded centrally in `manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call, not a defect. |
 | Trademark posture for ~100 brand names in `design-systems/`. | OPEN | Nominative descriptive use is normally fine and the risk is inherited from upstream, but no explicit decision is recorded in this repo. |
 | 14 accent-on-surface pairs sit below 3:1. | OPEN | `design:systems-lint` reports these and deliberately does not fail: a brand primary used as a CTA fill is non-text, and these are upstream design choices. Treating them as defects means editing 14 brand primaries — a design decision, not a repair. |
+| Three coverage-map entries are weak fits. | OPEN | Rewriting the 62 rule-book instructions surfaced them: `ideate-product` → DDD Distilled (only the Core/Supporting/Generic subdomain split applies; the other nine-tenths of the book has no decision point in a founder interview), `plan-design` → APoSD (applies to one step of eight), and `research`/`researcher` → Pragmatic Programmer (whose own coverage `why` admits it is a "broad default", and the agent never writes code). Each has a real hook and none was forced — but a different book, or an explicit `books: []`, would be defensible. **Nothing validates the map for fit**: `rules:check` proves every entry exists, not that it is the right one. |
 | The `full` tier of all 11 rule books is unused. | NIT — **do not "fix"** | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only when a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody deletes content that is deliberately on standby. |
 
 ### 11.2 Closed since the audit
@@ -839,6 +879,8 @@ here rather than quietly dropped.
 | `packs/design/craft/` and `licenses/` were unknown to the layout verifier. | 30 → 52 checks, per-file rather than per-directory — the 11 rulebook slugs *are* the `od.craft.requires` vocabulary, so a rename silently breaks every skill bound to it. |
 | `drift:check` printed an `OPEN` waiver every run for the `design-system-pick` brand list. | Resolved as a rotted list, with git evidence: `d458c02` removed `claude` from both copies symmetrically but *added* two entries to only one. Five slugs were broken; **all 121 brand ids now resolve**, where five brands were previously unselectable by any agent — including the one the waiver was arguing about, which was itself a wrong slug. |
 | The pack shipped a rule saying "never animate `width`" alongside six example decks animating `width`. | `animate-layout-property` promoted P1 → P0 and all six converted to `transform: scaleX()`. Example decks are what agents copy from, so an advisory would have outlived the rule. Zero hits remain. |
+| The rules pack had no working delivery mechanism. | 11 vendored books, a 49-entry coverage map and a CI gate validating it — reachable only through a bare noun phrase on the last line of each file. All 62 pointers rewritten as imperative instructions sited at the decision the book would change. Documented in §7, because "it has one now" is less useful to the next reader than "it did not, and the failure was invisible". |
+| 118 palette tokens were silently dropped after the re-vendor, and mean capture fell 96.0% → 91.8% while every regression floor passed. | Markdown tables in a colour section were refused because in the original 137-file corpus exactly one existed and it was an alpha ramp — correct on the evidence then, inverted by 9 of 14 incoming brands. Table extraction added with a header-cell discriminator matched exactly (`kami`'s ramp would otherwise register a token named `0.08`, and its "Solid hex" header defeats a substring test). A capture **rate** floor was added: count floors cannot detect a capture regression while the corpus grows. |
 | The em-dash token form was unextracted. | Pattern `C` added; capture 95.7% → 96.0%, and the regression floors were tightened from loose values to the exact baseline — a loose floor cannot tell a broken pattern from edited content. **Corrects an error in this document**: the gap was recorded as affecting `xiaohongshu` *and* `miro`. It was xiaohongshu-only. Miro's six misses are the dual-value form (`Light #ffc6c6 / Dark #600000`), which is a correct refusal and stays refused — which is also why files-at-100% did not move. |
 | Routing ranked lanes on nameplate hardware only, while `monitor-memory.ts` already computed live residency and memory pressure and threw them away. | Task 38. The arithmetic is extracted to a pure `host_memory_runtime.ts` shared by the CLI and the router, retiring a fork before it existed. The probe rides the existing health fan-out (no new network call) and `hostCapacityScore` stays nameplate-only. Bounded at 4 points against a smallest cross-tier gap of 9.1, so it settles the one case nameplate scoring cannot — two runtimes on the same box, 0.25 apart — and provably nothing else. Scope is honest: `supportsResidentModelInspection` is true for Ollama only, so this improves one lane family. |
 | Deck skills had no rule keeping build instructions out of rendered content. | Task 41. A production control is honored by *what you build*, never by *what you write*: "make slide 4 a bar chart" picks a layout and is spent, rather than shipping as the headline. The `deck` profile turned out to have four skills, not the two expected — `weekly-update` does not read like a deck but has the highest chart-instruction-leak risk of them. |
