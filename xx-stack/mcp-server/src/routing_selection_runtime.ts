@@ -69,7 +69,7 @@ export function cloudRoutingAllowed(registry: Registry): boolean {
   return registry.selectionPolicy.cloudEscalation?.optIn === true;
 }
 
-function routableTierIds(registry: Registry): string[] {
+export function routableTierIds(registry: Registry): string[] {
   const allowCloud = cloudRoutingAllowed(registry);
   return registry.selectionPolicy.defaultOrder.filter(
     (tierId) => allowCloud || tierId !== TIER_IDS.cloud
