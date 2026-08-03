@@ -1,6 +1,6 @@
 ---
 name: parallel-execution-orchestrator
-description: Parallelized deterministic wrapper for plan-exec workflows. Runs local orchestration on the TurboQuant llama.cpp lane while delegating parallel subagent slices across healthy remote hosts.
+description: Parallelized deterministic wrapper for plan-exec workflows. Runs local orchestration on the pinned local llama.cpp lane while delegating parallel subagent slices across healthy remote hosts.
 mode: primary
 model: llama-cpp-local/qwen3-coder:30b-a3b-tq2_0
 temperature: 0.0
@@ -51,18 +51,17 @@ Completion gate:
 If routing tools are unavailable in cycle 1, you must still dispatch wave 1 using deterministic host selection from the live platform inventory.
 
 Fallback selection order:
-1. Prefer healthy `tailscale-openai-compatible` hosts with `sglang-remote/qwen3-coder-next` dispatch models.
-2. Use healthy `tailscale-ollama` hosts only when no suitable TurboQuant llama.cpp host is available.
-3. If no remote host is healthy, continue with local orchestration and explicitly report that remote delegation was unavailable.
+1. Prefer healthy `tailscale-openai-compatible` tier hosts with `sglang-remote/qwen3-coder-next` dispatch models.
+2. Use `tailscale-ollama` tier hosts only if that lane has been enabled in the registry and reports healthy.
+3. If no remote host is healthy, continue orchestrating on the caller's host model and explicitly report that remote delegation was unavailable.
 
 Fallback command shape:
 - `opencode run --agent <agent> --model <dispatchModel> --print-logs "<slice prompt>"`
 
 If you must choose deterministic fallback models yourself, prefer:
-- `sglang-remote/qwen3-coder-next`
-- `sglang-remote/qwen3-coder-next`
+- `sglang-remote/qwen3-coder-next` (the only currently deployed self-hosted model)
 - `llama-cpp-local/qwen3-coder:30b-a3b-tq2_0`
-- then Ollama compatibility lanes
+- then the `tailscale-ollama` lane, only if enabled in the registry
 
 Fallback evidence is mandatory:
 - Include host, provider tier, model, command exit code, and output artifact path for every fallback slice.
@@ -70,7 +69,7 @@ Fallback evidence is mandatory:
 ## Routing Rules
 
 1. Keep orchestration local.
-2. Prefer healthy `tailscale-openai-compatible` hosts for independent slices, then `tailscale-ollama` as compatibility fallback.
+2. Prefer healthy `tailscale-openai-compatible` tier hosts for independent slices, then the `tailscale-ollama` tier as fallback when it is enabled.
 3. Saturate all healthy hosts up to each host `capacity` before queueing additional work on a single host.
 4. Run same-wave slices concurrently unless there is a real dependency.
 5. Use `route_task_with_watchdog` for critical tasks that need failover.
@@ -86,14 +85,14 @@ When `route_parallel_tasks` returns assignments, each assignment includes:
 
 **You MUST use the `dispatchModel` value from each assignment as the `--model` flag when invoking subagents via bash.**
 
-Example dispatch for a wave-1 task assigned to a TurboQuant remote host:
+Example dispatch for a wave-1 task assigned to a healthy `tailscale-openai-compatible` host:
 ```
 opencode run --agent build --model sglang-remote/qwen3-coder-next --print-logs "..."
 ```
 
 Do NOT use a hardcoded `--model` string. Always use the `dispatchModel` from the routing assignment.
 
-If running fallback dispatch because routing tools are unavailable, keep the same command shape and prefer TurboQuant llama.cpp models first.
+If running fallback dispatch because routing tools are unavailable, keep the same command shape and prefer the `tailscale-openai-compatible` lane first.
 
 **Capacity enforcement**: Never dispatch more than `capacity` tasks simultaneously to the same host. If wave 1 has 4 tasks across 2 hosts with capacity 2 each, dispatch exactly 2 to each host concurrently.
 

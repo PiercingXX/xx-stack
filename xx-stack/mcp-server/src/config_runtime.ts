@@ -30,9 +30,25 @@ export interface AgentProfile {
   coordinator?: CoordinatorContractConfig;
 }
 
-interface AgentConfigDocument {
+export interface AgentConfigDocument {
   agent?: Record<string, AgentProfile>;
   mcp?: Record<string, unknown>;
+  /** Why this document contributed nothing, when it contributed nothing. */
+  status: ConfigDocumentStatus;
+}
+
+/**
+ * A config file that is absent and one that is present-but-unparseable are not
+ * the same fact: the first is normal, the second silently drops every agent
+ * profile and every configured MCP server, which downstream reads as
+ * "missing_required_mcp" rather than "your config is invalid".
+ */
+export type ConfigDocumentStatus = "ok" | "missing" | "invalid";
+
+export interface ConfigDocumentIssue {
+  path: string;
+  code: "invalid_config";
+  message: string;
 }
 
 const ASYNC_AGENT_TOOL_BLOCKLIST = new Set<string>([
@@ -52,17 +68,47 @@ export function getRepoConfigPath(): string {
   );
 }
 
-export async function readJson(path: string): Promise<Record<string, unknown> | null> {
+export interface ReadJsonResult {
+  value: Record<string, unknown> | null;
+  status: ConfigDocumentStatus;
+  /** Present only when status is "invalid". */
+  error?: string;
+}
+
+/**
+ * Read a JSON document, distinguishing "not there" from "there but broken".
+ *
+ * A bare `catch { return null }` collapses ENOENT, EACCES, and a syntax error
+ * into one indistinguishable answer, so a malformed config looks exactly like
+ * an absent one to every caller.
+ */
+export async function readJsonResult(path: string): Promise<ReadJsonResult> {
+  let raw: string;
   try {
-    const raw = await readFile(path, "utf-8");
+    raw = await readFile(path, "utf-8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return { value: null, status: "missing" };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return { value: null, status: "invalid", error: message };
+  }
+
+  try {
     const parsed = JSON.parse(raw) as unknown;
     if (parsed && typeof parsed === "object") {
-      return parsed as Record<string, unknown>;
+      return { value: parsed as Record<string, unknown>, status: "ok" };
     }
-    return null;
-  } catch {
-    return null;
+    return { value: null, status: "invalid", error: "top-level JSON value is not an object" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { value: null, status: "invalid", error: message };
   }
+}
+
+export async function readJson(path: string): Promise<Record<string, unknown> | null> {
+  return (await readJsonResult(path)).value;
 }
 
 export function asRecord(value: unknown): Record<string, unknown> {
@@ -74,87 +120,144 @@ export function toStringArray(value: unknown): string[] {
   return value.map((entry) => String(entry ?? "").trim()).filter(Boolean);
 }
 
-function mergeAgentProfiles(base: AgentProfile, override: AgentProfile): AgentProfile {
-  return {
-    ...base,
-    ...override,
-    toolPolicy: {
-      ...(base.toolPolicy ?? {}),
-      ...(override.toolPolicy ?? {}),
-    },
-    memory: {
-      ...(base.memory ?? {}),
-      ...(override.memory ?? {}),
-    },
-    coordinator: {
-      ...(base.coordinator ?? {}),
-      ...(override.coordinator ?? {}),
-    },
-  };
+/**
+ * Copy `key` from override when the override actually carries it, else from
+ * base. Object spread copies keys whose value is `undefined`, which is exactly
+ * how a user config that merely *mentions* an agent used to erase that agent's
+ * repo-configured model/mode — so nothing here goes through spread.
+ */
+function pickDefined<T, K extends keyof T>(target: T, key: K, base: T, override: T): void {
+  const value = override[key] ?? base[key];
+  if (value !== undefined) {
+    target[key] = value;
+  }
 }
 
+function mergeNested<T extends object>(
+  base: T | undefined,
+  override: T | undefined
+): T | undefined {
+  if (base === undefined && override === undefined) return undefined;
+  const merged = { ...(base ?? {}) } as T;
+  for (const [key, value] of Object.entries(override ?? {})) {
+    // Skip undefined-valued override keys: absent in the override document is
+    // not the same as "explicitly cleared".
+    if (value === undefined) continue;
+    (merged as Record<string, unknown>)[key] = value;
+  }
+  return merged;
+}
+
+export function mergeAgentProfiles(base: AgentProfile, override: AgentProfile): AgentProfile {
+  const merged: AgentProfile = {};
+  pickDefined(merged, "mode", base, override);
+  pickDefined(merged, "model", base, override);
+  pickDefined(merged, "requiredMcpServers", base, override);
+
+  const toolPolicy = mergeNested(base.toolPolicy, override.toolPolicy);
+  if (toolPolicy !== undefined) merged.toolPolicy = toolPolicy;
+  const memory = mergeNested(base.memory, override.memory);
+  if (memory !== undefined) merged.memory = memory;
+  const coordinator = mergeNested(base.coordinator, override.coordinator);
+  if (coordinator !== undefined) merged.coordinator = coordinator;
+
+  return merged;
+}
+
+/**
+ * Parse one agent profile, emitting ONLY the keys the document actually sets.
+ *
+ * Emitting every key with an `undefined`/empty value makes an override document
+ * indistinguishable from a document that deliberately clears a field. Combined
+ * with the merge below, an always-present `toolPolicy: { allow: [], deny: [] }`
+ * would overwrite a repo `deny` list with `[]` — and `applyToolPolicy` treats an
+ * empty allow-list as allow-all, so a restricted agent would silently become
+ * unrestricted.
+ */
 function parseAgentProfile(raw: unknown): AgentProfile {
   const source = asRecord(raw);
-  const toolPolicy = asRecord(source.toolPolicy);
-  const memory = asRecord(source.memory);
-  const coordinator = asRecord(source.coordinator);
-  return {
-    mode: typeof source.mode === "string" ? source.mode : undefined,
-    model: typeof source.model === "string" ? source.model : undefined,
-    requiredMcpServers: toStringArray(source.requiredMcpServers),
-    toolPolicy: {
-      allow: toStringArray(toolPolicy.allow),
-      deny: toStringArray(toolPolicy.deny),
-    },
-    memory: {
-      enabled: typeof memory.enabled === "boolean" ? memory.enabled : undefined,
-      scope:
-        memory.scope === "user" || memory.scope === "project" || memory.scope === "local"
-          ? memory.scope
-          : undefined,
-    },
-    coordinator: {
-      strictWorkerContract:
-        typeof coordinator.strictWorkerContract === "boolean"
-          ? coordinator.strictWorkerContract
-          : undefined,
-      requireStructuredResults:
-        typeof coordinator.requireStructuredResults === "boolean"
-          ? coordinator.requireStructuredResults
-          : undefined,
-    },
-  };
+  const profile: AgentProfile = {};
+
+  if (typeof source.mode === "string") profile.mode = source.mode;
+  if (typeof source.model === "string") profile.model = source.model;
+  if (source.requiredMcpServers !== undefined) {
+    profile.requiredMcpServers = toStringArray(source.requiredMcpServers);
+  }
+
+  if (source.toolPolicy !== undefined) {
+    const toolPolicy = asRecord(source.toolPolicy);
+    const parsed: AgentToolPolicy = {};
+    if (toolPolicy.allow !== undefined) parsed.allow = toStringArray(toolPolicy.allow);
+    if (toolPolicy.deny !== undefined) parsed.deny = toStringArray(toolPolicy.deny);
+    profile.toolPolicy = parsed;
+  }
+
+  if (source.memory !== undefined) {
+    const memory = asRecord(source.memory);
+    const parsed: AgentMemoryConfig = {};
+    if (typeof memory.enabled === "boolean") parsed.enabled = memory.enabled;
+    if (memory.scope === "user" || memory.scope === "project" || memory.scope === "local") {
+      parsed.scope = memory.scope;
+    }
+    profile.memory = parsed;
+  }
+
+  if (source.coordinator !== undefined) {
+    const coordinator = asRecord(source.coordinator);
+    const parsed: CoordinatorContractConfig = {};
+    if (typeof coordinator.strictWorkerContract === "boolean") {
+      parsed.strictWorkerContract = coordinator.strictWorkerContract;
+    }
+    if (typeof coordinator.requireStructuredResults === "boolean") {
+      parsed.requireStructuredResults = coordinator.requireStructuredResults;
+    }
+    profile.coordinator = parsed;
+  }
+
+  return profile;
 }
 
-async function readAgentConfigDocument(path: string): Promise<AgentConfigDocument> {
-  const parsed = await readJson(path);
-  const root = asRecord(parsed);
+function buildAgentConfigDocument(read: ReadJsonResult): AgentConfigDocument {
+  const root = asRecord(read.value);
   const agentRaw = asRecord(root.agent);
-  const mcpRaw = asRecord(root.mcp);
   const agentProfiles: Record<string, AgentProfile> = {};
-
   for (const [agentId, agentValue] of Object.entries(agentRaw)) {
     if (!agentValue || typeof agentValue !== "object") continue;
     agentProfiles[agentId] = parseAgentProfile(agentValue);
   }
-
   return {
     agent: agentProfiles,
-    mcp: mcpRaw,
+    mcp: asRecord(root.mcp),
+    status: read.status,
   };
+}
+
+export async function readAgentConfigDocument(path: string): Promise<AgentConfigDocument> {
+  return buildAgentConfigDocument(await readJsonResult(path));
 }
 
 export async function loadMergedAgentRuntimeConfig(): Promise<{
   agents: Record<string, AgentProfile>;
   configuredMcpServers: string[];
-  sources: { repoPath: string; userPath: string };
+  /** Non-empty when a config file exists but could not be used. */
+  configErrors: ConfigDocumentIssue[];
+  sources: {
+    repoPath: string;
+    userPath: string;
+    repoConfigStatus: ConfigDocumentStatus;
+    userConfigStatus: ConfigDocumentStatus;
+  };
 }> {
   const repoPath = getRepoConfigPath();
   const userPath = getUserConfigPath();
-  const [repoDoc, userDoc] = await Promise.all([
-    readAgentConfigDocument(repoPath),
-    readAgentConfigDocument(userPath),
+  const [repoRead, userRead] = await Promise.all([
+    readJsonResult(repoPath),
+    readJsonResult(userPath),
   ]);
+  const [repoDoc, userDoc] = [
+    buildAgentConfigDocument(repoRead),
+    buildAgentConfigDocument(userRead),
+  ];
 
   const mergedAgents: Record<string, AgentProfile> = {};
   const repoAgents = repoDoc.agent ?? {};
@@ -172,10 +275,30 @@ export async function loadMergedAgentRuntimeConfig(): Promise<{
     ...new Set(mcpServerNames.map((name) => name.trim()).filter(Boolean)),
   ];
 
+  const configErrors: ConfigDocumentIssue[] = [];
+  for (const [path, read] of [
+    [repoPath, repoRead],
+    [userPath, userRead],
+  ] as const) {
+    if (read.status === "invalid") {
+      configErrors.push({
+        path,
+        code: "invalid_config",
+        message: `config file exists but could not be read as JSON: ${read.error ?? "unknown error"}`,
+      });
+    }
+  }
+
   return {
     agents: mergedAgents,
     configuredMcpServers,
-    sources: { repoPath, userPath },
+    configErrors,
+    sources: {
+      repoPath,
+      userPath,
+      repoConfigStatus: repoDoc.status,
+      userConfigStatus: userDoc.status,
+    },
   };
 }
 

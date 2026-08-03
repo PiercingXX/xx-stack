@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   findDangerousPattern,
@@ -12,6 +13,7 @@ import {
   loadDangerousPatternsFromFile,
   parseDangerousPatterns,
   resetDangerousPatternsCache,
+  resolveDangerousPatternsFile,
   validateExecRequest,
   INTERNAL_VRAM_PROBE,
 } from "./execution_policy.js";
@@ -481,3 +483,59 @@ test(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// MCP-3: the candidate chain must resolve to a real filesystem path, not a
+// percent-encoded URL pathname. An install directory containing a space, '#',
+// or any non-ASCII byte used to make readFileSync throw and the loader fail
+// OPEN to an empty denylist — killing the catastrophic-command layer on exactly
+// the hosts where the pattern file is present.
+// ---------------------------------------------------------------------------
+
+test("the denylist loads from an install path containing a space, '#', and non-ASCII", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx stack#dénylist-"));
+  try {
+    // Mirror the shipped layout: <install>/dangerous-patterns.txt with the
+    // module living one level down, matching the "../dangerous-patterns.txt"
+    // candidate that dist/ uses.
+    const distDir = join(dir, "dist");
+    await mkdir(distDir, { recursive: true });
+    const patternFile = join(dir, "dangerous-patterns.txt");
+    await writeFile(patternFile, "# comment\nrm\\s+-rf\\s+/\\s*$\n", "utf8");
+
+    const moduleUrl = pathToFileURL(join(distDir, "execution_policy.js")).href;
+    assert.ok(moduleUrl.includes("%20"), "the fixture URL must actually be percent-encoded");
+
+    const resolved = resolveDangerousPatternsFile(moduleUrl);
+    assert.equal(resolved, patternFile);
+    assert.ok(!resolved!.includes("%20"), "the resolved path must be decoded, not URL-encoded");
+
+    const loaded = loadDangerousPatternsFromFile(resolved!);
+    assert.equal(loaded.loaded, true, "a spaced install path must not fail the denylist open");
+    assert.deepEqual(loaded.parseErrors, []);
+    assert.equal(loaded.patterns.length, 1);
+    assert.equal(findDangerousPattern("rm -rf /", loaded.patterns), "rm\\s+-rf\\s+/\\s*$");
+
+    // The pre-fix behavior, asserted explicitly so the regression cannot
+    // quietly come back: url.pathname is not a path you can read.
+    const encoded = new URL("../dangerous-patterns.txt", moduleUrl).pathname;
+    assert.ok(encoded.includes("%20"));
+    const failOpen = loadDangerousPatternsFromFile(encoded);
+    assert.equal(failOpen.loaded, false);
+    assert.deepEqual(failOpen.patterns, [], "the old path fails OPEN — an empty denylist");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("resolveDangerousPatternsFile returns null when no candidate exists", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-no-patterns-"));
+  try {
+    const distDir = join(dir, "dist");
+    await mkdir(distDir, { recursive: true });
+    const moduleUrl = pathToFileURL(join(distDir, "execution_policy.js")).href;
+    assert.equal(resolveDangerousPatternsFile(moduleUrl), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

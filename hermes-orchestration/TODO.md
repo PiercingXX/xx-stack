@@ -92,7 +92,11 @@ switch remains.
 - [x] Not exposed on Tailscale or any public interface
 - [x] Bearer token mandatory (`HERMES_PROXY_TOKEN`) even on loopback; `--no-auth`
       must be passed explicitly
-- [x] Prompt bodies never logged (`proxy.log_prompts` defaults false)
+- [x] Prompt bodies never logged — structurally, not by a flag. No code path
+      writes a request body anywhere. The old `proxy.log_prompts` key was
+      credited here in the 2026-08-02 reconciliation but was never read by
+      anything; it has been deleted from the config and from `ProxyServer`
+      rather than left as a control that does not control anything (HERMES-9).
 - [x] Premium credentials stay inside local Hermes; never duplicated into repo config
 - [x] Explicit stderr warning when bound to a non-loopback host
 
@@ -103,7 +107,11 @@ switch remains.
 - [x] **Decided:** runs as a user systemd service — `systemd/hermes-proxy.service`,
       reading its token from `~/.config/hermes-orchestration/proxy.env`
 - [x] Structured routing logs to `logs/routing.jsonl` — lane, model, latency,
-      usage, requested model, and per-lane failure reasons in `attempts`
+      usage, and requested model. Proxy events now also carry `attempts` (the
+      per-lane skip/failure reasons) and a request that no lane could serve
+      writes its own `ok: false` record. The 2026-08-02 reconciliation claimed
+      `attempts` was already in the log; it was not — until this change it
+      appeared only in the 502 HTTP response body (HERMES-DOC-1, HERMES-12).
 
 ### Earlier control-plane work
 
@@ -131,8 +139,12 @@ switch remains.
 
 - [x] `health`, `route --reason-code PRECHECK`, `inventory --probe-tool-calls`,
       `run --task ...`, and `subagents --task "A||B"` all validated
-- [x] Automated suite under `tests/` — 25 tests covering command safety, lane
-      ordering, routing and fallback, tool-call gating, and the proxy
+- [x] Automated suite under `tests/` — 58 tests covering command safety (against
+      the *shipped* allowlist, with a negative case per known bypass), lane
+      ordering and priority re-sorting, cloud-gate fail-closed defaults, routing
+      and fallback, tool-call gating across every shipped preset, credential
+      helper timeouts, and the proxy (auth, keep-alive body draining, body cap,
+      failure telemetry)
 
 ## Usage notes
 

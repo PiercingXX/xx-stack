@@ -1,8 +1,7 @@
 ---
 name: design-system-pick
-description: Pick and apply a brand design system or aesthetic style. Consults the 138 brand DESIGN.md files and 57 style skills to match the right visual language to the task.
+description: Pick and apply a brand design system or aesthetic style. Consults the 137 brand DESIGN.md files and 57 style skills to match the right visual language to the task.
 mode: agent
-model: sglang-remote/qwen3-coder-next
 tools:
   - codebase
   - readFile
@@ -16,9 +15,10 @@ This skill belongs to stack core, but the brand systems and style libraries it r
 
 Source-of-truth rule:
 
-- canonical design token and workflow behavior lives in repo `DESIGN.md` and `SKILL.md` files
-- VS Code prompt mirrors adapt that contract to this surface
-- if a mirror and canonical source differ, update the mirror instead of redefining behavior locally
+- this prompt is a native adapter surface, not a mirror: there is no `opencode/skills/design-system-pick/`, and none is expected
+- canonical design token and workflow behavior lives in the design content pack's `DESIGN.md` and `SKILL.md` files
+- for the full artifact-building workflow that consumes the same pack, use the `design-prototype` skill; this prompt covers selection only
+- if this prompt and the pack disagree, the pack wins — update this prompt instead of redefining behavior locally
 
 ## Activation
 
@@ -60,7 +60,7 @@ Context boundary rule:
 - otherwise fall back to `.gitignore` or host-native excludes
 - treat local `hooks/` as documented-only unless the active runtime proves hook execution exists
 
-## Available design systems (138 brands)
+## Available design systems (137 brands)
 
 ### AI & Dev platforms
  elevenlabs, mistral, ollama, opencode, replicate, runway, together-ai, voltagent, x-ai, cohere, minimax

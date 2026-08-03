@@ -279,7 +279,7 @@
       }
     },
     "parallel-execution-orchestrator": {
-      "description": "Parallelized deterministic wrapper. Keeps orchestration local on the TurboQuant llama.cpp lane while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
+      "description": "Parallelized deterministic wrapper. Keeps orchestration on the pinned local llama.cpp lane while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
       "mode": "primary",
       "model": "llama-cpp-local/qwen3-coder:30b-a3b-tq2_0",
       "temperature": 0.0,
@@ -370,6 +370,20 @@
       "permission": {
         "edit": "ask",
         "bash": "ask",
+        "skill": {
+          "*": "allow"
+        }
+      }
+    },
+    "design-engineer": {
+      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
+      "mode": "subagent",
+      "model": "sglang-remote/qwen3-coder-next",
+      "temperature": 0.25,
+      "steps": 20,
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
         "skill": {
           "*": "allow"
         }

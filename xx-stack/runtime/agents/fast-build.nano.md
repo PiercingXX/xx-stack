@@ -1,6 +1,6 @@
 ---
 name: fast-build
-description: Nano tier of fast-build — decision rules and gates only, for tight-context lanes. Canonical: runtime/agents/fast-build.md.
+description: "Nano tier of fast-build — decision rules and gates only, for tight-context lanes. Canonical: runtime/agents/fast-build.md."
 ---
 
 # Fast Build (nano)

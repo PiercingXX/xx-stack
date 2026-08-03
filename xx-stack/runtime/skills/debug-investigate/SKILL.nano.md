@@ -1,6 +1,6 @@
 ---
 name: debug-investigate
-description: Nano tier of debug-investigate — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/debug-investigate/SKILL.md.
+description: "Nano tier of debug-investigate — decision rules and gates only, for tight-context lanes. Canonical: runtime/skills/debug-investigate/SKILL.md."
 ---
 
 # Debug & Investigate (nano)

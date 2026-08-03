@@ -7,15 +7,16 @@ platform inventory (`runtime/platforms.json`) and per-agent profiles
 ## Task Routing and Fallback
 
 Routing is driven by `runtime/platforms.json`, not by this file. The registry
-defines tiers (`primary`, `reasoning`, `local`, `overflow`, `compatibility`,
-`cloud`) with prioritized hosts, and a `selectionPolicy` whose `defaultOrder`
-controls fallback order.
+defines four tiers — `local`, `tailscale-ollama`, `tailscale-openai-compatible`,
+and `cloud` (the canonical ids live in `runtime/runtime-constants.json`) — each
+with prioritized hosts, and a `selectionPolicy` whose `defaultOrder` controls
+fallback order.
 
-Selection logic (mcp-server/src/index.ts):
+Selection logic (`mcp-server/src/routing_selection_runtime.ts`):
 
 - `scoreTiers`: Matches task keywords against tiers and selection rules.
-- `isSelfHostedCompatibleLane` / `hostAllowedForTask`: Deny self-hosted lanes
-  for multimodal tasks by policy.
+- `hostAllowedForTask` (via `isMultimodalTask` / `isSelfHostedOpenAiLane`): Denies
+  self-hosted OpenAI-compatible lanes for multimodal tasks by policy.
 - `routeTask`: Picks the best-scoring tier, then falls back through
   `defaultOrder` until a tier with reachable hosts is found.
 
@@ -23,6 +24,7 @@ Selection logic (mcp-server/src/index.ts):
 
 Reliability settings live under `agent.execution-orchestrator.reliability`
 (merged from the repo config and the user config at
-`~/.config/xx-stack/config.json`). On repeated failures the supervisor retries
+`~/.config/opencode/config.json`). On repeated failures the supervisor retries
 with exponential backoff (`computeBackoffMs`) and advances through fallback
-routes; stale sessions are pruned by `pruneSupervisorStore`.
+routes; stale sessions are pruned by `pruneSupervisorStore`. Both live in
+`mcp-server/src/supervisor_session_runtime.ts`.

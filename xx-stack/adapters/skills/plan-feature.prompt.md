@@ -2,7 +2,6 @@
 name: plan-feature
 description: Product-grade feature planning. Converts requests into scoped, testable specs with trade-offs, non-goals, and delivery slices.
 mode: agent
-model: self-hosted-api/coder-main
 tools:
   - codebase
   - readFile

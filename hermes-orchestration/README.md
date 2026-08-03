@@ -16,8 +16,8 @@ reached over Tailscale (MagicDNS name `skippy-debian-5090`):
 
 | Lane key | Name | Endpoint | Runtime | Priority | Role |
 |----------|------|----------|---------|----------|------|
-| `sglang` | `skippy-sglang-5090` | `http://skippy-debian-5090:30000/v1` | sglang | 100 | Primary lane (262k context, batched parallel subagents) — the only lane currently live |
-| `ollama` | `skippy-ollama-5090` | `http://skippy-debian-5090:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
+| `sglang` | `skippy-debian-5090-sglang` | `http://skippy-debian-5090:30000/v1` | sglang | 100 | Primary lane (262k context, batched parallel subagents) — the only lane currently live |
+| `ollama` | `skippy-debian-5090-ollama` | `http://skippy-debian-5090:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
 | `cloud` | `github-premium-cloud` | local `hermes` CLI | GitHub premium | 50 | Last-resort escalation |
 
 Lanes are named entries in `config/orchestration.json` with a `role`
@@ -146,7 +146,10 @@ python3 scripts/hermes_orchestrator.py serve
   `proxy.allow_cloud=true`.
 - `stream: true` is answered with a single-chunk SSE shim (the upstream call is
   non-streaming).
-- Prompt bodies are never logged.
+- Prompt bodies are never logged — there is no code path that writes them and no
+  switch that would enable one.
+- Request bodies are capped (8 MiB → `413`) and the handler socket has a
+  timeout, so a slow or oversized client cannot park a thread.
 
 A user systemd unit is provided at `systemd/hermes-proxy.service`; it reads
 `HERMES_PROXY_TOKEN` from `~/.config/hermes-orchestration/proxy.env`.
@@ -195,7 +198,9 @@ alongside the bench.
 
 Every chat call (run, subagents, proxy) appends one JSONL record to
 `logs/routing.jsonl` with lane, model, latency, token usage, and error details.
-Prompt bodies are not logged. Cloud escalations additionally go to
+Proxy records also carry `attempts` — the per-lane skip/failure reasons — and a
+request that no lane could serve writes its own `ok: false` record instead of
+disappearing. Prompt bodies are not logged. Cloud escalations additionally go to
 `logs/cloud-escalations.jsonl`.
 
 ## Executable plans and command execution
@@ -211,16 +216,54 @@ python3 scripts/hermes_orchestrator.py run \
 To execute allowed commands returned by that plan, set
 `execution.allow_shell_execution` to `true` and pass `--execute-approved`.
 
-Commands are parsed with `shlex`, rejected if they contain shell
-metacharacters (`; | & < > $ \``), matched against the allowlist as whole
-argv tokens, and executed **without a shell**. `git status; rm -rf ~` is
-rejected outright.
+Commands pass three layers before they run, all of which must succeed:
+
+1. **Parse** with `shlex`; any token containing a shell metacharacter
+   (`; | & < > $ \`` newline) or a `+` is rejected. `+` is there because it
+   terminates `find -exec cmd {} +`. Commands are then executed **without a
+   shell**, so `git status; rm -rf ~` is rejected outright and could not expand
+   even if it were not.
+2. **Whole-token prefix match** against `execution.allowed_command_prefixes`
+   (`git statusx` does not match `git status`).
+3. **Per-argument screening of every remaining argument** — this is the part
+   that used to be missing. A prefix match no longer waves through whatever
+   follows it. Arguments in the denylist (`-exec`, `-execdir`, `-delete`,
+   `-fprintf`, `--pre`, `--pre-glob`, `--ext-diff`, `-c`, `--exec-path`,
+   `--node-options`, `--require`, `--prefix`, `-p`, `-o`, `-z`, …) are refused,
+   and every path argument must resolve inside the working directory, so
+   `cat ~/.hermes/config.yaml`, `cat /etc/passwd` and `ls -la /tmp` are refused.
+
+The shipped allowlist is `pwd`, `ls`, `cat`, `git status`, `git diff`,
+`git log`, `python3 -m pytest`, `npm test`. `find` and `rg` were removed: their
+process-spawning flags are numerous and version-dependent, so a denylist is not
+a trustworthy boundary for them. The denylist still covers their known forms if
+you re-add them, but you are on your own for flags nobody has enumerated yet.
+
+**Residual limits — this is not a sandbox:**
+
+- `npm test` and `python3 -m pytest` run code the *repository* controls
+  (`package.json` scripts, `conftest.py`). Allowlisting them trusts the
+  checkout, not the model. Drop them if the checkout is untrusted.
+- `cat`/`ls` can read any file inside the working directory, including a stray
+  `.env`. Containment is a workspace boundary, not a secrets boundary.
+- The denylist enumerates known-bad flags; a new one is uncovered until added.
+- The real boundary is still the double gate below. Treat the allowlist as
+  defense in depth, not as the thing standing between a model and your host.
 
 ## Cloud escalation
 
 Cloud lanes require the `hermes` CLI on the orchestrator host.
 
-- Cloud is off by default everywhere (`subagents_allow_cloud_default: false`); every cloud use requires an explicit `--allow-cloud`.
+- Cloud is off by default everywhere, and the default **fails closed**: enabling
+  cloud without `--allow-cloud` requires all three of
+  `policy.require_manual_cloud_escalation: false`,
+  `policy.cloud_enabled_by_default: true` and
+  `execution.subagents_allow_cloud_default: true`. If any key is missing —
+  `config/orchestration.json` is partly machine-generated, so keys can be
+  dropped on regeneration — cloud stays off. The same applies to
+  `execution.allow_cloud_subagent_delegation` and
+  `execution.cloud_subagent_profiles`: a missing key narrows cloud eligibility,
+  never widens it.
 - Primary task fallback can use cloud when `--allow-cloud` is passed.
 - Subagent delegation can use cloud for eligible presets with `--allow-cloud`, and only after self-hosted lanes are unavailable or unsuitable for the requested task/model.
 - Escalation events are written to `logs/cloud-escalations.jsonl`.
@@ -243,8 +286,11 @@ python3 scripts/hermes_orchestrator.py inventory --probe-tool-calls
 This writes `logs/capability-cache.json` with lane health, available models,
 tool-call probe results, and the recommended subagent lane/model.
 
-- Strict tool-call gate is enabled by default (`execution.require_tool_call_for_subagents=true`);
-  `qwen3-coder-next` on the sglang lane passes the probe.
+- Strict tool-call gate is enabled by default (`execution.require_tool_call_for_subagents=true`)
+  and applies to **every** routing preset, not just one task profile;
+  `qwen3-coder-next` on the sglang lane passes the probe. If no healthy
+  self-hosted lane passes it, subagent routing is refused rather than silently
+  falling back.
 - Tool probes are **sticky per model**: as long as a lane's selected model is
   unchanged, the previous probe result is reused instead of burning an
   inference call (`execution.reuse_tool_probe_for_same_model`). Pass

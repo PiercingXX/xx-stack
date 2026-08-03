@@ -2,7 +2,6 @@
 name: test-qa
 description: Release QA workflow. Validate critical user journeys, triage defects by severity, add regression tests, and produce ship/no-ship decision.
 mode: agent
-model: self-hosted-api/coder-main
 tools:
   - codebase
   - editFiles

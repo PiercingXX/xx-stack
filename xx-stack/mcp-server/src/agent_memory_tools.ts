@@ -1,8 +1,9 @@
+import { appendFile } from "node:fs/promises";
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { loadMergedAgentRuntimeConfig } from "./config_runtime.js";
-import { atomicWriteTextFile } from "./io_runtime.js";
 import {
   buildMemoryCompactionPrompt,
   buildMemoryResyncHelperPrompt,
@@ -96,9 +97,15 @@ export function registerAgentMemoryTools(server: McpServer): void {
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
       const path = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
       await ensureMemoryEntrypoint(path);
-      const current = await readMemoryEntrypoint(path);
       const entry = `- ${new Date().toISOString()} ${note.trim()}\n`;
-      await atomicWriteTextFile(path, `${current}${entry}`);
+      // A real append, not read-modify-write. atomicWriteTextFile makes the
+      // *replace* atomic, not the read-then-write around it: two concurrent
+      // appends both read the same bytes and the second write silently drops
+      // the first entry. Append is the path agents call most and the only
+      // memory write with no expectedHash precondition, so it gets O_APPEND —
+      // which the kernel serializes — instead of an optimistic-concurrency
+      // dance the caller would have to retry.
+      await appendFile(path, entry, "utf-8");
 
       return jsonContent({
         status: "ok",

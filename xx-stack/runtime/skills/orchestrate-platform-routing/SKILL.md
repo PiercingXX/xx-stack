@@ -9,15 +9,15 @@ metadata:
 # Orchestrate Platform Routing
 
 ## Purpose
-Turn a user task or project plan into an explicit delegation map across primary self-hosted lanes, local fallback runtimes, and cloud providers.
+Turn a user task or project plan into an explicit delegation map across local runtimes, Tailscale-reachable self-hosted hosts, and cloud providers.
 
 Prefer live runtime state before repo defaults.
 
 Registry resolution order:
 
 1. attached live registry provided with the task
-2. `~/.config/xx-stack/xx-stack-platforms.json` when accessible
-3. `.xx-stack/platforms.json` as repo fallback
+2. `~/.config/opencode/xx-stack-platforms.json` when accessible
+3. `runtime/platforms.json` as repo fallback
 
 Do not invent alternate registry paths.
 
@@ -35,12 +35,12 @@ Do not use it for direct implementation, direct review, or deterministic repo in
 ## Required Inputs
 - User request, feature spec, or execution plan
 - Any hard constraints: privacy, latency, budget, availability, provider lock-in
-- Current platform registry state from `.xx-stack/platforms.json`
+- Current platform registry state from `runtime/platforms.json`
 
 ## Workflow
 
 1. Load platform inventory
-- Read primary, local fallback, overflow fallback, compatibility, and cloud tiers from the selected registry.
+- Read the `local`, `tailscale-openai-compatible`, `tailscale-ollama`, and `cloud` tiers from the selected registry. Those four ids are the whole tier vocabulary — do not invent others.
 - Confirm host reachability and recent model sync data if present.
 - If live and fallback registries disagree, prefer live runtime state and call out the mismatch.
 
@@ -49,11 +49,10 @@ Do not use it for direct implementation, direct review, or deterministic repo in
 - Mark which slices are latency-sensitive, privacy-sensitive, or quality-sensitive.
 
 3. Choose the best tier per slice
-- Prefer the primary execution lane for implementation, review, planning, orchestration, and standard coding tasks.
-- Prefer the reasoning lane for architecture, long-context synthesis, and heavier research or delegated reasoning.
-- Prefer the local fallback lane for quick verification, offline edits, or when the primary hosts are unavailable.
-- Prefer overflow fallback only as an operational fallback.
-- Prefer cloud only when it adds required capability, resilience, or quality that self-hosted tiers cannot supply.
+- Prefer `local` for edit-heavy coding, quick verification, offline work, and controller planning and orchestration — it is first in `selectionPolicy.defaultOrder`.
+- Prefer `tailscale-openai-compatible` for architecture, long-context synthesis, and heavier delegated reasoning, and for throughput-batched parallel slices.
+- Prefer `tailscale-ollama` for delegated subagent work and parallel overflow when the OpenAI-compatible lane is unavailable or the task needs resident-model inspection.
+- Prefer `cloud` only when it adds required capability, resilience, or quality that self-hosted tiers cannot supply, and only when `selectionPolicy.cloudEscalation.optIn` is true or `XX_STACK_ALLOW_CLOUD=1` is set. Cloud is never an implicit fallback.
 - If multiple slices target the same host with different models, schedule them sequentially unless the host is explicitly marked safe for concurrent multi-model use.
 
 4. Define fallback order

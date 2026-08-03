@@ -2,7 +2,6 @@
 name: write-docs
 description: Generate project documentation. API docs, README, installation guide, deployment guide, changelog. Clear, discoverable, user-friendly.
 mode: agent
-model: self-hosted-api/coder-main
 tools:
   - codebase
   - editFiles

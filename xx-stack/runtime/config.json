@@ -265,6 +265,32 @@
         "requireStructuredResults": true
       }
     },
+    "parallel-execution-orchestrator": {
+      "description": "Parallelized deterministic wrapper. Keeps orchestration on the caller's host model while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
+      "mode": "primary",
+      "temperature": 0,
+      "steps": 20,
+      "requiredMcpServers": [
+        "xx-stack-platform-routing"
+      ],
+      "toolPolicy": {
+        "allow": [
+          "*"
+        ],
+        "deny": [
+          "task_create",
+          "supervisor_start_session",
+          "supervisor_tick",
+          "supervisor_emit_continuation_prompt",
+          "supervisor_complete_session",
+          "supervisor_abort_session"
+        ]
+      },
+      "memory": {
+        "enabled": true,
+        "scope": "project"
+      }
+    },
     "performance-engineer": {
       "description": "Performance and regression specialist using the caller's current host model unless the host explicitly routes to a different lane.",
       "mode": "subagent",
@@ -331,7 +357,7 @@
       }
     },
     "design-engineer": {
-      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 138 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
+      "description": "AI-driven design artifact specialist. Builds web prototypes, mobile screens, decks, dashboards, and office docs using 31 open-design workflow skills, 137 brand design systems, and 57 aesthetic styles. Sources: nexu-io/open-design, VoltAgent/awesome-design-md, bergside/awesome-design-skills.",
       "mode": "subagent",
       "temperature": 0.25,
       "steps": 20,

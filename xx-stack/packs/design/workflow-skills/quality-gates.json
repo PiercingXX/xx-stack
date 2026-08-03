@@ -37,7 +37,8 @@
       ],
       "minSectionCount": 1,
       "mustHaveH1": true,
-      "mustHaveCta": true
+      "mustHaveCta": true,
+      "requireSemanticLayout": false
     },
     "document": {
       "description": "Runbooks, notes, OKRs, reports, invoices",
@@ -75,7 +76,8 @@
       ],
       "minSectionCount": 1,
       "mustHaveH1": false,
-      "mustHaveCta": false
+      "mustHaveCta": false,
+      "requireSemanticLayout": false
     },
     "utility": {
       "description": "Wireframe and critique tools",
@@ -87,7 +89,8 @@
       ],
       "minSectionCount": 1,
       "mustHaveH1": false,
-      "mustHaveCta": false
+      "mustHaveCta": false,
+      "requireSemanticLayout": false
     }
   },
   "skills": {
@@ -100,7 +103,7 @@
     "email-marketing": "marketing",
     "eng-runbook": "document",
     "finance-report": "document",
-    "gamified-app": "app",
+    "gamified-app": "mobile",
     "guizang-ppt": "deck",
     "hr-onboarding": "document",
     "invoice": "document",
@@ -122,5 +125,11 @@
     "web-prototype": "marketing",
     "weekly-update": "deck",
     "wireframe-sketch": "utility"
+  },
+  "exempt": {
+    "packs/design/workflow-skills/guizang-ppt/assets/template.html": {
+      "checks": ["External script detected"],
+      "reason": "Vendored upstream template; its icon set is lucide, loaded from unpkg. Inlining the UMD bundle would fork the template from upstream for no user-visible gain. Generated decks should inline or drop it."
+    }
   }
 }

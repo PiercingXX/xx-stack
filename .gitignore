@@ -36,3 +36,8 @@ config.local.json
 
 # Runtime compatibility shim created by setup (symlink to opencode/)
 .opencode
+
+# Live agent workspace: session traces and verbatim user prompt history.
+# NEVER commit — this is private user data, not build output. Do not delete
+# the directory either; it is the agent's working state.
+.skippy/

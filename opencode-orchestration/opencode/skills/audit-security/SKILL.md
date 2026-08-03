@@ -11,6 +11,15 @@ metadata:
 
 You are a security auditor. Your job is to find vulnerabilities before they become incidents.
 
+## Activation Contract
+
+Start from the observed repo surface.
+
+- Choose audit checks that match the actual language, framework, deployment surface, and dependency manager.
+- Treat all grep commands, package-audit commands, and proof-of-concept snippets in this skill as examples to adapt.
+- Do not invent production architecture, compliance scope, APIs, auth systems, or dependency tooling that the repo does not expose.
+- If the repo is mostly docs/config/setup, focus on secret handling, supply-chain exposure, unsafe defaults, and policy gaps rather than pretending there is a live app surface.
+
 ## When to use
 
 - Pre-launch security review
@@ -21,19 +30,13 @@ You are a security auditor. Your job is to find vulnerabilities before they beco
 
 ## Quick Check (5 min)
 
-Security equivalent of linting. Before every commit:
+Security equivalent of linting. Adapt these quick checks to the current stack:
 
 ```bash
-# Look for common mistakes
-grep -r "password" . --include="*.js" --include="*.ts" \
-  | grep -v ".env" | grep -v "test"
-# ^ Should only be in env-reading code, never hardcoded
-
-grep -r "TODO.*security" . --include="*.js" --include="*.ts"
-# ^ Any security TODOs? Address them first.
-
-grep -r "crypto.randomBytes\|Math.random" . --include="*.js"
-# ^ Math.random() is cryptographically broken. Use crypto.randomBytes().
+# Examples only:
+# - search for hardcoded secrets or credentials
+# - search for security TODOs or FIXME markers
+# - search for insecure randomness or dangerous crypto defaults
 ```
 
 ## Full Audit Process
@@ -127,9 +130,11 @@ Check each:
 
 6. VULNERABLE DEPENDENCIES
    ```bash
-   npm audit
-   pip audit
-   # Fix all high/critical, track medium
+  # Use the dependency audit command that matches the observed manifest.
+  # Examples only:
+  # npm audit
+  # pip audit
+  # cargo audit
    ```
 
 7. AUTHENTICATION FAILURES
@@ -150,40 +155,29 @@ Check each:
    - Are alerts configured? (Alert on repeated auth failure)
 
 10. USING COMPONENTS WITH KNOWN VULNERABILITIES
-    - Run `npm audit` regularly
+    - Run the repo-native dependency audit regularly
     - Track and patch vulnerabilities
     - Have a policy for how quickly critical fixes are deployed
 ```
 
 ### Step 4: Implementation Review
 
-Go through code:
+Go through code using patterns that match the repo's language/framework:
 
 ```bash
-# Authentication
-grep -r "password" src/ --include="*.ts" --include="*.js" \
-  | grep -v "hashed" | grep -v "bcrypt" | grep -v "hash"
-# Should find nothing — passwords should always be hashed
-
-# Dangerous functions
-grep -r "eval\|exec\|new Function\|innerHTML" src/
-# All dangerous. Explain each one.
-
-# Crypto
-grep -r "Math.random" src/
-# NEVER for security-sensitive operations
-
-# Dependency check
-npm audit
-pip show --outdated
+# Examples only:
+# - search for password handling paths and hashing usage
+# - search for dangerous eval/exec/HTML injection patterns
+# - search for insecure randomness in security-sensitive code
+# - run the repo-native dependency audit/version check
 ```
 
 ### Step 5: Threat Verification
 
-For critical threats, write a proof-of-concept:
+For critical threats, write a proof-of-concept that matches the actual surface under review:
 
 ```javascript
-// Example: Can I access another user's data?
+// Example only: Can I access another user's data?
 const userId = req.user.id; // My ID
 const otherUserId = 999;    // Someone else's ID
 const response = await api.get(`/users/${otherUserId}`);
@@ -201,7 +195,7 @@ if (response.status === 200) {
 ## Executive Summary
 - [Number] critical issues
 - [Number] high issues
-- Status: Ready/NOT READY for production
+- Status: PASS / FAIL / AMBIGUOUS
 
 ## Critical Issues
 1. [Issue] (OWASP #X, STRIDE: Xyz)

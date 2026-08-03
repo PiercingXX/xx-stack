@@ -11,6 +11,15 @@ metadata:
 
 You are a technical writer. Your job is to explain your software clearly so users and developers can succeed.
 
+## Activation Contract
+
+Start from the observed repo surface.
+
+- Infer the actual install, run, deploy, and troubleshooting flows from files that exist in the repo.
+- Treat all command blocks in this skill as templates to adapt, not copy-paste defaults.
+- Do not invent Node, Python, Docker, Kubernetes, databases, ports, or cloud services unless the repo surface proves they exist.
+- If the repo is docs/config/setup-oriented, document artifact flow and validation instead of pretending there is an application runtime.
+
 ## When to use
 
 - Shipping new feature (needs user guide)
@@ -44,9 +53,10 @@ Your README is the first thing people read. It should answer:
 
 ### Install
 \`\`\`bash
-npm install package-name
-# or
-pip install package-name
+# Use the real install command for this repo/package.
+# Examples only:
+# npm install package-name
+# pip install package-name
 \`\`\`
 
 ### Usage
@@ -74,7 +84,11 @@ MIT (or your license)
 
 ## Installation Guide
 
-For anything beyond "npm install":
+For anything beyond a trivial single-command install, derive the setup flow from the repo first.
+
+Look at files such as `package.json`, `Makefile`, `pyproject.toml`, `Cargo.toml`, Docker files, CI config, compose files, infra manifests, and existing docs.
+
+The structure below is a template to adapt to the actual project:
 
 ```markdown
 # Installation Guide
@@ -93,13 +107,18 @@ For anything beyond "npm install":
 
 ### 1. Clone Repository
 \`\`\`bash
-git clone https://github.com/user/project.git
+git clone https://example.com/team/project.git
 cd project
 \`\`\`
 
 ### 2. Install Dependencies
 \`\`\`bash
-npm install
+# Use the repo-native dependency install step.
+# Examples only:
+# npm install
+# bun install
+# pip install -r requirements.txt
+# cargo build
 \`\`\`
 
 ### 3. Configure Environment
@@ -112,14 +131,19 @@ cp .env.example .env
 
 ### 4. Setup Database
 \`\`\`bash
-npm run db:migrate
-npm run db:seed  # Optional: load example data
+# Only include this section if the repo actually has a database.
+# Examples only:
+# npm run db:migrate
+# npm run db:seed
 \`\`\`
 
 ### 5. Start Development Server
 \`\`\`bash
-npm run dev
-# Visit http://localhost:3000
+# Use the real local run command and URL for this repo.
+# Examples only:
+# npm run dev
+# bun dev
+# python -m app
 \`\`\`
 
 ## Troubleshooting
@@ -128,9 +152,9 @@ npm run dev
 - Check PostgreSQL is running: `pg_isready`
 - Verify DATABASE_URL in .env is correct
 
-### Port 3000 already in use
+### Port already in use
 \`\`\`bash
-npm run dev -- --port 3001
+# Use the actual override supported by the repo.
 \`\`\`
 
 See [Troubleshooting](./troubleshooting.md) for more.
@@ -232,7 +256,9 @@ Common errors:
 
 ## Deployment Guide
 
-For deploying to production:
+For deployment documentation, describe only the release path that the current repo actually supports.
+
+Use the structure below as a template, not a default stack choice.
 
 ```markdown
 # Deployment Guide
@@ -240,9 +266,9 @@ For deploying to production:
 ## Pre-Deployment
 
 ### Checklist
-- [ ] All tests passing (npm test)
+- [ ] All deterministic validation checks passing (use repo-native command)
 - [ ] No console errors
-- [ ] Build succeeds (npm run build)
+- [ ] Build or artifact generation succeeds (use repo-native command)
 - [ ] Staging deployed and verified
 - [ ] Database migrations prepared
 - [ ] Environment variables set
@@ -250,59 +276,28 @@ For deploying to production:
 ### Environment Variables
 
 \`\`\`bash
-# Create .env.production
-NODE_ENV=production
-DATABASE_URL=postgresql://...  # Production DB
-REDIS_URL=redis://...          # Production Redis
-SECRET_KEY=<32-char-random>
-LOG_LEVEL=info
+# Show only the environment variables the repo actually requires.
+# Use placeholders, never real secrets.
 \`\`\`
 
 ## Deploy to Production
 
-### Option 1: Docker
+### Option 1: Container or Image-Based Deploy
 
 \`\`\`bash
-# Build image
-docker build -t myapp:latest .
-
-# Push to registry
-docker push myregistry.io/myapp:latest
-
-# Update deployment
-kubectl set image deployment/myapp \
-  myapp=myregistry.io/myapp:latest
+# Examples only. Replace with the actual image build/publish/deploy flow if present.
 \`\`\`
 
-### Option 2: Direct Server
+### Option 2: Direct Host or VM Deploy
 
 \`\`\`bash
-ssh deploy@production.example.com
-
-# Pull latest code
-cd /app && git pull origin main
-
-# Install dependencies
-npm ci --production
-
-# Run migrations
-npm run db:migrate
-
-# Restart service
-systemctl restart myapp
+# Examples only. Replace with the actual host-based release flow if present.
 \`\`\`
 
 ## Verify Deployment
 
 \`\`\`bash
-# Health check
-curl https://api.example.com/health
-
-# Check logs
-tail -f /var/log/myapp.log
-
-# Monitor error rate
-curl https://monitoring.example.com/metrics
+# Use the actual verification checks exposed by this repo or deployment surface.
 \`\`\`
 
 ## Rollback
@@ -310,12 +305,7 @@ curl https://monitoring.example.com/metrics
 If something goes wrong:
 
 \`\`\`bash
-# Within 5 minutes:
-git revert <commit-hash> && git push origin main
-
-# Or restore previous Docker image:
-docker pull myregistry.io/myapp:previous
-kubectl set image deployment/myapp myapp=myregistry.io/myapp:previous
+# Document the real rollback path only if it exists.
 \`\`\`
 ```
 
@@ -336,7 +326,7 @@ All notable changes to this project will be documented in this file.
 - API authentication via Bearer tokens (more secure than API keys)
 
 ### Changed
-- Updated database schema (run `npm run db:migrate`)
+- Updated data or config schema (include the actual migration or update step only if one exists)
 - Improved error messages (now shows what field failed validation)
 - Default page size increased from 10 to 20 items
 
@@ -356,7 +346,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Dark mode (experimental)
-- API documentation (https://docs.example.com)
+- API documentation ([actual docs URL or path])
 
 ### Fixed
 - Performance regression in search
@@ -372,20 +362,20 @@ Common questions and answers:
 ## General
 
 ### Q: Is this suitable for production?
-A: Yes. We use it at scale for [example]. See [Production Checklist](./docs/production.md).
+A: Answer only from observed evidence: deployment docs, scaling limits, SLOs, and operational support. Do not claim production readiness without proof.
 
 ### Q: What are the system requirements?
-A: Linux/macOS, Node 18+, PostgreSQL 12+. See [Installation](./docs/install.md).
+A: List only the requirements proven by the current repo and its docs.
 
 ## Technical
 
 ### Q: How do I connect to a different database?
-A: Edit `.env` and set `DATABASE_URL=postgresql://user:pass@host:5432/db`
+A: Answer only if the repo actually exposes database configuration.
 
 ### Q: How do I enable debugging?
-A: Set `DEBUG=*` or `DEBUG=myapp:*` before running
+A: Use the actual debug flags or logging controls the repo exposes.
 \`\`\`bash
-DEBUG=myapp:* npm run dev
+# Example only. Replace with the real debug command.
 \`\`\`
 
 ### Q: How do I contribute?
@@ -393,19 +383,16 @@ A: See [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## Errors
 
-### "Port 5432 already in use"
-You have another PostgreSQL instance running.
+### Port already in use
+Only include service-specific guidance if the repo actually depends on that service.
 \`\`\`bash
-# Find and stop it
-lsof -i :5432
-kill -9 <PID>
+# Replace with the real diagnosis and recovery step.
 \`\`\`
 
-### "ECONNREFUSED 127.0.0.1:6379"
-Redis is not running.
+### Dependency service connection refused
+Only include service-specific troubleshooting if the repo actually depends on that service.
 \`\`\`bash
-redis-server  # Start Redis
-# Or if using Docker: docker run -p 6379:6379 redis:7
+# Replace with the real dependency recovery step.
 \`\`\`
 ```
 
