@@ -8,10 +8,18 @@ routing decision in two minutes; this document explains *how everything works*
 and *where the bodies are buried*.
 
 **Status of this document.** Written 2026-08-02 from a five-part audit of all
-tracked files, then revised the same day after the resulting fixes landed. §11
-(Defect Register) records every confirmed problem found in that audit and its
-current status. Everything in the register is **fixed** unless its row says
-otherwise; the open items are collected in §11.1.
+tracked files, revised after those fixes landed, and revised again 2026-08-03
+after a six-source upstream review round (see `UPSTREAM-BORROW-TODO.md` tasks
+30-45). §11 records every confirmed problem and its current status: everything
+is **fixed** unless its row says otherwise, and the open items — all of them
+judgment calls rather than defects — are collected in §11.1.
+
+One correction worth carrying: §11.1 used to assert that nothing in it was a
+correctness risk. That was wrong. Three vendored design systems were shipping
+body text at 1.06:1 against their own declared surface, and no gate read those
+files at all. Both are fixed; the claim is corrected in place rather than
+quietly dropped, because "we checked and found nothing" and "we never looked"
+are different statements and this document should not confuse them.
 
 ---
 
@@ -59,13 +67,13 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 838 |
+| Tracked files | 879 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
 | TypeScript source | ~24,000 lines |
-| Test files / tests | 27 files, 361 tests (plus 58 Python tests) |
+| Test files / tests | 29 files, 443 tests (plus 58 Python tests) |
 | Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
-| Build/check scripts | 23 |
+| Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
 
 These counts drift. Regenerate them rather than trusting them:
 `grep -rhoP 'server\.tool\(\s*\n?\s*"\K[^"]+' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
@@ -453,6 +461,35 @@ Not Prettier-formatted, by policy — reformatting vendored content would destro
 byte-comparability against upstream, which is the only way to tell our edits
 from upstream's (`.prettierignore`).
 
+### `packs/design/craft` — cross-cutting quality rules
+
+11 brand-agnostic rulebooks vendored byte-identical from `nexu-io/open-design`
+at `dceac12` (typography ×3, color, anti-ai-slop, state-coverage, animation
+discipline, accessibility baseline, RTL/bidi, form validation, laws of UX).
+A third axis alongside brand systems (what a brand looks like) and workflow
+skills (how to build an artifact type): rules that hold regardless of brand.
+
+Skills opt in per-file via `od.craft.requires` — upstream's own convention,
+not one invented here — so a skill pays context tokens only for the rulebooks
+it names. `design:craft-refs` fails when a slug does not resolve.
+
+**Licensing has two hops and they are scoped differently.** The subtree is
+Apache-2.0 from open-design. Three of the 11 rulebooks additionally derive from
+`referodesign/refero_skill` (MIT) and say so inline; the other eight postdate
+that README's blanket claim and carry no attribution. Both license texts ship.
+The narrower reading is recorded in `manifest.json` rather than by editing the
+vendored README.
+
+`craft/anti-ai-slop-rules.json` holds 18 rules as **attributed data** read by an
+MIT engine — no upstream code is ported, which is what keeps the licence
+boundary at the pack boundary. Two upstreams feed it, tagged per rule
+(open-design and `google-labs-code/stitch-skills`), and 15 refusals are recorded
+with reasons. Two worth knowing: the pure-black ban was refused because 57 of
+our 137 design systems name `#000000` as deliberate brand vocabulary, and the
+two upstreams flatly disagree about `picsum.photos` — open-design bans it,
+stitch recommends it; open-design's ruling was kept and the disagreement
+recorded so it does not read as an oversight.
+
 ### `packs/rules`
 
 11 software-engineering books distilled into decision rules, vendored from
@@ -535,12 +572,14 @@ files. See §11, HERMES-1 for what was done about this.
 ```
 layout:verify → agents:check → drift:check → rules:check → nano:check
               → inventory:check → guardrails:check → lint → format:check
-              → design:golden → design:html-gate → test → hermes:test
+              → design:golden → design:html-gate → design:craft-refs
+              → design:anti-slop-test → design:systems-lint
+              → test → hermes:test
 ```
 
 | Gate | What it proves | Blind spot |
 |---|---|---|
-| `layout:verify` | component layout, symlinks, executable bits | only the layouts it knows; an unmapped directory is invisible (this is how `xx-stack/vscode/` rotted unnoticed) |
+| `layout:verify` | component layout, symlinks, executable bits, and every vendored rulebook and license file by name (52 checks) | only the layouts it knows; an unmapped directory is invisible — this is how `xx-stack/vscode/` rotted, and how `packs/design/craft/` was briefly deletable without failing a gate |
 | `agents:check` | every canonical agent is mirrored or explicitly opted out | — (was 8 of 21 before the audit) |
 | `drift:check` | names **and content** of 63 mirrored pairs, after normalizing the deliberate deltas | waived deltas — see below |
 | `rules:check` | coverage map matches the skill/agent surface | — |
@@ -549,7 +588,10 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 | `guardrails:check` | denylist patterns behave; file hash pinned | pattern *coverage* — it proves the listed patterns work, not that the list is complete |
 | `lint` | `.ts`, `.mjs`, and `.js` | — |
 | `format:check` | `mcp-server/src` and `scripts` only | everything else, deliberately (`packs/` is vendored) |
-| `design:golden` / `design:html-gate` | design pack evals and HTML quality | — |
+| `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two upstreams disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
+| `design:craft-refs` | every `od.craft.requires` slug resolves to a rulebook | — |
+| `design:anti-slop-test` | each rule fires at its declared severity on slop fixtures and not on clean ones | — |
+| `design:systems-lint` | all 137 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
 | `test` | MCP suite | see §11 for the classes it historically missed |
 | `hermes:test` | Python suite, against the *shipped* allowlist | — |
 
@@ -753,17 +795,34 @@ Two things are worth carrying forward from how these were found:
 
 ### 11.1 Still open
 
-Nothing here is a data-loss, security, or correctness risk. Each needs a human
-judgment call rather than a fix.
+Each of these needs a human judgment call rather than a fix. None is a
+data-loss or security risk — but note that this section previously claimed
+none was a **correctness** risk either, and that was wrong: three vendored
+design systems shipped body text at 1.06:1 contrast against their own declared
+surface. That is now caught by a gate and fixed, and the claim is corrected
+here rather than quietly dropped.
 
 | Item | Severity | Why it is still open |
 |---|---|---|
-| The design pack records no upstream commit sha. | OPEN | `packs/rules` pins `9c87636`; the design pack has no equivalent, so drift can only be measured against upstream HEAD — which cannot distinguish our edits from upstream's without reading every diff. 40 Apache-licensed files differ from HEAD and it is not currently knowable which changed on which side. Resolving it means bisecting upstream history against our hashes, or re-vendoring at a pinned sha. |
-| Apache-2.0 §4(b) notice placement for modified files. | OPEN | The 40 modified files are recorded centrally in `packs/design/manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call. |
+| The design pack pins no upstream commit for `design-systems/` and `workflow-skills/`. | OPEN | The **window** is now recorded (`9ee2c19..483e00d`, 57 commits sharing one tree) and `craft/` pins `dceac12`, so this is narrower than it was. What remains: nothing in the pack distinguishes commits *inside* that window, so a single sha would be invention. Resolving it means re-vendoring at a pinned sha — which must not silently revert the 12 design-system and 10 workflow-skill files now recorded as our edits. |
+| Apache-2.0 §4(b) notice placement for modified files. | OPEN | 12 design systems and 10 workflow-skill files are recorded centrally in `manifest.json` rather than annotated in place, which preserves byte-comparability against upstream. A reviewer may prefer per-file headers; that is a licensing-posture call, not a defect. |
 | Trademark posture for ~100 brand names in `design-systems/`. | OPEN | Nominative descriptive use is normally fine and the risk is inherited from upstream, but no explicit decision is recorded in this repo. |
+| 14 accent-on-surface pairs sit below 3:1. | OPEN | `design:systems-lint` reports these and deliberately does not fail on them: a brand primary used as a CTA fill is non-text, and these are upstream design choices. Treating them as defects means editing 14 brand primaries — a design decision. |
+| The em-dash token form is unextracted. | NIT | 11 lines, concentrated in `xiaohongshu` and `miro`, use `- **Surface** (`#FFF`) — `--bg`. …`. Adding a pattern would raise extractor capture above the measured 95.7% baseline. Left deliberately so the baseline is not moved silently. |
 | The `full` tier of all 11 rule books is unused. | NIT — **do not "fix"** | Every coverage entry selects `mini` or `nano`. ~74 KB reachable only when a host overrides `defaultTier`, which `coverage.json` documents as intended. Recorded so nobody deletes content that is deliberately on standby. |
 
 ### 11.2 Closed since the audit
+
+| Item | How it was resolved |
+|---|---|
+| **Three vendored design systems shipped illegible body text.** `bold` declared `Text #111827` on `Surface #111111` — **1.06:1** — while its own prose said *"Keep body copy on Text (#111827) for legibility"*. `pacman` 1.18:1, `energetic` 2.11:1. AA needs 4.5:1. | A new `design:systems-lint` gate found a **fourth** (`mono`, 3.82:1) on its first run, which a careful manual pass had missed. Each fixed with a value this same upstream generator already emits for that surface polarity, so the repair is the batch's own output rather than an invented colour. All four recorded as local edits; §4(b) set 8 → 12. Upstream still has the bug — pointer retained. |
+| **The 137 design systems were entirely ungated.** `design:golden` covers 5 eval tasks, `design:html-gate` covers 67 generated artifacts; neither read the pack's largest and most-consumed surface. | `design:systems-lint` parses their prose into a token map without modifying a byte (mutating `fs` entry points are stubbed before the first open) and checks contrast on **declared** pairs only. Role-bucketed cross-producing was measured at 52% false positives and is recorded in the script as rejected, so it is not re-derived as an obvious idea. |
+| `packs/design/craft/` and `licenses/` were unknown to the layout verifier. | 30 → 52 checks, per-file rather than per-directory — the 11 rulebook slugs *are* the `od.craft.requires` vocabulary, so a rename silently breaks every skill bound to it. |
+| `drift:check` printed an `OPEN` waiver every run for the `design-system-pick` brand list. | Resolved as a rotted list, with git evidence: `d458c02` removed `claude` from both copies symmetrically but *added* two entries to only one. Five slugs were broken; **all 121 brand ids now resolve**, where five brands were previously unselectable by any agent — including the one the waiver was arguing about, which was itself a wrong slug. |
+| The pack shipped a rule saying "never animate `width`" alongside six example decks animating `width`. | `animate-layout-property` promoted P1 → P0 and all six converted to `transform: scaleX()`. Example decks are what agents copy from, so an advisory would have outlived the rule. Zero hits remain. |
+| The manifest overstated the refero attribution and disagreed with itself on the authored-here count. | Refero scoped to the verified 3 of 11 rulebooks (~10% of bytes, corroborated by upstream timing); authored-here count reconciled 93 → 79 with the discrepancy explained. |
+
+
 
 Four items moved out of §11.1. Each has a test or gate that fails without the fix.
 
