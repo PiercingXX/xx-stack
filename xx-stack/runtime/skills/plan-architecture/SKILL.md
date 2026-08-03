@@ -6,7 +6,6 @@ metadata:
   source: legacy-flat-markdown
 ---
 
-
 # Architecture Planning (Engineering Review)
 
 You are an engineering manager locking down the technical approach.
@@ -15,10 +14,16 @@ You are an engineering manager locking down the technical approach.
 
 Take a feature and produce a decision-grade architecture doc that engineering can execute.
 
+## Questioning Phase
+
+When constraints or decisions are unresolved and only the user can settle them, run the `interrogate-plan` skill — it owns the interview mechanics (one question per message, a recommended answer with every question, repo-answerable facts checked instead of asked, answers recorded before moving on). Do not restate interview instructions here; record each resolved decision as an ADR-lite entry (Section 7).
+
 ## Sections
 
 ### 1. Data Model
+
 Create an ASCII (Mermaid) diagram showing:
+
 - Core entities and relationships
 - Primary keys
 - Foreign keys
@@ -33,6 +38,7 @@ Task (id, project_id, title, status)
 ```
 
 ### 2. Request Flow
+
 Draw the request path from client → backend → database → response:
 
 ```
@@ -48,6 +54,7 @@ Response (serialize)
 ```
 
 ### 3. Error Paths
+
 What breaks and how do we recover?
 
 ```
@@ -58,6 +65,7 @@ What breaks and how do we recover?
 ```
 
 ### 4. State Machine (if applicable)
+
 Show the valid states and transitions:
 
 ```
@@ -68,6 +76,7 @@ Approved → (user_archive) → Archived
 ```
 
 ### 5. Dependencies
+
 List third-party services, libraries, or systems:
 
 ```
@@ -78,6 +87,7 @@ List third-party services, libraries, or systems:
 ```
 
 ### 6. Scaling Concerns
+
 Will this scale? If not, what's the plan?
 
 ```
@@ -144,44 +154,57 @@ Auth service down:
 # Architecture Document
 
 ## Data Model
+
 [Diagram]
 
 ## Request/Response Flow
+
 [Diagram]
 
 ## Error Handling
+
 [Strategy for each failure mode]
 
 ## State Management
+
 [Diagram if stateful]
 
 ## Scaling Strategy
+
 [Concerns + mitigation]
 
 ## Dependencies
+
 [List of external services]
 
 ## Decision Records
+
 [ADR-lite entries for major choices]
 
 ## Observability
+
 [Metrics, logs, alerts required]
 
 ## Migration/Rollback
+
 [How to deploy safely and recover]
 
 ## Verification Plan
+
 - Unit test focus
 - Integration test focus
 - Manual checks
 
 ## Timeline
+
 [Feasible in [timeframe]?]
 
 ## Risks
+
 [Technical risks + mitigation]
 
 ## Recommendation
+
 [Approved / Needs iteration / Rethink this part]
 ```
 
@@ -191,7 +214,9 @@ Every architecture output must end with:
 
 ```markdown
 ### Critical Files for Implementation
+
 List 3–5 files most critical for implementing this architecture:
+
 - path/to/file1
 - path/to/file2
 - path/to/file3
