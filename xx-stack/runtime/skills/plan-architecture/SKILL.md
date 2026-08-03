@@ -18,6 +18,16 @@ Take a feature and produce a decision-grade architecture doc that engineering ca
 
 When constraints or decisions are unresolved and only the user can settle them, run the `interrogate-plan` skill — it owns the interview mechanics (one question per message, a recommended answer with every question, repo-answerable facts checked instead of asked, answers recorded before moving on). Do not restate interview instructions here; record each resolved decision as an ADR-lite entry (Section 7).
 
+## Module Depth Check
+
+Apply this vocabulary to every major component and interface in the design:
+
+- **Depth**: a module's value is behaviour delivered per unit of interface learned. Deep = small interface hiding a lot of behaviour. Shallow = an interface as large as the implementation it wraps.
+- **Seams**: name the seams — the boundaries where an implementation can be swapped without callers noticing. Unnamed seams do not exist.
+- **The deletion test**: if removing a module makes complexity vanish rather than move, it was a pass-through, not an abstraction. Delete it.
+- **One adapter = hypothetical seam, two = real**: a seam with a single implementation behind it is a guess. Build the abstraction when the second concrete implementation exists.
+- **Design it twice**: for every major interface, sketch two genuinely different designs before committing, and record why the winner is deeper (in the ADR-lite entry, Section 7).
+
 ## Sections
 
 ### 1. Data Model

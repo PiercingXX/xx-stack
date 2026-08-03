@@ -17,6 +17,19 @@ The current skill layer follows a shared contract:
 
 Skills should not assume `bun`, `npm`, `gh`, CI, or production endpoints unless the observed repo surface proves they exist.
 
+## Skill Authoring Contract
+
+When writing or editing a skill:
+
+- the `description` is a routing contract: what the skill does, when to use it, and what differentiates it from its neighbors — never a workflow summary (an agent that reads a step summary in the description skips loading the body)
+- progressive disclosure: inline what every branch of the skill needs; link the rest
+- references go one level deep, never chained — a linked document must not require following a further link to be usable
+- positive steering over negation: say what to do, not only what to avoid
+- delete no-op lines: if removing a line would not change the agent's behavior, remove it
+- every step states checkable completion criteria — what done looks like, in a form that can be verified
+- match instruction strictness to task fragility: loose heuristics for robust tasks, templates for structured output, exact scripts for fragile sequences
+- test every skill against the weakest model it will run on — for this stack that rule is load-bearing (tight-context local lanes are the audience), and it is the acceptance test for any nano-tier skill variant
+
 ## Graceful Degradation
 
 Not every workflow is equally critical.
@@ -67,7 +80,7 @@ Additional routing pattern:
 - Purpose: Release gates and deployment verification
 - Model: sglang-remote/qwen3-coder-next
 
-## Advanced Workflows (10)
+## Advanced Workflows (13)
 
 6. debug-investigate
 - Root-cause debugging workflow
@@ -97,29 +110,41 @@ Additional routing pattern:
 - Autonomous one-shot full-application rewrite to Rust with compile/test auto-repair loops
 
 15. train-model-knowledge-injection
-- End-to-end model training and knowledge injection from GitHub/PDF/Markdown/software stacks
+- End-to-end model training and knowledge injection from repository/PDF/Markdown/software stacks
 
-## Utility Workflows (6)
+16. plan-decision-map
+- Multi-session decision-map planning: persistent map of decision tickets backed by the task tools, one decision resolved per session until the fog clears
 
-16. write-docs
+17. interrogate-plan
+- One-question-at-a-time decision interrogation with a recommended answer per question; owns the questioning phase delegated by the plan-* skills
+
+18. research-deep
+- Budget-bounded iterative research loop (search → read → reason → reflect) with an explicit knowledge-gaps queue and completion-judge-gated termination
+
+## Utility Workflows (8)
+
+19. diagnose-stack
+- Stack health check: verifies MCP server, agent definitions, skill structure, environment variables, and config wiring
+
+20. write-docs
 - README/API/deployment doc generation
 
-17. setup-observability
+21. setup-observability
 - Metrics, logs, alerts, traces
 
-18. test-qa
+22. test-qa
 - Journey QA with regression checks
 
-19. release-doc-sync
+23. release-doc-sync
 - Post-release documentation synchronization
 
-20. safety-guardrails
+24. safety-guardrails
 - Destructive-command and edit-scope safety mode
 
-21. orchestrate-platform-routing
+25. orchestrate-platform-routing
 - Delegation planning across local, remote, and cloud model tiers
 
-22. ensemble-consensus
+26. ensemble-consensus
 - Ask at least three models the same question in parallel — across machines, or
   three local models when nothing can be delegated — then merge the answers and
   report where they disagreed

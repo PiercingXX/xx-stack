@@ -81,7 +81,18 @@ npm run deploy
 
 ## Step 4: Health Verification (First 30 Minutes Post-Deploy)
 
-Watch these metrics every 2 minutes for 30 minutes:
+First confirm the exact SHA is what is running — "pushed" is not "deployed":
+
+```bash
+SHA=$(git rev-parse HEAD)
+# CI green for $SHA, deploy promoted for $SHA, and the health
+# endpoint reports $SHA (version/commit field) and returns OK.
+# If a newer push superseded yours, verify it contains your change
+# and track that SHA through the rest of this checklist instead:
+git merge-base --is-ancestor "$SHA" "$NEWER_SHA" && echo "included — track $NEWER_SHA"
+```
+
+Then watch these metrics every 2 minutes for 30 minutes:
 
 ### Errors
 ```bash
@@ -259,6 +270,7 @@ If something is clearly broken:
 - Started: [time]
 - Completed: [time]
 - Canary: [% traffic]
+- SHA verified live: [exact SHA + how verified]
 
 ## Health Verification (30 min)
 - Error rate: [baseline] → [post-deploy] ✓

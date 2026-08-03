@@ -23,6 +23,19 @@ Canonical source of truth:
 - slash-command mirrors and host adapters provide activation surfaces only
 - if a mirror conflicts with `SKILL.md`, the canonical repo skill wins and the mismatch should be reported as drift
 
+## Skill Authoring Contract
+
+When writing or editing a skill:
+
+- the `description` is a routing contract: what the skill does, when to use it, and what differentiates it from its neighbors — never a workflow summary (an agent that reads a step summary in the description skips loading the body)
+- progressive disclosure: inline what every branch of the skill needs; link the rest
+- references go one level deep, never chained — a linked document must not require following a further link to be usable
+- positive steering over negation: say what to do, not only what to avoid
+- delete no-op lines: if removing a line would not change the agent's behavior, remove it
+- every step states checkable completion criteria — what done looks like, in a form that can be verified
+- match instruction strictness to task fragility: loose heuristics for robust tasks, templates for structured output, exact scripts for fragile sequences
+- test every skill against the weakest model it will run on — for this stack that rule is load-bearing (tight-context local lanes are the audience), and it is the acceptance test for any nano-tier skill variant
+
 ## Discovery And Shadowing
 
 Skill precedence for xx-stack is:
@@ -150,7 +163,7 @@ Additional routing pattern:
 
 - Budget-bounded iterative research loop (search → read → reason → reflect) with an explicit knowledge-gaps queue and completion-judge-gated termination
 
-## Utility Workflows (7)
+## Utility Workflows (8)
 
 19. diagnose-stack
 
