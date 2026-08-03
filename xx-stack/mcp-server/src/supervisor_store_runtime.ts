@@ -43,7 +43,17 @@ export interface SupervisorEvent {
 export interface SupervisorSessionState {
   sessionId: string;
   description: string;
-  status: "running" | "cooldown" | "blocked" | "completed" | "interrupted" | "exhausted";
+  status:
+    | "running"
+    | "cooldown"
+    | "blocked"
+    | "completed"
+    | "interrupted"
+    | "exhausted"
+    // Terminal state between success and failure: budget/step/stall threshold
+    // tripped and the supervisor demanded a best-effort synthesis from the
+    // evidence gathered so far. Never presented as a normal completion.
+    | "force_synthesized";
   startedAt: number;
   lastProgressAt: number;
   lastOutputAt?: number;
@@ -68,6 +78,8 @@ export interface SupervisorSessionState {
   lastRecoveryAt?: number;
   lastContinuationFingerprint?: string;
   lastContinuationAt?: number;
+  forceSynthesisAt?: number;
+  forceSynthesisTrigger?: string;
   events: SupervisorEvent[];
 }
 

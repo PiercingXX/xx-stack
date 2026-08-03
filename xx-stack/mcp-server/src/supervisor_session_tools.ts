@@ -301,7 +301,8 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
           state.status === "completed" ||
           state.status === "blocked" ||
           state.status === "interrupted" ||
-          state.status === "exhausted"
+          state.status === "exhausted" ||
+          state.status === "force_synthesized"
         ) {
           await deps.writeSupervisorStore(store);
           return jsonContent({
@@ -445,6 +446,9 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
             attemptCount: state.attemptCount,
             failureCount: state.failureCount,
             currentRoute: state.currentRoute,
+            forceSynthesisAvailable: true,
+            forceSynthesisDirective:
+              "Budget exhausted. Call supervisor_force_synthesis to convert gathered evidence into an honestly-labeled best-effort answer instead of discarding partial work.",
           });
         }
 
@@ -505,6 +509,9 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
             currentAttemptId: state.currentAttemptId,
             attemptCount: state.attemptCount,
             failureCount: state.failureCount,
+            forceSynthesisAvailable: true,
+            forceSynthesisDirective:
+              "Every lane is exhausted. Call supervisor_force_synthesis to convert gathered evidence into an honestly-labeled best-effort answer instead of discarding partial work.",
           });
         }
 
@@ -577,6 +584,8 @@ export function registerSupervisorSessionTools(server: McpServer, deps: Supervis
           cooldownUntil: new Date(state.cooldownUntil).toISOString(),
           attemptCount: state.attemptCount,
           failureCount: state.failureCount,
+          handoffDirective:
+            "Failover applied. Call supervisor_emit_handoff_prompt with goal, current state (DONE/PARTIAL/NOT STARTED), key decisions, traps & dead ends, relevant files, and open work so the fallback lane does not repeat the stalled lane's mistakes.",
         });
       })
   );

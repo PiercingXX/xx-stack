@@ -3,9 +3,12 @@ import { z } from "zod";
 
 import { emitLifecycleHooks } from "./execution_policy.js";
 import {
+  ANTI_REWARD_HACKING_CLAUSE,
   buildResumeDirective,
   generateTaskId,
+  GOAL_CONTRACT_SCHEMA,
   readTaskStore,
+  sanitizeGoalContract,
   sanitizeIdList,
   sanitizeTags,
   TASK_PRIORITY_SCHEMA,
@@ -120,9 +123,20 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       })
   );
 
+  const GOAL_CONTRACT_INPUT = GOAL_CONTRACT_SCHEMA.optional().describe(
+    "Optional five-part goal contract for supervised autonomous execution. " +
+      "Meta-prompting rule: before writing this contract, inspect the repo and surface hidden " +
+      "constraints (build/test commands, conventions, things that must not change) so the " +
+      "contract reflects reality rather than assumptions. The contract carries a mandatory " +
+      `anti-reward-hacking clause: ${ANTI_REWARD_HACKING_CLAUSE}.`
+  );
+
   server.tool(
     "task_create",
-    "Create a persistent task item for long-running orchestrated work",
+    "Create a persistent task item for long-running orchestrated work. For supervised " +
+      "autonomous tasks, attach a goalContract (objective, constraints, validationCmd, " +
+      "stopCondition, docsNote); inspect the repo and surface hidden constraints before " +
+      "writing the contract, and never delete, skip, weaken, or narrow tests to make the goal pass",
     {
       title: z.string().min(1).max(200).describe("Task title"),
       description: z.string().max(4000).optional().describe("Optional task description"),
@@ -147,6 +161,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         .max(4000)
         .optional()
         .describe("Optional initial checkpoint summary"),
+      goalContract: GOAL_CONTRACT_INPUT,
       priority: TASK_PRIORITY_SCHEMA.optional().describe("Optional priority"),
       tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Optional tags"),
       owner: z.string().max(120).optional().describe("Optional owner hint"),
@@ -166,6 +181,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       worktreePath,
       parentCwd,
       lastCheckpoint,
+      goalContract,
       priority,
       tags,
       owner,
@@ -189,6 +205,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
           worktreePath: trimOptional(worktreePath),
           parentCwd: trimOptional(parentCwd),
           lastCheckpoint: trimOptional(lastCheckpoint),
+          goalContract: sanitizeGoalContract(goalContract),
           priority,
           tags: sanitizeTags(tags),
           owner: trimOptional(owner),
@@ -244,6 +261,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       parentCwd: z.string().max(4096).optional().describe("Updated parent working directory"),
       lastCheckpoint: z.string().max(4000).optional().describe("Updated checkpoint summary"),
       lastError: z.string().max(4000).optional().describe("Updated error summary"),
+      goalContract: GOAL_CONTRACT_INPUT,
       priority: TASK_PRIORITY_SCHEMA.optional().describe("Updated priority"),
       tags: z.array(z.string().min(1).max(64)).max(32).optional().describe("Updated tags"),
       owner: z.string().max(120).optional().describe("Updated owner"),
@@ -265,6 +283,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       parentCwd,
       lastCheckpoint,
       lastError,
+      goalContract,
       priority,
       tags,
       owner,
@@ -287,6 +306,7 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
         if (typeof parentCwd === "string") task.parentCwd = trimOptional(parentCwd);
         if (typeof lastCheckpoint === "string") task.lastCheckpoint = trimOptional(lastCheckpoint);
         if (typeof lastError === "string") task.lastError = trimOptional(lastError);
+        if (goalContract) task.goalContract = sanitizeGoalContract(goalContract);
         if (priority) task.priority = priority;
         if (Array.isArray(tags)) task.tags = sanitizeTags(tags);
         if (typeof owner === "string") task.owner = trimOptional(owner);
