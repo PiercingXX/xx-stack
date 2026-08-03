@@ -7,12 +7,20 @@ test("buildContinuationPrompt is deterministic: identical input twice yields byt
   const args = {
     sessionId: "sx-test-001",
     continuationCount: 1,
-    currentRoute: { host: "localhost", model: "gpt-4", endpoint: "http://localhost:8080", tier: "standard" } as const,
+    currentRoute: {
+      host: "localhost",
+      model: "gpt-4",
+      endpoint: "http://localhost:8080",
+      tier: "standard",
+    } as const,
     completionMemorySync: undefined,
     memorySyncStatus: null,
     completionRecoveryReason: "review_to_continuation",
     remediationChecklist: [] as string[],
-    pendingTasks: ["Fix the null-dereference in parseUserConfig", "Add error boundary to applyToolPolicy"],
+    pendingTasks: [
+      "Fix the null-dereference in parseUserConfig",
+      "Add error boundary to applyToolPolicy",
+    ],
     extraSections: [
       "- mustAddress items:",
       "1. Fix the null-dereference in parseUserConfig",

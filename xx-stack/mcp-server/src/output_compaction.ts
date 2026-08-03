@@ -6,6 +6,7 @@
  * side effects.
  */
 
+// eslint-disable-next-line no-control-regex -- ANSI escape stripping needs the literal ESC/CSI control chars
 const ANSI_RE = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
 
 /**
@@ -69,7 +70,7 @@ export function compactOutput(text: string, opts: CompactOptions = {}): CompactR
     let i = 0;
     while (i < lines.length) {
       const current = lines[i]!;
-      let runStart = i;
+      const runStart = i;
       while (i + 1 < lines.length && lines[i + 1] === current) {
         i++;
       }

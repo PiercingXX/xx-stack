@@ -104,7 +104,11 @@ test("compactOutput collapseRepeats dropped line count equals input lines minus 
       reportedDroppedLines += parseInt(m[1]!, 10) - 2;
     }
   }
-  assert.equal(reportedDroppedLines, linesDropped, "reported dropped count should match actual lines dropped");
+  assert.equal(
+    reportedDroppedLines,
+    linesDropped,
+    "reported dropped count should match actual lines dropped"
+  );
 });
 
 test("compactOutput truncation reported dropped bytes match actual bytes removed", () => {

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { guardedExecFile } from "./execution_policy.js";
 import { jsonContent } from "./agent_tool_helpers.js";
-import { compactOutput, type CompactOptions } from "./output_compaction.js";
+import { compactOutput } from "./output_compaction.js";
 
 const OUTPUT_CAP = 4096;
 
@@ -60,11 +60,14 @@ export function registerVerifyEditTools(server: McpServer, deps: VerifyEditDeps)
       cwd: z.string().describe("Working directory for the commands"),
       lintCmd: z.string().optional().describe("Lint command to run (e.g. 'npx eslint .')"),
       testCmd: z.string().optional().describe("Test command to run (e.g. 'npm test')"),
-      compactOptions: z.object({
-        cap: z.number().optional().describe("Maximum output length in characters"),
-        stripAnsi: z.boolean().optional().describe("Strip ANSI escape sequences"),
-        collapseRepeats: z.boolean().optional().describe("Collapse repeated consecutive lines"),
-      }).optional().describe("If provided, compact command outputs using these options"),
+      compactOptions: z
+        .object({
+          cap: z.number().optional().describe("Maximum output length in characters"),
+          stripAnsi: z.boolean().optional().describe("Strip ANSI escape sequences"),
+          collapseRepeats: z.boolean().optional().describe("Collapse repeated consecutive lines"),
+        })
+        .optional()
+        .describe("If provided, compact command outputs using these options"),
     },
     async ({ cwd, lintCmd, testCmd, compactOptions }) => {
       const result: { lint: CmdResult | null; test: CmdResult | null; compacted?: string[] } = {

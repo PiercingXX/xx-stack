@@ -199,10 +199,7 @@ test("verify_edit reports lint pass and test fail independently in one payload",
   const dir = await mkdtemp(join(tmpdir(), "xx-stack-verify-edit-tool-"));
   try {
     await writeFile(join(dir, "pass.js"), 'console.log("lint clean");\n');
-    await writeFile(
-      join(dir, "fail.js"),
-      'console.error("1 test failed");\nprocess.exit(1);\n'
-    );
+    await writeFile(join(dir, "fail.js"), 'console.error("1 test failed");\nprocess.exit(1);\n');
 
     const verifyEdit = captureVerifyEditTool(["node"]);
     const payload = await verifyEdit({
