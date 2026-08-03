@@ -458,3 +458,92 @@ Explicitly NOT borrowing (reviewed and passed on)
     serve, clip-as-service, vectordb, finetuner, embedding-model research (late-chunking, jzip, fingerprints, inversion), all GUIs (correlations, deepsearch-ui, dashboard), and the ~150 archived Jina-framework executors — different product category or dead code.
     jina-on-prem's bundle/deploy tooling — good pattern, but Docker-image provisioning of model runtimes is the machines' concern, not the control plane's; revisit only if lane provisioning ever enters scope.
     Per-tool install docs (Cursor .mdc, Codex config) — host adapters are already xx-stack's own concern (adapters/, opencode-orchestration/).
+
+From davidondrej/skills (reviewed 2026-08-02)
+
+Harvest from davidondrej/skills: 43 agent skills across five categories (agent-orchestration, skill-authoring, research-and-web, thinking-and-docs, ops-and-setup). Roughly two-thirds is personal-machine plumbing (macOS ops, Cursor/cmux specifics, DeepAPI SaaS integrations, content-capture workflows) — passes. What survives triage is control-loop material: a goal contract for autonomous runs, a battle-tested handoff format, cross-model review discipline, a fleet-wide command denylist, and a batch of small deltas for skills and tasks already on this list.
+
+These are mostly prompt/skill-layer and supervisor-surface tasks. Same ground rules as the mattpocock section; anything touching mcp-server code follows the Tier 1 ground rules at the top of this file.
+Tier 1
+21. Goal contract for supervised autonomous tasks (upstream: "goal-loop")
+
+Goal. Every task registered for autonomous/supervised execution carries an explicit five-part contract: objective (one sentence), constraints (what must NOT change), validation command (the exact shell command that proves progress), verifiable stop condition, and a docs commitment — plus a mandatory anti-reward-hacking clause ("do not delete, skip, weaken, or narrow tests to make the goal pass").
+
+Why. The supervisor completion loop currently evaluates completion readiness against heuristics; upstream's insight is that the contract should be captured at task registration, making "done" machine-checkable from the start. The validation command is exactly what verify_edit (Task 3, landed) runs; the stop condition is exactly what the completion judge (Task 13) and forced synthesis (Task 14) evaluate against. This turns three planned pieces into one coherent loop.
+
+Files.
+
+    Edit: xx-stack/mcp-server/src/task_runtime.ts / task_tools.ts — optional goalContract field on task registration: { objective, constraints, validationCmd?, stopCondition, docsNote? }.
+    Edit: supervisor completion path — when a task has a contract, completion evaluation cites the stop condition and (if validationCmd present) expects a verify_edit result for it.
+    Edit: xx-stack/runtime/AUTONOMOUS_TODO_LOOP.md — document the contract as the required shape for loop items; include the anti-reward-hacking clause verbatim.
+    Edit/new: matching *.test.ts.
+
+Approach. Contract is optional metadata (guardrail: existing task registration unchanged when absent). Also borrow upstream's meta-prompting rule as prompt guidance: the agent registering a goal should first inspect the repo and surface hidden constraints before writing the contract — cite this in the tool description, same place Task 4's tracer-bullet sizing guidance goes.
+
+Acceptance criteria. Schema round-trip tested; completion evaluation references the stop condition when present; default path byte-identical without a contract; runbook updated.
+
+Effort: M. Risk: Low–Med (touches task store shape). Synergy: Tasks 3 (landed), 13, 14.
+22. Failover handoff format for continuation prompts (upstream: "handoff")
+
+Goal. When the supervisor fails a task over to another lane (or a session ends mid-task), the continuation prompt carries a structured handoff: Goal / Current State (DONE, PARTIAL, NOT STARTED — state, not instructions) / Key Decisions and why / Traps & Dead Ends (approaches tried that FAILED) / Relevant Files with line ranges / Open Work with dependencies, ending with a verify-don't-trust preamble ("treat every claim as context to verify against the code, not facts to accept").
+
+Why. This is Task 6's continuation loop seen from the receiving agent's side, and upstream's format is the most concrete one reviewed so far. The two non-obvious rules that earn the borrow: state-not-instructions (the fresh agent decides actions; the handoff gives ground truth) and Traps & Dead Ends (failed approaches are the least recoverable information — exactly what a failover lane needs to not repeat the stalled lane's mistakes). Reference-don't-duplicate matches the mattpocock handoff note already recorded in the synergies above.
+
+Files.
+
+    Edit: xx-stack/mcp-server/src/supervisor_tools.ts or review_tools.ts — extend the continuation-prompt formatter with a handoff variant used by the failover path; deterministic from fixed inputs.
+    Edit/new: matching *.test.ts.
+
+Acceptance criteria. Failover continuation prompts follow the section shape; deterministic; secrets never echoed (reference where credentials live, never values); tested.
+
+Effort: S–M. Risk: Low. Synergy: Task 6 (landed), Task 14 (forced synthesis reuses the same formatter).
+Tier 2
+23. Reviewer-diversity routing (upstream: "fable-review" / "gpt-review")
+
+Goal. A routing option (new route_review tool or a flag on route_task) that selects a review lane whose model differs from the model that authored the work, plus prompt rules for the review itself: neutral and unbiased (don't nudge toward a solution), broad scope (let the reviewer find its own issues), and report returned verbatim — never rewritten by the orchestrating agent.
+
+Why. Upstream ships this as two hardcoded skills (a Fable reviewer, a GPT reviewer); the transferable idea is the diversity constraint — a different model family reviewing catches what the authoring model is systematically blind to. xx-stack can do this properly: the registry knows which lane authored a task, so the router can exclude that model rather than hardcoding a reviewer. Same thesis as route_architect_editor (Task 2, landed), applied to review.
+
+Approach. { description, authoredByModel?, authoredByHost? } → lane whose model differs where the registry allows; collapse gracefully to same-model review with explicit reasoning when only one lane exists (log the shortfall — no silent degradation). The verbatim-report rule goes in review-code and the reviewer agent prompt, tied into Task 10b's two-axis split.
+
+Acceptance criteria. Distinct-model lane preferred when available; single-lane collapse reasoned; cloud stays opt-in; tests cover both paths.
+
+Effort: S–M. Risk: Low. Synergy: Tasks 2 (landed), 10b.
+24. Fleet-wide catastrophic-command denylist (upstream: "global-agent-guardrails")
+
+Goal. One versioned denylist of catastrophic shell patterns (rm -rf on / or ~, dd/mkfs, fork bombs, curl|sh, git push --force, repo deletion) as a runtime file, consumed by execution_policy.ts as a deny layer and mirrored to the host adapters (adapters/, opencode-orchestration/) so every lane's agent enforces the same list — with a test suite that must pass after any pattern change.
+
+Why. verify_edit's execution policy is an allowlist for commands the server runs; nothing governs what agents on the lanes run. Upstream's design is right for a heterogeneous fleet: single source of truth, per-host adapters, and the crucial design rule — block only irreversible/catastrophic operations; local-destructive-but-recoverable commands stay allowed, because over-blocking kills agent usefulness. It is a seatbelt against accidents, not a sandbox against a malicious agent — document that limit honestly.
+
+Files.
+
+    New: xx-stack/runtime/dangerous-patterns.txt (one POSIX-ERE per line, # comments) + a test script in xx-stack/scripts/ with block + allow cases.
+    Edit: xx-stack/mcp-server/src/execution_policy.ts — deny check ahead of the allowlist; matching *.test.ts.
+    Edit: adapter docs/mirrors to reference the shared file (keep canonical-file-wins convention).
+
+Acceptance criteria. Deny layer rejects listed patterns with a structured reason; allow cases (git clean, rm -rf node_modules) pass; pattern-file change without test update fails CI; verify green.
+
+Effort: M. Risk: Low–Med (touches the exec gate — fail-open on pattern-file parse errors so a broken list never bricks the server).
+25. Skill-layer and task-spec deltas (batch, one PR)
+
+Each sub-item folds an upstream delta into an existing skill or an already-listed task.
+
+    SKILLS.md authoring contract ← effective-agent-skills (extends Task 10f): the description is a routing contract — what + when + differentiator, and never a workflow summary (an agent that reads a step summary in the description skips loading the body); match instruction strictness to task fragility (loose heuristics → templates → exact scripts); references one level deep, never chained; test every skill against the weakest model it will run on — for this stack that rule is load-bearing, and it becomes the acceptance test for Task 12's nano tiers.
+    Task 9 (interrogate-plan) ← next-decision: each question presents the top choices (upstream fixes four; keep 2–4), states a preference, and records the user's answer in the plan doc before moving on.
+    reflect-retrospective / plan-autoreview ← decisions: a low-confidence-decision disclosure step — list only the decisions made during the work that the agent is genuinely unsure of, with unconsidered alternatives; explicitly skip decisions already well-settled. The retrospective twin of Task 9's forward-looking interrogation.
+    plan-feature / ideate-product ← before-building: a zero-tool instant gate — the moment a build is proposed, surface the 1–3 consequential choices hidden in it (one-off vs. repeated, few lines vs. proper module, biggest thing it could break) before any planning machinery spins up.
+    deploy-ship / ops-deploy-land ← prod-push: done means the exact SHA is verified live (CI green + deploy promoted + health endpoint OK for that SHA), never "pushed"; track the SHA through the whole chain; on a superseded push, confirm the newer SHA contains your change (git merge-base --is-ancestor) and track that one instead.
+    Task 4 (competitive worktrees) ← git-worktree: the fan-out plan must include a bootstrap checklist per worktree — copy (never symlink) env files, install deps, pin shared-service identity so worktrees don't fight over ports, rebuild gitignored artifacts — and a scripts/setup-worktree.sh convention; a bare worktree is the #1 way a parallel agent fails confusingly.
+    Task 8 (plan-decision-map) ← brain-to-docs: resolved decision tickets get a durable record — short numbered ADRs (NNNN-slug.md, Status/Context/Decision/Consequences) — so the decision map's one-line answers link to real rationale.
+    Supervisor runbook ← agent-self-scheduling: the heartbeat pattern — one cheap recurring tick gates many per-task checks via last-run timestamps, acts only on what is due, stays silent when nothing is; never put a model on a tight timer.
+
+Effort: M total. Risk: Low.
+Explicitly NOT borrowing
+
+    fable-safe-prompt — rewrites prompts to avoid tripping a model provider's safety classifiers; regardless of intent, classifier-evasion tooling is not something this stack should carry.
+    All DeepAPI-powered research/web skills (deepapi, deep-research, online-shopping, pi-web-search, research-prompt, youtube-transcript, fireflies-transcript) — SaaS-first; Tasks 13/19 already cover research local-first.
+    run-deep-swe — benchmark-scoring lanes via OpenRouter; the reliability harness already owns qualification, and cloud-metered evals conflict with local-first defaults. Revisit only if benchmark-based lane qualification enters scope.
+    launch-subagent — the model-pinning rules are personal config; the general delegation principles are already covered by Task 4's tracer-bullet sizing note and route_parallel_tasks guidance.
+    goal-loop's /goal feature plumbing (TUI commands, subscription-auth notes, troubleshooting) — only the contract (Task 21) transfers.
+    Personal-machine and vendor ops: anti-sleep, nuke-cursor-app, macbook-metrics-setup, cmux, codex-subagent, setup-help, vps-server-management, google-safe-browsing, create-readonly-db-role, pi-custom-model — machine/app concerns outside a headless control plane.
+    Author plumbing and content workflows: push-skill-to-github, distribute-skill-to-all-agents (adapters/ already owns distribution), folder-specific-claude-and-agents-md, save-idea, teach, level-up, remind, short, read-all-adrs (Task 25's ADR convention covers the useful part).
