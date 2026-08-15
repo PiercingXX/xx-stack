@@ -11,13 +11,13 @@ unavailable or unsuitable.
 
 ## Topology
 
-All self-hosted inference runs on the AI rig `skippy-debian-5090` (Debian, 8x RTX 5090),
-reached over Tailscale (MagicDNS name `skippy-debian-5090`):
+All self-hosted inference runs on the AI rig `gpu-rig` (Debian, 8x RTX 5090),
+reached over Tailscale (MagicDNS name `gpu-rig`):
 
 | Lane key | Name | Endpoint | Runtime | Priority | Role |
 |----------|------|----------|---------|----------|------|
-| `sglang` | `skippy-debian-5090-sglang` | `http://skippy-debian-5090:30000/v1` | sglang | 100 | Primary lane (262k context, batched parallel subagents) — the only lane currently live |
-| `ollama` | `skippy-debian-5090-ollama` | `http://skippy-debian-5090:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
+| `sglang` | `gpu-rig-sglang` | `http://gpu-rig:30000/v1` | sglang | 100 | Primary lane (262k context, batched parallel subagents) — the only lane currently live |
+| `ollama` | `gpu-rig-ollama` | `http://gpu-rig:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
 | `cloud` | `github-premium-cloud` | local `hermes` CLI | GitHub premium | 50 | Last-resort escalation |
 
 Lanes are named entries in `config/orchestration.json` with a `role`
@@ -32,7 +32,7 @@ The lane ships with `lanes.ollama.enabled: false` because Ollama binds to
 the tailnet interface on the rig:
 
 ```bash
-# On skippy-debian-5090:
+# On gpu-rig:
 sudo systemctl edit ollama
 # Add:
 #   [Service]
@@ -64,8 +64,8 @@ host in `../xx-stack/runtime/platforms.json`.
 1. Verify Tailscale can reach the rig:
 
 ```bash
-tailscale status | grep skippy
-curl -s http://skippy-debian-5090:30000/v1/models
+tailscale status | grep gpu-rig
+curl -s http://gpu-rig:30000/v1/models
 ```
 
 2. Run unit tests and health checks:

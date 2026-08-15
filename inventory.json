@@ -74,15 +74,15 @@
       ]
     },
     {
-      "id": "skippy-debian-5090",
-      "label": "Skippy Debian AI rig",
+      "id": "gpu-rig",
+      "label": "GPU rig",
       "network": {
         "scope": "tailscale",
-        "address": "skippy-debian-5090",
-        "notes": "Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet."
+        "address": "gpu-rig",
+        "notes": "REPLACE `address` with your own machine's MagicDNS name — `gpu-rig` is a placeholder, not a resolvable host. Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet."
       },
       "hardware": {
-        "summary": "8x RTX 5090 Debian AI rig (Skippy)",
+        "summary": "8x RTX 5090 Debian AI rig",
         "gpu": [
           {
             "name": "NVIDIA RTX 5090",

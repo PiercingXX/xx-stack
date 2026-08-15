@@ -42,7 +42,7 @@ Its job is to keep work local when possible, expand to Tailscale-reachable self-
 The intended operating model is:
 
 1. local workstation first
-2. remote self-hosted hosts over Tailscale second (currently Skippy, an 8x RTX 5090 Debian rig running sglang)
+2. remote self-hosted hosts over Tailscale second (currently the GPU rig, an 8x RTX 5090 Debian box running sglang)
 3. cloud never, unless explicitly opted in via `selectionPolicy.cloudEscalation.optIn` or `XX_STACK_ALLOW_CLOUD=1`
 
 The shipped platform registry now uses Tailscale-first tier IDs such as `tailscale-openai-compatible` and `tailscale-ollama`.
@@ -51,11 +51,11 @@ Those names reflect the actual runtime surface more directly: local plus Tailsca
 Current preferred self-hosted lane:
 
 1. local llama.cpp or compatible OpenAI-style endpoint when available
-2. Tailscale-reachable OpenAI-compatible hosts (Skippy's sglang endpoint on :30000 is the current primary)
+2. Tailscale-reachable OpenAI-compatible hosts (the GPU rig's sglang endpoint on :30000 is the current primary)
 3. Tailscale-reachable Ollama hosts as compatibility fallback
 4. cloud only when explicitly opted in and a workflow truly needs it
 
-Skippy's sglang lane is the preferred remote self-hosted lane; TurboQuant on llama.cpp remains the preferred local lane.
+The GPU rig's sglang lane is the preferred remote self-hosted lane; TurboQuant on llama.cpp remains the preferred local lane.
 Ollama remains available where it materially improves compatibility or tool reliability.
 
 ## Canonical Repo Surfaces

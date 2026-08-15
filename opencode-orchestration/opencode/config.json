@@ -10,9 +10,9 @@
     },
     "sglang-remote": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "SGLang-Skippy",
+      "name": "SGLang-GPU-Rig",
       "options": {
-        "baseURL": "http://skippy-debian-5090:30000/v1"
+        "baseURL": "http://gpu-rig:30000/v1"
       }
     },
     "ollama-local": {
@@ -24,9 +24,9 @@
     },
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama-Skippy",
+      "name": "Ollama-GPU-Rig",
       "options": {
-        "baseURL": "http://skippy-debian-5090:11434/v1"
+        "baseURL": "http://gpu-rig:11434/v1"
       }
     }
   },

@@ -18,8 +18,8 @@ The contract below must match those files.
 
 - Orchestration decisions are always made on the orchestrator host; inference runs
   on self-hosted lanes first.
-- Self-hosted inference host: `skippy-debian-5090` (Debian, 8x RTX 5090), reached
-  over Tailscale only (MagicDNS `skippy-debian-5090`).
+- Self-hosted inference host: `gpu-rig` (Debian, 8x RTX 5090), reached
+  over Tailscale only (MagicDNS `gpu-rig`).
 - Lanes are named config entries (`sglang`, `ollama`, `cloud`) with a `role`
   (`self_hosted` or `cloud`) and numeric `priority`; higher priority is tried first
   and cloud lanes are always policy-gated regardless of priority.
@@ -27,12 +27,12 @@ The contract below must match those files.
   order, so it selects *which* lanes participate; the order itself is always
   re-derived from `priority` (cloud last while `policy.self_hosted_first` is on).
 - Mandatory lane order for a primary task:
-  1. `skippy-debian-5090-sglang` (sglang, port 30000)
-  2. `skippy-debian-5090-ollama` (ollama, port 11434)
+  1. `gpu-rig-sglang` (sglang, port 30000)
+  2. `gpu-rig-ollama` (ollama, port 11434)
   3. Cloud lane when enabled and needed
 - Mandatory lane order for delegated subagent slices (`execution.subagent_profile_orders`):
-  1. `skippy-debian-5090-sglang` (preferred — batched parallel serving on 8x 5090)
-  2. `skippy-debian-5090-ollama`
+  1. `gpu-rig-sglang` (preferred — batched parallel serving on 8x 5090)
+  2. `gpu-rig-ollama`
   3. Cloud lane for eligible presets only after self-hosted lanes are unavailable or unsuitable
 
 ## 3) Current default model mapping
@@ -85,7 +85,7 @@ python3 scripts/hermes_orchestrator.py run \
 
 - Self-hosted lanes must use Tailscale-only connectivity.
 - Do not expose sglang or ollama endpoints publicly.
-- On `skippy-debian-5090`, prefer binding sglang/ollama to the tailnet interface
+- On `gpu-rig`, prefer binding sglang/ollama to the tailnet interface
   (find it with `tailscale ip -4` on the rig) rather than `0.0.0.0`, or firewall the ports to the tailnet.
 - Ollama requires `OLLAMA_HOST` to be set away from its `127.0.0.1` default before
   the ollama lane is reachable.
