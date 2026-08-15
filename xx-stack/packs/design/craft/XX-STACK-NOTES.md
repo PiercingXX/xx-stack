@@ -1,8 +1,10 @@
 # craft/ in xx-stack — what applies here and what does not
 
-**This file is authored in xx-stack.** So are `anti-ai-slop-rules.json` and
-`design-intent.md`. **Every other file in `craft/` is vendored byte-for-byte
-from `nexu-io/open-design`** (see `../manifest.json`, subtree `craft/`). The
+**This file is authored in xx-stack.** So are `anti-ai-slop-rules.json`,
+`design-intent.md`, `layering.md`, `data-visualization.md`, `responsive.md`,
+`theming.md`, and `iconography.md`. **Every other file in `craft/` is
+vendored byte-for-byte from `nexu-io/open-design`** (see `../manifest.json`,
+subtree `craft/`). The
 vendored files are never edited, because byte-comparability against upstream is
 the only way to tell our changes from upstream drift.
 
@@ -13,7 +15,7 @@ exists to prevent:
 |---|---|---|
 | Vendored | the 11 rulebooks + `README.md` + `FUTURE_SECTIONS.md` | never edit; byte-identical to `dceac12` |
 | Authored here, from upstream material we hold | `anti-ai-slop-rules.json`, this file | ours; rule *values* attributed per-entry |
-| Authored here, from ideas we did **not** take | `design-intent.md` | ours; nothing to byte-compare, nothing to sync |
+| Authored here, from ideas we did **not** take | `design-intent.md`, `layering.md`, `data-visualization.md`, `responsive.md`, `theming.md`, `iconography.md` | ours; nothing to byte-compare, nothing to sync |
 
 `README.md` in this directory is therefore upstream's README, unmodified, and it
 describes upstream's runtime. This file records where that description does not
@@ -74,15 +76,74 @@ The other 19 have no upstream binding. They are left unbound deliberately —
 absence is a decision here, the same way `packs/rules/coverage.json` records
 explicit empty entries. Add one only when upstream does, or with a reason.
 
-`design-intent.md` is a **twelfth** shipped section and is bound to **no**
-skill, on purpose. Every binding in the table above is upstream's at `dceac12`,
-transcribed unchanged; upstream has no binding for a file it does not have, and
-inventing one would break exactly the provenance rule that makes the table
-trustworthy. It still resolves as an `od.craft.requires` slug, so a skill can
-opt in later without a code change. `check-craft-references.mjs` therefore
-reports `craft sections shipped: 12` and names `design-intent` under "shipped
-but required by no skill" — a NOTE, not a failure, and the expected steady
-state.
+The six sections authored here — `design-intent.md`, `layering.md`,
+`data-visualization.md`, `responsive.md`, `theming.md` and `iconography.md` —
+are bound to **no** skill, on purpose. Every binding in the table above is
+upstream's at `dceac12`, transcribed unchanged; upstream has no binding for a
+file it does not have, and inventing one would break exactly the provenance
+rule that makes the table trustworthy. All six still resolve as
+`od.craft.requires` slugs, so a skill can opt in later without a code change.
+`check-craft-references.mjs` therefore reports `craft sections shipped: 17` and
+names `design-intent`, `layering`, `data-visualization`, `responsive`, `theming`
+and `iconography` under "shipped but required by no skill" — a NOTE, not a
+failure, and the expected steady state.
+
+Four more sections landed 2026-08-14, each filling a gap measured against the
+skills this pack already ships rather than proposed on taste:
+
+| Section | The gap it closes |
+|---|---|
+| `data-visualization.md` | Eight workflow skills name a chart type and ten `example.html` files contain plotted geometry, while `craft/` said one thing about charts: an alt-text line in `accessibility-baseline.md`. Worse, the rules actively conflicted — see below. |
+| `responsive.md` | `scripts/quality-gate-html.mjs` warns "No @media query found; verify responsive behavior" and no rulebook stood behind that warning. The gate named a defect; nothing said what correct looked like. |
+| `theming.md` | `color.md` §Dark themes covers dark *values* in twelve lines and nothing covers the *mechanism* — `prefers-color-scheme`, the `color-scheme` property, or the three-state light/dark/system problem. Companion rather than an edit, because `color.md` is vendored. |
+| `iconography.md` | `anti-ai-slop.md` bans emoji-as-icons at P0 with two enforced rules and named no replacement. Zero craft files mentioned icon systems, stroke weight, or optical sizing. |
+
+### The conflict `data-visualization.md` resolves
+
+This one was not a gap but a contradiction, and it is recorded because the
+fix is a *ruling*, not new material. An agent asked for a six-series chart
+faced `color.md`'s cap of two visible `--accent` uses per screen, the
+`accent-overuse` rule firing at six, and the `raw-hex` rule firing at twelve
+hexes outside `:root` — with no categorical tokens anywhere in the pack to
+use instead. A grep for `--chart-N` / `--series-N` / `--cat-N` across all 151
+design systems, 57 design skills, 31 workflow skills and `craft/` returned
+nothing. Every available route tripped a rule.
+
+The ruling: **series color is an identity role, accent color is an attention
+role.** The accent cap counts accent uses and never applied to series
+tokens; `--series-N` lives in `:root` like any other token, so `raw-hex` is
+satisfied by construction. `color.md` is unchanged and unchallenged — the
+contradiction was in what the pack failed to say, not in what it said.
+
+The pack's own `dashboard/example.html` shows the shape of the problem: it
+holds exactly two accent uses and colors its chart from `--good`/`--bad`,
+which works for two series and has no answer for five.
+
+`layering.md` is the only craft file with **no upstream at all** — open-design
+ships nothing on stacking contexts or z-index, and the gap was found by
+reviewing `mui/material-ui`. Its MUI-derived content is two tables of shipped
+values (the `zIndex` ladder and the elevation shadow alphas) read from
+`zIndex.js` and `shadows.js` at `48c6663a`; the CSS stacking-context and
+top-layer material is standard spec behaviour, not taken from any project. MUI
+is MIT, which is compatible, but no MUI file is redistributed and no MUI code is
+ported — the numbers are cited as reference values the way `animation-discipline.md`
+cites Material 3 and Carbon motion tokens. See `../manifest.json` source
+`material-ui`.
+
+### A stale entry in `FUTURE_SECTIONS.md`
+
+`FUTURE_SECTIONS.md` lists `motion-discipline` as a planned forward reference,
+but the shipped equivalent is `animation-discipline` and upstream's own README
+says so further down. That slug will therefore never resolve to a file, and
+`check-craft-references.mjs` will accept it forever — a permanently-valid
+reference to nothing.
+
+It is recorded here rather than removed, because `FUTURE_SECTIONS.md` is one of
+the 13 vendored files and this subtree's value rests on all 13 staying
+byte-identical to `dceac12`. Deleting one line would open an Apache-2.0 §4(b)
+modified set that is currently empty, to fix a stale entry that costs nothing at
+runtime. The other two entries, `pixel-discipline` and `typographic-rhythm`, are
+genuinely still unshipped and are not affected.
 
 Resolve a slug with:
 
