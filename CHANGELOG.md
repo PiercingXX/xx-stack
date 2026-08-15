@@ -7,6 +7,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.64.0] — 2026-08-14
+
 A large release. The tool surface grew from 33 to 45 always-registered tools
 plus 2 optional lifecycle hooks, and every tool now declares its safety
 annotations. Supervision gained goal contracts, task leases, a dependency
@@ -73,6 +77,39 @@ fixes that followed are recorded in `MANUAL.md` §11.
   routing lane, never dialed by the MCP server; `research-deep` prefers it and
   degrades to plain fetch.
 - **`MANUAL.md`** — full repository reference and the audit defect register.
+- **`npm run ci:parity`** — asserts every gate in the `verify` chain has a step
+  in `ci.yml`, with exemptions required to carry a reason and checked for
+  staleness in both directions. Self-enforcing: it is itself in both.
+- `repository.directory` on `@xx-stack/mcp-server`, so its `repository` field
+  resolves to the workspace rather than the repo root.
+- **`craft/layering.md`** — thirteenth craft section, and the first with no
+  upstream: stacking contexts, why raising `z-index` does not work, a named
+  layering ladder, the top layer via `dialog.showModal()`, and why one shadow
+  ladder cannot serve dark mode. Bound to no skill, like `design-intent.md`.
+- **Four further craft sections**, each filling a gap measured against the
+  skills this pack already ships rather than proposed on taste. All bound to no
+  skill; `craft/` now reports 17 shipped sections.
+  - **`craft/data-visualization.md`** — resolves a live contradiction as well as
+    a gap. Eight workflow skills name a chart type and ten examples contain
+    plotted geometry, while craft carried one sentence about charts. Worse, a
+    six-series chart had no legal route: `color.md` caps `--accent` at 2 visible
+    uses, `accent-overuse` fires at 6, `raw-hex` fires at 12, and no categorical
+    tokens existed anywhere in the pack. The ruling — series colour is an
+    *identity* role, accent colour an *attention* role, so the accent cap never
+    applied to `--series-N` — leaves `color.md` unedited and uncontradicted.
+    Carries the validation thresholds and the token contract, not a palette.
+  - **`craft/responsive.md`** — the rulebook behind a gate that already warns
+    "No @media query found" with nothing standing behind it. Reflow as a WCAG
+    1.4.10 legal floor, mobile-first in rem, container queries for components,
+    `clamp()` and its two traps, 2D-content handling, `dvh`/`svh`.
+  - **`craft/theming.md`** — the mechanism `color.md` §Dark themes does not
+    cover: the three-state light/dark/**system-default** problem, the
+    `color-scheme` property, the `:not([data-theme="light"])` guard, and
+    reference/system/component token layering. A companion file, because
+    `color.md` is vendored byte-identical.
+  - **`craft/iconography.md`** — gives the P0 emoji-as-icons ban a named
+    alternative, which it had never had: inline SVG on one grid at one stroke,
+    optical sizing, and the decorative-versus-meaningful naming decision.
 
 ### Changed
 
@@ -99,6 +136,49 @@ fixes that followed are recorded in `MANUAL.md` §11.
 - `verify_edit` is now driven through the registered tool in tests rather than
   only through its helpers.
 - Hermes TODO reconciled against what actually shipped.
+- **Six gates ran in `verify` but never in CI**: `rules:check`, `nano:check`,
+  `guardrails:check`, `design:systems-lint`, `design:craft-refs` and
+  `design:anti-slop-test`. All six now run on every push and pull request.
+  CONTRIBUTING.md had asserted the two suites were equivalent while they were
+  not; the paragraph is corrected and the invariant is now a gate rather than a
+  claim.
+- **`design-systems/material/DESIGN.md` did not describe Material.** Its
+  palette, fonts, type scale, spacing and motion were corrected against
+  `mui/material-ui` at `48c6663a`. Recorded in `packs/design/manifest.json`
+  under `resolvedContentDefects`.
+- `packs/design/README.md` said `design:craft-refs` and `design:anti-slop-test`
+  were not wired into `verify`. Both had been for some time.
+- `packs/design/README.md` counted five contributing upstreams while its own
+  table listed six plus a carve-out.
+
+### Security
+
+- **`npm audit --omit=dev --audit-level=high` now gates CI.** Seven advisories
+  against shipped transitive dependencies (3 high, 3 moderate, 1 low — `hono`,
+  `fast-uri`, `ip-address`, `qs`, `body-parser`, `express-rate-limit`,
+  `@hono/node-server`, all reached through `@modelcontextprotocol/sdk`) were
+  resolved by a lockfile update. Shipped dependencies now audit clean.
+- **`SECURITY.md`** — private vulnerability reporting channel, supported
+  versions, and an explicit in-scope/out-of-scope boundary for a project whose
+  attack surface is an execution policy and a routing decision.
+- **`.github/dependabot.yml`** — weekly npm and GitHub Actions updates, with
+  majors on the two shipped dependencies held back for a human.
+- **A maintainer tailnet name shipped in the repository and in the npm
+  package.** The host `skippy-debian-5090` was a real Tailscale MagicDNS
+  address, carried in `inventory.json` as `network.address`, in both generated
+  registries, in the Hermes lanes, in seven docs, and — because
+  `runtime-constants.json` is in the package's `files` — in anything published
+  from this tree. It is now `gpu-rig`, a placeholder the inventory tells you to
+  replace, across 62 occurrences in 18 files, including the `skippyDebian5090`
+  constant, its TypeScript type, and the `XX_STACK_HOST_SKIPPY_DEBIAN_5090`
+  setup variable. The 1.63.0 entry below claims "No private network addresses,
+  tailnet names, or absolute home paths in the repository"; that claim was
+  false when written, and is true as of this release. Re-checked at the same
+  time: no absolute home paths, no RFC1918 or CGNAT addresses, and no
+  `*.ts.net` names remain in tracked files.
+- Known and deliberately not gated: `eslint` is pinned at `8.57.1`, which is
+  end-of-life and pulls a `js-yaml` carrying two high advisories. Dev-only, so
+  it does not ship; clearing it means an ESLint 9 flat-config migration.
 
 ## [1.63.0] — 2026-07-24
 
@@ -165,4 +245,5 @@ components and the routing server was made publishable.
 - No private network addresses, tailnet names, or absolute home paths in the
   repository.
 
+[1.64.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.64.0
 [1.63.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.63.0
