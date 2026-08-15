@@ -36,6 +36,33 @@ jobs:
       - name: Verify generated registries match inventory.json
         run: npm run inventory:check
 
+      # The three checks below are in `npm run verify` and were absent here
+      # until 2026-08-14, which made CI strictly weaker than a local run in
+      # exactly the places least worth leaving unguarded. guardrails:check in
+      # particular is a safety gate that had never run on a pull request.
+      - name: Verify rules coverage
+        run: npm run rules:check
+
+      - name: Verify nano tiers
+        run: npm run nano:check
+
+      - name: Verify dangerous-pattern guardrails
+        run: npm run guardrails:check
+
+      # Self-enforcing: fails if any gate in the `verify` chain has no step in
+      # this file. Prose in CONTRIBUTING.md asserted that invariant for months
+      # while six gates were missing, so it is a gate now rather than a promise.
+      - name: Verify CI enforces every verify gate
+        run: npm run ci:parity
+
+      # Shipped dependencies only. Dev-only advisories are tracked by Dependabot
+      # but do not gate the build, because they are not distributed — the
+      # reasoning is written down in SECURITY.md rather than left to this
+      # comment. `npm audit` ignores workspace boundaries and reads the root
+      # lockfile, so this covers mcp-server's dependencies too.
+      - name: Audit shipped dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint
 
@@ -94,6 +121,22 @@ jobs:
       # profiles run when an agent invokes it with --skill on its own output.
       - name: Run HTML quality gate
         run: npm run design:html-gate
+
+      # Read-only lint over all 151 design-systems/ files. This is the gate
+      # manifest.json names as the thing standing between a naive re-vendor and
+      # silently reintroduced 1.06:1 body text — so CI is precisely where it
+      # belongs, and it was missing here until 2026-08-14.
+      - name: Lint design systems (WCAG AA on declared pairs, section order)
+        run: npm run design:systems-lint
+
+      - name: Verify craft references resolve
+        run: npm run design:craft-refs
+
+      # Drives the real anti-slop gate against a slop fixture and a clean one:
+      # asserts every rule fires at its declared severity, that none fire on
+      # clean input, and that only P0 changes the exit code.
+      - name: Test anti-slop rules
+        run: npm run design:anti-slop-test
 
   hermes:
     name: Hermes Control Plane
