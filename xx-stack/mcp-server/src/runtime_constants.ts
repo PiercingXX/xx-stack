@@ -11,7 +11,7 @@ type RuntimeConstants = {
   };
   hosts: {
     localWorkstation: string;
-    skippyDebian5090: string;
+    gpuRig: string;
     testBenchArchlinux: string;
     localOpenAiCompatible: string;
     tailscaleOpenAiCompatiblePrimary: string;

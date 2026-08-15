@@ -132,7 +132,7 @@ for (const [providerKey, providerValue] of Object.entries(providers)) {
   if (providerKey === PROVIDER_IDS.ollamaRemote || providerKey.startsWith("ollama-")) {
     const remoteHostId =
       providerKey === PROVIDER_IDS.ollamaRemote
-        ? HOST_IDS.skippyDebian5090
+        ? HOST_IDS.gpuRig
         : providerKey === PROVIDER_IDS.ollama5090
           ? HOST_IDS.testBenchArchlinux
           : providerKey;

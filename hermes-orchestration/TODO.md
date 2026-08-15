@@ -163,7 +163,7 @@ python3 scripts/hermes_orchestrator.py run \
 
 ## Historical note
 
-The 2026-07-05 retarget moved self-hosted lanes to `skippy-debian-5090`
+The 2026-07-05 retarget moved self-hosted lanes to `gpu-rig`
 (8x RTX 5090) over Tailscale: sglang on port 30000 (primary, `qwen3-coder-next`)
 and ollama on port 11434 (fallback, pending `OLLAMA_HOST` exposure on the rig).
 Older references to "Debian local llama.cpp" and "Arch over Tailscale" map to the

@@ -22,7 +22,7 @@ and the retired hosts are named only under "Historical record".
 | Host id | Scope | Hardware | Runtimes |
 |---|---|---|---|
 | `local-workstation` | `localhost` (127.0.0.1) | detected at setup | ollama :11434 (enabled, primary), llama-cpp :8080 (disabled) |
-| `skippy-debian-5090` | `tailscale` | 8x RTX 5090, 32 GB each (256 GB total VRAM) | sglang :30000 (enabled, primary), ollama :11434 (disabled) |
+| `gpu-rig` | `tailscale` | 8x RTX 5090, 32 GB each (256 GB total VRAM) | sglang :30000 (enabled, primary), ollama :11434 (disabled) |
 
 ## Lanes (from `config/orchestration.json`)
 
@@ -30,8 +30,8 @@ and the retired hosts are named only under "Historical record".
 
 | Lane key | Lane name | Role | Priority | Model | Enabled |
 |---|---|---|---|---|---|
-| `sglang` | `skippy-debian-5090-sglang` | self_hosted | 100 | `qwen3-coder-next` | yes |
-| `ollama` | `skippy-debian-5090-ollama` | self_hosted | 70 | `qwen3-coder:30b` | no |
+| `sglang` | `gpu-rig-sglang` | self_hosted | 100 | `qwen3-coder-next` | yes |
+| `ollama` | `gpu-rig-ollama` | self_hosted | 70 | `qwen3-coder:30b` | no |
 | `cloud` | `github-premium-cloud` | cloud | 50 | `gpt-5.3-codex` | yes (gated) |
 
 Two things follow from the generator and are easy to trip over:
@@ -64,7 +64,7 @@ prepared to hold the VRAM.
 - 2
 - 4
 
-`skippy-debian-5090` declares `maxParallelSlices: 8`; sglang batches concurrent
+`gpu-rig` declares `maxParallelSlices: 8`; sglang batches concurrent
 requests across the GPUs, so parallel slices there are close to free relative to
 sequential execution. Slice counts above 4 are worth measuring on that lane.
 
@@ -209,11 +209,11 @@ A threshold is only meaningful paired with the slice count it was measured at.
 
 ### Threshold template
 
-- Lane `sglang` (`skippy-debian-5090-sglang`, primary self-hosted)
+- Lane `sglang` (`gpu-rig-sglang`, primary self-hosted)
   - min_tokens_per_sec: TBD — see above
   - max_p95_latency_ms: TBD — see above
   - required_gpu_resident: true
-- Lane `ollama` (`skippy-debian-5090-ollama`, compatibility/fallback)
+- Lane `ollama` (`gpu-rig-ollama`, compatibility/fallback)
   - min_tokens_per_sec: TBD — see above
   - max_p95_latency_ms: TBD — see above
   - required_gpu_resident: true
@@ -224,11 +224,11 @@ A threshold is only meaningful paired with the slice count it was measured at.
 
 ## Candidate baseline queue
 
-`skippy-debian-5090`, sglang lane
+`gpu-rig`, sglang lane
 - `qwen3-coder-next` (currently qualified default; 262k context, tool-call probe
   PASS 2026-07-05)
 
-`skippy-debian-5090`, ollama lane — blocked
+`gpu-rig`, ollama lane — blocked
 - `qwen3-coder:30b`. The runtime is `enabled: false` in `inventory.json`: Ollama
   binds to 127.0.0.1 by default and is not reachable over Tailscale until
   `OLLAMA_HOST` is set on the rig and it is restarted. Nothing on this lane can
@@ -247,7 +247,7 @@ Each run produces one machine-readable JSON file at
 
 | Field | Notes |
 |---|---|
-| `host` | lane name, e.g. `skippy-debian-5090-sglang` |
+| `host` | lane name, e.g. `gpu-rig-sglang` |
 | `lane_key` | lane key, e.g. `sglang` |
 | `model` | model benched |
 | `context` | `--context-tokens` |
@@ -287,7 +287,7 @@ record for 2 of 12 required fields. They are moved here rather than faked:
 
 | Field | Emitted by bench | Why the bench cannot produce it |
 |---|---|---|
-| `gpu_residency_pass` | `null`, with `gpu_residency_method: "not_measured_by_bench"` | The bench is an HTTP client. GPU residency is an on-host `nvidia-smi` fact, and the production lane (`skippy-debian-5090`) is remote over Tailscale, so a local probe would be measuring the wrong machine. Collect it on the rig per "Mandatory runtime telemetry" and attach it to the run directory. |
+| `gpu_residency_pass` | `null`, with `gpu_residency_method: "not_measured_by_bench"` | The bench is an HTTP client. GPU residency is an on-host `nvidia-smi` fact, and the production lane (`gpu-rig`) is remote over Tailscale, so a local probe would be measuring the wrong machine. Collect it on the rig per "Mandatory runtime telemetry" and attach it to the run directory. |
 | `lane_classification` | `null`, with `lane_classification_reason` | P0/P1/P2 is derived by comparing the run against the lane thresholds — which are `TBD`. The bench cannot classify against a threshold that does not exist. Once a lane's thresholds are set per the procedure above, classification becomes derivable and can move back into the required set. |
 
 Both are `null` rather than `""`, so a consumer can distinguish "not measured"
@@ -307,11 +307,11 @@ from "measured as empty".
 
 ## Current qualified baseline
 
-- **sglang lane (`skippy-debian-5090`): `qwen3-coder-next`.** Qualified on
+- **sglang lane (`gpu-rig`): `qwen3-coder-next`.** Qualified on
   capability, not on throughput: 262k context, tool-call probe PASS on
   2026-07-05. No throughput or latency qualification exists, because the
   thresholds are unset.
-- **ollama lane (`skippy-debian-5090`): `qwen3-coder:30b` — unqualified.** The
+- **ollama lane (`gpu-rig`): `qwen3-coder:30b` — unqualified.** The
   runtime is disabled in `inventory.json`; see the candidate queue above.
 
 These are encoded in `config/orchestration.json`, which is generated from
@@ -336,6 +336,6 @@ runs passed an output-validity gate because there was none.
   `qwen2.5-coder-14b-instruct-q5_k_m`: PASS at context=32768, parallel=2,
   iterations=3.
 
-2026-07-05: production moved to `skippy-debian-5090` (8x RTX 5090) running
+2026-07-05: production moved to `gpu-rig` (8x RTX 5090) running
 sglang :30000 and ollama :11434 over Tailscale. The llama.cpp-era defaults
 (`qwen2.5-coder-14b/7b`, `qwen3.6-35b`, `qwen2.5-coder-32b`) are retired.

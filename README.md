@@ -235,7 +235,7 @@ specialised for OpenCode and kept structurally in step by
 
 ## A note on the examples
 
-Some files mention `skippy-debian-5090`, an 8×RTX 5090 box. That's the author's
+Some files mention `gpu-rig`, an 8×RTX 5090 box. That's the author's
 hardware, included as a worked example. **You don't need it** — nothing assumes
 it exists, and the stack falls back to running everything locally.
 
