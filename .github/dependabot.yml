@@ -1,0 +1,43 @@
+# Dependabot configuration.
+#
+# Scope note: the npm entry at "/" covers the mcp-server workspace too, because
+# npm workspaces resolve into the root lockfile. A second entry pointed at
+# /xx-stack/mcp-server would find no lockfile of its own and produce nothing.
+#
+# hermes-orchestration is deliberately absent: it has no requirements.txt and no
+# pyproject.toml, running on the Python 3.11 standard library alone. Add a pip
+# entry the day that stops being true.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # Dev tooling moves together and is not a build gate (see SECURITY.md),
+      # so batching it keeps the PR volume down without hiding anything.
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - '*'
+    ignore:
+      # Majors on the two shipped dependencies change the tool surface and the
+      # schema contract respectively; both want a human deciding when, not a
+      # bot opening the PR. Patch and minor still come through.
+      - dependency-name: '@modelcontextprotocol/sdk'
+        update-types: [version-update:semver-major]
+      - dependency-name: zod
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
