@@ -1,6 +1,6 @@
 {
   "name": "@xx-stack/mcp-server",
-  "version": "1.63.0",
+  "version": "1.64.0",
   "description": "MCP server for xx-stack platform routing — multi-provider inventory, health checks, task routing, and supervision",
   "main": "dist/index.js",
   "bin": {
@@ -46,7 +46,8 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/piercingxx/xx-stack.git"
+    "url": "git+https://github.com/piercingxx/xx-stack.git",
+    "directory": "xx-stack/mcp-server"
   },
   "bugs": {
     "url": "https://github.com/piercingxx/xx-stack/issues"
