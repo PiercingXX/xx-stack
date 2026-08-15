@@ -28,19 +28,31 @@ npm run verify
 
 `npm run verify` runs every gate CI runs in a single pass: layout, agent mirror
 sync, drift, rules coverage, nano tiers, inventory registries, guardrails,
-`lint`, `format:check`, the two design-pack gates (`design:golden`,
-`design:html-gate`), the MCP server suite, and the Hermes suite.
+`lint`, `format:check`, the five design-pack gates (`design:golden`,
+`design:html-gate`, `design:systems-lint`, `design:craft-refs`,
+`design:anti-slop-test`), the MCP server suite, and the Hermes suite.
 
-Two things CI does that `verify` does not, so a green local run is strong
+The two suites are the same set as of 2026-08-14, and that is a property worth
+keeping rather than an accident. Until then CI ran ten of the sixteen gates:
+`rules:check`, `nano:check`, `guardrails:check`, `design:systems-lint`,
+`design:craft-refs` and `design:anti-slop-test` existed, passed locally, and
+never ran on a pull request. **If you add a gate to `verify`, add it to
+`ci.yml` in the same commit.**
+
+Three things CI does that `verify` does not, so a green local run is strong
 evidence but not proof:
 
 - CI runs the MCP server suite on **Node 20 and 22**; `verify` runs it on
   whatever Node you have.
 - CI regenerates `DESIGN-CATALOG.md` (`npm run design:catalog`) and fails if the
   committed copy is stale. `verify` does not, because it mutates the tree.
+- CI runs `npm audit --omit=dev --audit-level=high`. `verify` does not, because
+  it needs the network and should stay runnable offline. Dev-only advisories are
+  deliberately not a gate; [SECURITY.md](SECURITY.md) says why.
 
-If you touched the design pack, run `npm run design:catalog` and commit the
-result. Otherwise, treat CI as the authority.
+Nothing runs in `verify` that CI skips. If you touched the design pack, run
+`npm run design:catalog` and commit the result. Otherwise, treat CI as the
+authority.
 
 ### Git Hooks
 
