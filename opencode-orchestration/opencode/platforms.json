@@ -141,10 +141,10 @@
       "priority": 2,
       "hosts": [
         {
-          "id": "skippy-debian-5090-sglang",
-          "label": "Skippy Debian AI rig (sglang lane)",
+          "id": "gpu-rig-sglang",
+          "label": "GPU rig (sglang lane)",
           "provider": "sglang-remote",
-          "endpoint": "http://skippy-debian-5090:30000",
+          "endpoint": "http://gpu-rig:30000",
           "networkScope": "tailscale",
           "enabled": true,
           "primary": true,
@@ -159,7 +159,7 @@
             "contextReservePercent": 20,
             "scheduling": "throughput"
           },
-          "connectionNotes": "Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet. Preferred remote lane. sglang batches concurrent requests across the GPUs, so parallel slices are close to free relative to sequential execution.",
+          "connectionNotes": "REPLACE `address` with your own machine's MagicDNS name — `gpu-rig` is a placeholder, not a resolvable host. Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet. Preferred remote lane. sglang batches concurrent requests across the GPUs, so parallel slices are close to free relative to sequential execution.",
           "delegationPolicy": {
             "preferredTaskTypes": [
               "planning",
@@ -175,7 +175,7 @@
             ]
           },
           "hardware": {
-            "summary": "8x RTX 5090 Debian AI rig (Skippy)",
+            "summary": "8x RTX 5090 Debian AI rig",
             "gpu": [
               {
                 "name": "NVIDIA RTX 5090",
@@ -220,10 +220,10 @@
       "priority": 3,
       "hosts": [
         {
-          "id": "skippy-debian-5090-ollama",
-          "label": "Skippy Debian AI rig (ollama lane)",
+          "id": "gpu-rig-ollama",
+          "label": "GPU rig (ollama lane)",
           "provider": "ollama",
-          "endpoint": "http://skippy-debian-5090:11434",
+          "endpoint": "http://gpu-rig:11434",
           "networkScope": "tailscale",
           "enabled": false,
           "reachable": false,
@@ -237,7 +237,7 @@
             "contextReservePercent": 20,
             "scheduling": "throughput"
           },
-          "connectionNotes": "Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet. Ollama binds to 127.0.0.1 by default and is not reachable over Tailscale until you set OLLAMA_HOST on the rig and restart it. Enable this runtime once that is done and `ollama list` shows the model below.",
+          "connectionNotes": "REPLACE `address` with your own machine's MagicDNS name — `gpu-rig` is a placeholder, not a resolvable host. Reached over Tailscale by MagicDNS name. Do not expose these ports publicly; bind them to the tailnet interface (find it with `tailscale ip -4` on the rig) or firewall them to the tailnet. Ollama binds to 127.0.0.1 by default and is not reachable over Tailscale until you set OLLAMA_HOST on the rig and restart it. Enable this runtime once that is done and `ollama list` shows the model below.",
           "delegationPolicy": {
             "preferredTaskTypes": [
               "planning",
@@ -253,7 +253,7 @@
             ]
           },
           "hardware": {
-            "summary": "8x RTX 5090 Debian AI rig (Skippy)",
+            "summary": "8x RTX 5090 Debian AI rig",
             "gpu": [
               {
                 "name": "NVIDIA RTX 5090",

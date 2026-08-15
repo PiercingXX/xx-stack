@@ -1081,7 +1081,7 @@ test("sync-runtime-config falls back when a remote tier disappears and restores 
         label: "remote",
         hosts: [
           {
-            id: HOST_IDS.skippyDebian5090,
+            id: HOST_IDS.gpuRig,
             label: "server",
             provider: PROVIDER_IDS.ollamaRemote,
             endpoint: "http://100.100.0.1:11434",
@@ -1667,7 +1667,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
         priority: 2,
         hosts: [
           {
-            id: HOST_IDS.skippyDebian5090,
+            id: HOST_IDS.gpuRig,
             label: "server",
             provider: PROVIDER_IDS.ollamaRemote,
             endpoint: "http://127.0.0.1:11434",
@@ -1680,7 +1680,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
     ],
   };
 
-  const banned = new Set([`${HOST_IDS.skippyDebian5090}::fallback-model`]);
+  const banned = new Set([`${HOST_IDS.gpuRig}::fallback-model`]);
   const result = await __testExports.buildWatchdogRouteCandidates(
     registry as never,
     "implement feature",
@@ -1691,7 +1691,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
   );
 
   const bannedEntry = result.health.find(
-    (entry) => (entry as { host?: string }).host === HOST_IDS.skippyDebian5090
+    (entry) => (entry as { host?: string }).host === HOST_IDS.gpuRig
   );
   assert.ok(bannedEntry, "banned host should appear in health report");
   assert.ok(

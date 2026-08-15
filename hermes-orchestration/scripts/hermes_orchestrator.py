@@ -2,7 +2,7 @@
 """Self-hosted-first orchestration runner for OpenAI-compatible endpoints.
 
 Routes work to self-hosted inference lanes first (sglang and ollama on the
-skippy-debian-5090 rig over Tailscale) and only allows cloud on explicit gate.
+gpu-rig rig over Tailscale) and only allows cloud on explicit gate.
 
 Lanes are named entries in config with a role ("self_hosted" or "cloud") and a
 numeric priority; higher priority is tried first. Cloud lanes are always gated

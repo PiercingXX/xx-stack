@@ -9,7 +9,7 @@
  * A machine is described ONCE, with its hardware and the runtimes installed on
  * it. Each (machine x runtime) pair becomes a host in the TS registries and a
  * lane in Hermes, inheriting the machine's hardware and execution policy. That
- * is the redundancy this removes: previously Skippy's GPU block was written
+ * is the redundancy this removes: previously the GPU rig's hardware block was written
  * twice in the TS registry and its endpoints a third time in Hermes.
  *
  * Usage:

@@ -7,7 +7,7 @@
   },
   "hosts": {
     "localWorkstation": "local-workstation",
-    "skippyDebian5090": "skippy-debian-5090",
+    "gpuRig": "gpu-rig",
     "testBenchArchlinux": "test-bench-archlinux",
     "localOpenAiCompatible": "local-openai-compatible",
     "tailscaleOpenAiCompatiblePrimary": "tailscale-openai-compatible-primary",
