@@ -36,7 +36,15 @@ async function withTempRepo(fn: (root: string) => Promise<void>): Promise<void> 
     execSync('git config user.name "Test"', { cwd: dir, stdio: "ignore" });
     await fn(dir);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    // maxRetries is not defensive padding. Node documents ENOTEMPTY as a
+    // retryable condition for `rm` with recursive:true, and defaults
+    // maxRetries to 0 — so the default is the one setting that cannot survive
+    // a concurrent writer or a slow filesystem. The temp repo here holds
+    // MAX_SELECTION_CANDIDATES + 40 files across git's 256-way object fanout,
+    // and CI reproduced the failure on Node 22 twice while Node 20 and 26
+    // passed: the internal rimraf differs by major, so a clean teardown on one
+    // version proves nothing about another.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 }
 
@@ -998,7 +1006,15 @@ test("a directory outside git degrades without spawning a process per file", asy
       `a non-git directory must not pay a spawn per file (saw ${gitLogSpawns(log).length})`
     );
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    // maxRetries is not defensive padding. Node documents ENOTEMPTY as a
+    // retryable condition for `rm` with recursive:true, and defaults
+    // maxRetries to 0 — so the default is the one setting that cannot survive
+    // a concurrent writer or a slow filesystem. The temp repo here holds
+    // MAX_SELECTION_CANDIDATES + 40 files across git's 256-way object fanout,
+    // and CI reproduced the failure on Node 22 twice while Node 20 and 26
+    // passed: the internal rimraf differs by major, so a clean teardown on one
+    // version proves nothing about another.
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   }
 });
 
