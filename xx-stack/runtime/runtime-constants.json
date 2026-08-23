@@ -7,7 +7,7 @@
   },
   "hosts": {
     "localWorkstation": "local-workstation",
-    "gpuRig": "gpu-rig",
+    "exampleGpuBox": "example-gpu-box",
     "testBenchArchlinux": "test-bench-archlinux",
     "localOpenAiCompatible": "local-openai-compatible",
     "tailscaleOpenAiCompatiblePrimary": "tailscale-openai-compatible-primary",

@@ -33,7 +33,7 @@ const exports = {
   XX_STACK_TIER_TAILSCALE_OPENAI_COMPATIBLE: constants.tiers.tailscaleOpenAiCompatible,
   XX_STACK_TIER_CLOUD: constants.tiers.cloud,
   XX_STACK_HOST_LOCAL_WORKSTATION: constants.hosts.localWorkstation,
-  XX_STACK_HOST_GPU_RIG: constants.hosts.gpuRig,
+  XX_STACK_HOST_EXAMPLE_GPU_BOX: constants.hosts.exampleGpuBox,
   XX_STACK_HOST_TEST_BENCH_ARCHLINUX: constants.hosts.testBenchArchlinux,
   XX_STACK_HOST_LOCAL_OPENAI_COMPATIBLE: constants.hosts.localOpenAiCompatible,
   XX_STACK_HOST_TAILSCALE_OPENAI_COMPATIBLE_PRIMARY: constants.hosts.tailscaleOpenAiCompatiblePrimary,

@@ -21,6 +21,10 @@ export const BATCH_ROUTE_CONCURRENCY = 8;
  * Map `items` through an async `fn` with at most `limit` invocations in
  * flight at any moment. Results are position-aligned with the input array:
  * result[i] always corresponds to items[i], regardless of completion order.
+ *
+ * Fails fast: once `fn` rejects, idle workers stop picking up new items, so
+ * side effects do not continue fanning out after a sibling already failed.
+ * Invocations already in flight are allowed to finish.
  */
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],
@@ -32,12 +36,19 @@ export async function mapWithConcurrency<T, R>(
   }
   const results = new Array<R>(items.length);
   let nextIndex = 0;
+  let stopped = false;
   const workerCount = Math.min(Math.floor(limit), items.length);
   const workers = Array.from({ length: workerCount }, async () => {
     for (;;) {
+      if (stopped) return;
       const index = nextIndex++;
       if (index >= items.length) return;
-      results[index] = await fn(items[index] as T, index);
+      try {
+        results[index] = await fn(items[index] as T, index);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
     }
   });
   await Promise.all(workers);

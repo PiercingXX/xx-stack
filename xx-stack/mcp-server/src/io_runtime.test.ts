@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FileHandle } from "node:fs/promises";
@@ -152,6 +152,69 @@ test("a failed file fsync fails the write rather than publishing unflushed data"
   await assert.rejects(() => atomicWriteTextFile("/store/dir/state.json", "payload\n", io), /EIO/);
   assert.ok(!calls.includes("rename"), "an unflushed temp file must never be given the real name");
   assert.ok(calls.includes("close"), "the handle is closed even when the sync fails");
+});
+
+// A failed write used to leave its `.tmp-*` behind forever. These tests open a
+// REAL temp file through the real fs and then fail a later step, so the
+// cleanup can be observed by listing the directory afterwards.
+
+/** Real-fs `open` whose temp handle fails the write step. */
+function ioFailingAtWrite(): AtomicWriteIo {
+  return {
+    open: async (path, flags) => {
+      if (flags === "r") return open(path, flags);
+      const handle = await open(path, flags);
+      return {
+        writeFile: async () => {
+          throw errnoError("EIO");
+        },
+        sync: handle.sync.bind(handle),
+        close: handle.close.bind(handle),
+      } as unknown as FileHandle;
+    },
+    rename,
+  };
+}
+
+function ioFailingAtRename(): AtomicWriteIo {
+  return {
+    open,
+    rename: async () => {
+      throw errnoError("EACCES");
+    },
+  };
+}
+
+async function assertNoOrphans(dir: string): Promise<void> {
+  assert.deepEqual(await readdir(dir), [], "no temp file may survive a failed write");
+}
+
+test("a failed write cleans up its temp file instead of orphaning it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-io-tmp-write-"));
+  try {
+    await assert.rejects(
+      () => atomicWriteTextFile(join(dir, "state.json"), "payload\n", ioFailingAtWrite()),
+      /EIO/
+    );
+    await assertNoOrphans(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failed rename cleans up its temp file too", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-io-tmp-rename-"));
+  try {
+    // The temp file genuinely exists here: it was written and synced before the
+    // rename was refused.
+    await assert.rejects(
+      () => atomicWriteTextFile(join(dir, "state.json"), '{"v":1}\n', ioFailingAtRename()),
+      /EACCES/
+    );
+    await assertNoOrphans(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("the real filesystem path still writes the content and leaves no temp file behind", async () => {

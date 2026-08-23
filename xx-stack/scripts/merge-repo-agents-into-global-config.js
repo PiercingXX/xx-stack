@@ -10,6 +10,21 @@ if (!sourcePath || !targetPath) {
   process.exit(1);
 }
 
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Nothing to clean up.
+    }
+    throw error;
+  }
+}
+
 const source = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
 const target = JSON.parse(fs.readFileSync(targetPath, "utf8"));
 
@@ -76,7 +91,7 @@ target.agent.explore = {
   disable: true,
 };
 
-fs.writeFileSync(targetPath, JSON.stringify(target, null, 2) + "\n");
+writeFileAtomic(targetPath, `${JSON.stringify(target, null, 2)}\n`);
 console.log(
   `  merged agents into global config: ${added} added, ${updated} updated, ${removed} removed`
 );

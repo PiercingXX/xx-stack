@@ -396,6 +396,35 @@ test("a non-zero exit rejects with stdout and stderr attached", { skip: POSIX_ON
   }
 });
 
+// The timeout branch used to precede the success check on `close`, so a child
+// that finished cleanly inside its timeout window was misreported as timed out.
+// This script ignores SIGTERM (the teardown signal the timeout sends), keeps
+// running past the deadline, and then exits 0 — a deterministic replay of that
+// race: the timeout fires first, but the exit is genuinely clean.
+
+test(
+  "a clean exit wins even when the timeout fired moments earlier",
+  { skip: POSIX_ONLY },
+  async () => {
+    const dir = await mkdtemp(join(tmpdir(), "xx-stack-cleanexit-"));
+    const script = join(dir, "slow-but-clean.sh");
+    await writeFile(script, "trap '' TERM\nsleep 2\necho clean-done\nexit 0\n");
+    try {
+      const startedAt = Date.now();
+      const { stdout } = await guardedExecFile("bash", [script], { timeout: 500 }, HOOK_GUARD);
+      const elapsedMs = Date.now() - startedAt;
+
+      assert.ok(stdout.includes("clean-done"), "the clean run's output must be resolved");
+      assert.ok(
+        elapsedMs >= 1_000,
+        `the child ran to completion (${elapsedMs}ms), not torn down at the deadline`
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+);
+
 test(
   "output beyond execFile's old 1MB maxBuffer is captured, not an error",
   { skip: POSIX_ONLY },

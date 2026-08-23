@@ -2,6 +2,10 @@
 Description=Hermes orchestrator loopback proxy (OpenAI-compatible)
 After=network-online.target
 Wants=network-online.target
+# Crash-loop guard: with only RestartSec=5 the default start limit never
+# trips, so a failing proxy restarts forever. 5 failures in 5 minutes stops it.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 # TEMPLATE: replace __HERMES_DIR__ with the absolute path to this
@@ -17,6 +21,17 @@ EnvironmentFile=%h/.config/hermes-orchestration/proxy.env
 ExecStart=/usr/bin/python3 __HERMES_DIR__/scripts/hermes_orchestrator.py serve
 Restart=on-failure
 RestartSec=5
+
+# Network-facing service: run without privilege escalation or broad write
+# access. The unit only needs to append telemetry under __HERMES_DIR__/logs/
+# (routing.jsonl); everything else stays read-only.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=__HERMES_DIR__/logs
 
 [Install]
 WantedBy=default.target

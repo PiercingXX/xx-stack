@@ -39,7 +39,7 @@ const mirrorPath = path.join(
 // Any change to runtime/dangerous-patterns.txt must update this hash AND the
 // block/allow cases below in the same commit. Refresh with:
 //   sha256sum xx-stack/runtime/dangerous-patterns.txt
-const EXPECTED_SHA256 = "94107277b3982b8a20079af9fa2691ea7e08ff3bb964fb42b0f7aaff61ff0d2f";
+const EXPECTED_SHA256 = "e65d677b176f5c16d290f3d208e5957090aebdae692549363ec2d1523705ffb8";
 
 // Command lines that MUST match at least one pattern (irreversible/catastrophic).
 const BLOCK_CASES = [
@@ -54,6 +54,8 @@ const BLOCK_CASES = [
   "rm -rf ${HOME}/",
   "rm --recursive --force /",
   "rm --recursive ~",
+  "rm --recursive ./",
+  "rm --recursive ../",
   "rm -rf /home",
   "rm -rf /home/somebody",
   "rm -rf /root",
@@ -61,6 +63,8 @@ const BLOCK_CASES = [
   "rm -rf .git",
   "rm -rf ./.git",
   "rm -rf .git/",
+  "rm -rf ./",
+  "rm -rf ../",
   "dd if=/dev/zero of=/dev/sda bs=4M",
   "dd if=backup.img of=/dev/nvme0n1",
   "sudo dd status=progress if=img of=/dev/mmcblk0",

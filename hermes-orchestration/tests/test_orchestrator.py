@@ -57,6 +57,8 @@ class StubLaneHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        with self.server.counter_lock:
+            self.server.get_count += 1
         if self.server.fail:
             self._send(500, {"error": "stub_down"})
             return
@@ -70,6 +72,9 @@ class StubLaneHandler(BaseHTTPRequestHandler):
             self.server.post_count += 1
         if self.server.fail:
             self._send(500, {"error": "stub_down"})
+            return
+        if self.server.post_status != 200:
+            self._send(self.server.post_status, {"error": f"http_{self.server.post_status}"})
             return
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
@@ -115,6 +120,8 @@ class StubLaneServer(ThreadingHTTPServer):
         self.finish_reason = "stop"
         self.usage = {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
         self.fail = False
+        self.post_status = 200
+        self.get_count = 0
         self.post_count = 0
         self.counter_lock = threading.Lock()
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
@@ -398,6 +405,43 @@ class ApiKeyResolutionTests(unittest.TestCase):
             api_key_command="sleep 30",
         )
         self.assertEqual(ho.resolve_api_key(lane, timeout=1), "from-env")
+
+    def test_api_key_command_list_form_runs_without_shell(self):
+        lane = ho.Lane(
+            key="x",
+            name="x",
+            base_url="",
+            model="m",
+            enabled=True,
+            api_key_command=["printf", "from-argv"],
+        )
+        self.assertEqual(ho.resolve_api_key(lane), "from-argv")
+
+    def test_api_key_command_list_form_does_not_expand_metacharacters(self):
+        # With shell=False the argument reaches the program verbatim; a shell
+        # would have expanded "$HOME" into something else entirely.
+        lane = ho.Lane(
+            key="x",
+            name="x",
+            base_url="",
+            model="m",
+            enabled=True,
+            api_key_command=["printf", "%s", "$HOME;`id`"],
+        )
+        self.assertEqual(ho.resolve_api_key(lane), "$HOME;`id`")
+
+    def test_api_key_command_string_form_still_interpreted_by_shell(self):
+        # Arithmetic expansion only happens under a shell: pins the documented
+        # string form to its existing shell=True behavior.
+        lane = ho.Lane(
+            key="x",
+            name="x",
+            base_url="",
+            model="m",
+            enabled=True,
+            api_key_command='echo "shell-$((6*7))"',
+        )
+        self.assertEqual(ho.resolve_api_key(lane), "shell-42")
 
 
 class _RecordingHTTPError(urllib.error.HTTPError):
@@ -818,16 +862,39 @@ class QualificationMatrixDocTests(BenchRunMixin):
 
     DOC_PATH = HERMES_DIR / "model-qualification-matrix.md"
     INVENTORY_PATH = HERMES_DIR.parent / "inventory.json"
+    EXAMPLE_INVENTORY_PATH = HERMES_DIR.parent / "inventory.example.json"
 
     @classmethod
     def setUpClass(cls):
         cls.doc = cls.DOC_PATH.read_text(encoding="utf-8")
-        cls.inventory = json.loads(cls.INVENTORY_PATH.read_text(encoding="utf-8"))
+        # inventory.json holds private machine truth and is git-ignored, so a
+        # fresh clone does not have it. Until it exists, the shipped template
+        # answers — the same fallback contract as generate-registries.mjs and
+        # toggle-lane.mjs.
+        try:
+            cls.inventory = json.loads(cls.INVENTORY_PATH.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            cls.inventory = json.loads(cls.EXAMPLE_INVENTORY_PATH.read_text(encoding="utf-8"))
 
-    def test_doc_names_every_inventory_host(self):
+    def test_doc_names_every_lane_backed_inventory_host(self):
+        """Every inventory host the shipped config dials must be documented.
+
+        inventory.json is private and may declare machines the shipped tree
+        knows nothing about (they only get lanes once `npm run inventory:sync`
+        regenerates config from them), and the doc claims nothing about those.
+        But any host a shipped lane actually targets is a host this matrix
+        describes, so it must be named here.
+        """
+        lane_texts = [
+            f"{lane.get('name', '')} {lane.get('base_url', '')}"
+            for lane in SHIPPED_CFG["lanes"].values()
+        ]
         for machine in self.inventory["machines"]:
-            with self.subTest(machine=machine["id"]):
-                self.assertIn(machine["id"], self.doc)
+            machine_id = machine["id"]
+            if not any(machine_id in text for text in lane_texts):
+                continue
+            with self.subTest(machine=machine_id):
+                self.assertIn(machine_id, self.doc)
 
     def test_no_phantom_host_is_presented_as_current(self):
         """Retired hosts may appear under Historical record, nowhere above it."""
@@ -1089,6 +1156,294 @@ class ProxyTests(TempDirMixin):
         self.assertEqual(len(successes), 1)
         self.assertIn("attempts", successes[0])
         self.assertEqual(successes[0]["attempts"], [])
+
+
+class AtomicSaveJsonTests(TempDirMixin):
+    """The capability cache is read on the hot path while refreshes rewrite it.
+
+    save_json must keep every reader on either the previous file or the
+    complete new one — never a half-written file.
+    """
+
+    def setUp(self):
+        self.dir = Path(self.make_tempdir())
+        self.cache_path = self.dir / "capability-cache.json"
+
+    def test_reader_during_write_sees_previous_content_until_replace(self):
+        old, new = {"generation": 1}, {"generation": 2}
+        ho.save_json(self.cache_path, old)
+
+        computed = threading.Event()
+        release = threading.Event()
+        real_dumps = json.dumps
+
+        def slow_dumps(obj, **kwargs):
+            payload = real_dumps(obj, **kwargs)
+            computed.set()
+            release.wait(timeout=5)
+            return payload
+
+        json.dumps = slow_dumps
+        self.addCleanup(setattr, json, "dumps", real_dumps)
+
+        writer = threading.Thread(target=ho.save_json, args=(self.cache_path, new))
+        writer.start()
+        try:
+            self.assertTrue(computed.wait(timeout=5), "writer never serialized its payload")
+            # The writer holds a complete payload but has not touched the cache
+            # path yet: the mid-write read must see the old file intact.
+            self.assertEqual(json.loads(self.cache_path.read_text(encoding="utf-8")), old)
+        finally:
+            release.set()
+            writer.join(timeout=5)
+        self.assertFalse(writer.is_alive())
+        self.assertEqual(json.loads(self.cache_path.read_text(encoding="utf-8")), new)
+
+    def test_failed_replace_leaves_original_and_no_temp_files(self):
+        original = {"old": True}
+        ho.save_json(self.cache_path, original)
+
+        def broken_replace(src, dst):
+            raise OSError("replace failed")
+
+        original_replace = os.replace
+        os.replace = broken_replace
+        self.addCleanup(setattr, os, "replace", original_replace)
+
+        with self.assertRaises(OSError):
+            ho.save_json(self.cache_path, {"new": True})
+
+        self.assertEqual(json.loads(self.cache_path.read_text(encoding="utf-8")), original)
+        leftovers = [p.name for p in self.dir.iterdir() if p.name != self.cache_path.name]
+        self.assertEqual(leftovers, [], "failed write left temp files behind")
+
+
+class LaneHealthCacheTests(TempDirMixin):
+    """Proxy hot path: health outcomes are reused within the TTL."""
+
+    def setUp(self):
+        self.tmpdir = self.make_tempdir()
+        self.stub = StubLaneServer(["model-a"], reply="r")
+        self.addCleanup(self.stub.stop)
+        self.cfg = make_cfg(
+            self.tmpdir,
+            {"a": lane_cfg("lane-a", self.stub.base_url, "model-a", priority=100)},
+        )
+        self.lane = ho.lane_from_config(self.cfg, "a")
+
+    def test_second_call_within_ttl_skips_probe(self):
+        cache = ho.LaneHealthCache(ttl_seconds=300)
+        self.assertTrue(cache.get(self.cfg, self.lane)[0])
+        self.assertTrue(cache.get(self.cfg, self.lane)[0])
+        self.assertEqual(self.stub.get_count, 1)
+
+    def test_expired_entry_is_reprobed(self):
+        cache = ho.LaneHealthCache(ttl_seconds=300)
+        cache.get(self.cfg, self.lane)
+        timestamp, outcome = cache._entries["a"]
+        # Backdate past the TTL instead of sleeping; deterministic.
+        cache._entries["a"] = (timestamp - 301, outcome)
+        cache.get(self.cfg, self.lane)
+        self.assertEqual(self.stub.get_count, 2)
+
+    def test_nonpositive_ttl_disables_memoization(self):
+        cache = ho.LaneHealthCache(ttl_seconds=0)
+        cache.get(self.cfg, self.lane)
+        cache.get(self.cfg, self.lane)
+        self.assertEqual(self.stub.get_count, 2)
+
+    def test_proxy_reads_ttl_from_config_with_default(self):
+        proxy = ho.ProxyServer(("127.0.0.1", 0), ho.ProxyHandler, self.cfg, None, False)
+        self.addCleanup(proxy.server_close)
+        self.assertEqual(proxy.health_cache.ttl_seconds, ho.LANE_HEALTH_TTL_SECONDS)
+
+        self.cfg["proxy"] = {"health_check_ttl_seconds": 120}
+        tuned = ho.ProxyServer(("127.0.0.1", 0), ho.ProxyHandler, self.cfg, None, False)
+        self.addCleanup(tuned.server_close)
+        self.assertEqual(tuned.health_cache.ttl_seconds, 120)
+
+
+class SubagentEscalationTelemetryTests(TempDirMixin):
+    """cloud-escalation-policy.md requires decomposition_attempted as REAL
+    telemetry: whether the delegation actually went out as multiple subtasks."""
+
+    def _cfg(self, tmpdir):
+        down_a = StubLaneServer(["model-a"], reply="x")
+        down_a.fail = True
+        down_b = StubLaneServer(["model-b"], reply="x")
+        down_b.fail = True
+        self.addCleanup(down_a.stop)
+        self.addCleanup(down_b.stop)
+        # No routing presets are configured: the empty default preset keeps
+        # resolve_subagent_request from raising on the missing "general" entry.
+        return make_cfg(
+            tmpdir,
+            {
+                "a": lane_cfg("lane-a", down_a.base_url, "model-a", priority=100),
+                "b": lane_cfg("lane-b", down_b.base_url, "model-b", priority=70),
+                "cloud": lane_cfg(
+                    "cloud-lane",
+                    "cli://none",
+                    "gpt-5.3-codex",
+                    role="cloud",
+                    priority=50,
+                    endpoint_type="hermes_cli",
+                    provider="github-copilot",
+                    catalog_models=["gpt-5.3-codex"],
+                ),
+            },
+            default_subagent_preset="",
+        )
+
+    def _escalation_events(self, task):
+        tmpdir = self.make_tempdir()
+        log_path = Path(tmpdir) / "cloud-escalations.jsonl"
+        args = ho.build_parser().parse_args([
+            "subagents",
+            "--task", task,
+            "--allow-cloud",
+            "--task-profile", "hardware-constrained",
+            "--escalation-log", str(log_path),
+        ])
+        original = ho.run_hermes_cli_oneshot
+        ho.run_hermes_cli_oneshot = lambda lane, timeout, model, prompt: (True, f"cli-reply:{model}")
+        self.addCleanup(setattr, ho, "run_hermes_cli_oneshot", original)
+
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            rc = ho.command_subagents(args, self._cfg(tmpdir))
+        self.assertEqual(rc, 0)
+        self.assertTrue(log_path.exists(), "expected a cloud escalation event")
+        return [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    def test_unsplitted_task_reports_decomposition_not_attempted(self):
+        events = self._escalation_events("Single undivided task")
+        self.assertEqual(len(events), 1)
+        self.assertFalse(events[0]["decomposition_attempted"])
+        self.assertEqual(events[0]["selected_model"], "gpt-5.3-codex")
+
+    def test_explicit_slices_report_decomposition_attempted(self):
+        events = self._escalation_events("Slice one||Slice two")
+        self.assertEqual(len(events), 1)
+        self.assertTrue(events[0]["decomposition_attempted"])
+
+
+class ProxyFallbackModelTests(TempDirMixin):
+    """Upstream auth/path failures are lane problems: they must end the lane's
+    model loop instead of retrying identical credentials per fallback model."""
+
+    def setUp(self):
+        self.tmpdir = self.make_tempdir()
+
+    def _serve(self, lanes):
+        run_dir = Path(self.make_tempdir())
+        cfg = make_cfg(str(run_dir), lanes)
+        cfg["policy"]["primary_lane_order"] = list(lanes)
+        proxy = ho.ProxyServer(("127.0.0.1", 0), ho.ProxyHandler, cfg, None, False)
+        thread = threading.Thread(target=proxy.serve_forever, daemon=True)
+        thread.start()
+
+        def stop():
+            proxy.shutdown()
+            proxy.server_close()
+            thread.join(timeout=5)
+
+        base_url = f"http://127.0.0.1:{proxy.server_address[1]}"
+        routing_log = Path(cfg["execution"]["routing_log_file"])
+        return stop, base_url, routing_log
+
+    def _chat(self, base_url):
+        payload = {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}
+        req = urllib.request.Request(
+            base_url + "/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.getcode(), json.loads(resp.read().decode("utf-8"))
+
+    def _records(self, routing_log):
+        if not routing_log.exists():
+            return []
+        return [
+            json.loads(line)
+            for line in routing_log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    def test_auth_failure_breaks_to_next_lane_without_retrying_models(self):
+        down = StubLaneServer(["model-a"], reply="nope")
+        down.post_status = 401
+        good = StubLaneServer(["model-b"], reply="good-reply")
+        self.addCleanup(down.stop)
+        self.addCleanup(good.stop)
+        stop, base_url, routing_log = self._serve({
+            "a": lane_cfg(
+                "lane-a", down.base_url, "model-a", priority=100, fallback_models=["model-a2"]
+            ),
+            "b": lane_cfg("lane-b", good.base_url, "model-b", priority=70),
+        })
+        self.addCleanup(stop)
+
+        code, body = self._chat(base_url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["choices"][0]["message"]["content"], "good-reply")
+        # Two configured candidates, one upstream attempt: the 401 ended lane a.
+        self.assertEqual(down.post_count, 1)
+        successes = [r for r in self._records(routing_log) if r["ok"]]
+        self.assertEqual(successes[0]["attempts"], ["lane-a:model-a:http_401"])
+
+    def test_server_errors_still_exhaust_fallback_models(self):
+        down = StubLaneServer(["model-a"], reply="nope")
+        down.post_status = 500
+        good = StubLaneServer(["model-b"], reply="good-reply")
+        self.addCleanup(down.stop)
+        self.addCleanup(good.stop)
+        stop, base_url, routing_log = self._serve({
+            "a": lane_cfg(
+                "lane-a", down.base_url, "model-a", priority=100, fallback_models=["model-a2"]
+            ),
+            "b": lane_cfg("lane-b", good.base_url, "model-b", priority=70),
+        })
+        self.addCleanup(stop)
+
+        code, body = self._chat(base_url)
+        self.assertEqual(code, 200)
+        self.assertEqual(body["choices"][0]["message"]["content"], "good-reply")
+        # A 500 is not necessarily model-independent, so both candidates run.
+        self.assertEqual(down.post_count, 2)
+        successes = [r for r in self._records(routing_log) if r["ok"]]
+        self.assertEqual(
+            successes[0]["attempts"],
+            ["lane-a:model-a:http_500", "lane-a:model-a2:http_500"],
+        )
+
+    def test_forbidden_and_missing_path_also_break_to_next_lane(self):
+        for status in (403, 404):
+            with self.subTest(status=status):
+                down = StubLaneServer(["model-a"], reply="nope")
+                down.post_status = status
+                good = StubLaneServer(["model-b"], reply="good-reply")
+                self.addCleanup(down.stop)
+                self.addCleanup(good.stop)
+                stop, base_url, _ = self._serve({
+                    "a": lane_cfg(
+                        "lane-a", down.base_url, "model-a", priority=100,
+                        fallback_models=["model-a2"],
+                    ),
+                    "b": lane_cfg("lane-b", good.base_url, "model-b", priority=70),
+                })
+                try:
+                    code, body = self._chat(base_url)
+                    self.assertEqual(code, 200)
+                    self.assertEqual(body["choices"][0]["message"]["content"], "good-reply")
+                    self.assertEqual(down.post_count, 1)
+                finally:
+                    stop()
 
 
 if __name__ == "__main__":

@@ -212,13 +212,27 @@ export async function buildWatchdogRouteCandidates(
     preferredModel ??
     baseRoute.recommendedModel ??
     chooseModelForTask(selectedPrimary.host, description);
-  const primaryHealth = await probeHealth(selectedPrimary.host, primaryModel);
-  const primaryRoute: SupervisorRoute = {
-    tier: selectedPrimary.tierId,
-    host: selectedPrimary.host.id,
-    endpoint: selectedPrimary.host.endpoint,
-    model: primaryModel,
-  };
+
+  // The breaker set governs primaries too, not just fallback lanes: a
+  // host::model pair that just tripped its circuit breaker must not be handed
+  // back as PRIMARY. Demote it to candidates-only, where the same ban check
+  // applies lane by lane.
+  const primaryBanned = banned.has(failureKey(selectedPrimary.host.id, primaryModel));
+  const primaryHealth = primaryBanned
+    ? {
+        hostHealthy: false,
+        modelAvailable: false,
+        reason: "circuit breaker active",
+      }
+    : await probeHealth(selectedPrimary.host, primaryModel);
+  const primaryRoute: SupervisorRoute | null = primaryBanned
+    ? null
+    : {
+        tier: selectedPrimary.tierId,
+        host: selectedPrimary.host.id,
+        endpoint: selectedPrimary.host.endpoint,
+        model: primaryModel,
+      };
 
   const allCandidates = routableTierIds(registry)
     .flatMap((tierId) => {
@@ -226,7 +240,9 @@ export async function buildWatchdogRouteCandidates(
       return (tier?.hosts ?? []).map((host) => ({ tierId, host }));
     })
     .filter(({ host }) => host.enabled !== false && host.reachable !== false)
-    .filter(({ host }) => host.id !== selectedPrimary.host.id)
+    // An unbanned primary is never re-probed as its own fallback; a banned one
+    // competes as an ordinary lane and is reported like any other candidate.
+    .filter(({ host }) => primaryBanned || host.id !== selectedPrimary.host.id)
     .sort((left, right) => hostCapacityScore(right.host) - hostCapacityScore(left.host));
 
   // Probe up to maxFallbacks * 2 candidates in parallel so we have healthy spares
@@ -441,6 +457,16 @@ export function chooseModelForTask(host: Host | null, description: string): stri
   // would silently bypass the cloud opt-in gate; never auto-select them.
   candidates = candidates.filter((entry) => !/:cloud$/i.test(entry.name));
   if (candidates.length === 0) return null;
+
+  // Embedding intent outranks overlapping code/reasoning keywords: "embed code
+  // snippets" names an embedding job even though "code" also appears, and
+  // handing an embedding task a chat model is always wrong. When the host
+  // catalogues a dedicated embedder it wins outright; with none catalogued,
+  // general selection stands — nothing better exists to pick.
+  if (embeddingTask) {
+    const embedder = candidates.find((entry) => /embed|embedding/i.test(entry.name));
+    if (embedder) return embedder.name;
+  }
 
   if (!embeddingTask) {
     const nonEmbedding = candidates.filter(
@@ -714,7 +740,11 @@ export function routeParallelTasks(
 
   const assignments = descriptions.map((description, index) => {
     const scores = scoreTiers(description, registry);
-    const sorted = Object.entries(scores).sort((left, right) => right[1] - left[1]);
+    // Same filter routeTask applies: a blocked cloud tier must not win the
+    // preferred slot on keyword score alone, or the two selectors disagree.
+    const sorted = Object.entries(scores)
+      .filter(([tierId]) => !(cloudBlocked && tierId === TIER_IDS.cloud))
+      .sort((left, right) => right[1] - left[1]);
     const preferredTierId = sorted[0]?.[1] > 0 ? sorted[0][0] : orderedTierIds[0];
     const orderedTiers = [
       preferredTierId,

@@ -17,30 +17,47 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const inventoryPath = path.join(repoRoot, "inventory.json");
+const fallbackInventoryPath = path.join(repoRoot, "inventory.example.json");
 
 const [, , mode, target] = process.argv;
+
+/** Set when the template answered because inventory.json does not exist yet. */
+let readingFallback = false;
 
 /**
  * inventory.json is hardware truth for the whole stack. A corrupt or partial
  * file must produce an actionable message, not a raw parser stack trace.
+ * A missing one is not an error: until you take ownership of your own
+ * inventory, the shipped template answers (same contract as
+ * generate-registries.mjs).
  */
 function loadInventory() {
   let raw;
   try {
     raw = fs.readFileSync(inventoryPath, "utf8");
   } catch (err) {
-    console.error(`Cannot read inventory at ${inventoryPath}: ${err.message}`);
-    console.error("Restore it from git before toggling lanes.");
-    process.exit(1);
+    if (err.code !== "ENOENT") {
+      console.error(`Cannot read inventory at ${inventoryPath}: ${err.message}`);
+      console.error(
+        `Fix its permissions, or start over from ${path.basename(fallbackInventoryPath)}.`
+      );
+      process.exit(1);
+    }
+    readingFallback = true;
+    console.log(
+      `${path.basename(inventoryPath)} not found — reading ${path.basename(fallbackInventoryPath)}. ` +
+        `To describe your own machines: cp ${path.basename(fallbackInventoryPath)} ${path.basename(inventoryPath)}`
+    );
+    raw = fs.readFileSync(fallbackInventoryPath, "utf8");
   }
 
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    console.error(`inventory.json is not valid JSON (${inventoryPath}):`);
+    console.error(`The inventory is not valid JSON (${inventoryPath}):`);
     console.error(`  ${err.message}`);
-    console.error("Fix the syntax error, or restore the file from git, then retry.");
+    console.error("Fix the syntax error, then retry.");
     process.exit(1);
   }
 
@@ -130,4 +147,9 @@ if (aggregator) {
 
 fs.writeFileSync(inventoryPath, JSON.stringify(inventory, null, 2) + "\n", "utf8");
 console.log(`${wantEnabled ? "Enabled" : "Disabled"}: ${touched.join(", ")}`);
+if (readingFallback) {
+  console.log(
+    `Saved your new ${path.basename(inventoryPath)} (started from ${path.basename(fallbackInventoryPath)}).`
+  );
+}
 console.log("\nRegenerate the consumer configs:  npm run inventory:sync");

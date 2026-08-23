@@ -67,12 +67,37 @@ export async function detectGitDiff(cwd: string): Promise<DiffDetection> {
 // every one of `DATABASE_URL=postgres://user:pw@host/db`, `STRIPE_KEY=sk_live_…`
 // and `SMTP_PASS=…`, so hunk bodies are additionally attributed to a file and
 // dotenv-shaped files get the structural pass.
+//
+// Attribution needs hunk headers (`--- a/<path>`), which real `git diff` always
+// emits — but a caller-supplied diff is free-form text that may carry none at
+// all (a pasted `.env` body, a partial patch). For that source the structural
+// pass therefore runs over the whole payload instead of per-hunk.
+
+/** Where the reviewed diff came from; mirrors the tool's `diffSource` output. */
+export type DiffSource = "argument" | "git" | "unavailable";
+
+export interface RedactDiffOptions {
+  /** Caller-supplied diffs without any parseable hunk header get the structural dotenv pass over the whole payload. */
+  source?: DiffSource;
+}
 
 /** `+++ b/path` / `--- a/path`: strip the marker, the `a/`|`b/` prefix, tab suffix. */
 function parseDiffHeaderPath(line: string): string | null {
   const raw = line.slice(4).split("\t")[0]!.trim();
   if (raw.length === 0 || raw === "/dev/null") return null;
   return raw.replace(/^[ab]\//, "");
+}
+
+/**
+ * The dotenv shape test for diff attribution. Deliberately wider than
+ * `isDotenvPath`'s dotted basenames: files like `secrets.env` or `prod.env`
+ * carry exactly the same "every value is a credential" contract, so both the
+ * `.env*` prefix family and any basename ENDING in `.env` qualify.
+ */
+function isDotenvAttributionPath(path: string): boolean {
+  if (isDotenvPath(path)) return true;
+  const basename = (path.split(/[/\\]/).pop() ?? "").toLowerCase();
+  return basename.startsWith(".env") || basename.endsWith(".env");
 }
 
 /** Diff hunk-body lines carry a one-char marker that must survive redaction. */
@@ -89,12 +114,13 @@ const HUNK_BODY_MARKERS = new Set(["+", "-", " "]);
  * attributed from the `---` side too: deleting a `.env` leaks exactly as hard
  * as adding one.
  */
-export function redactDiffSecrets(diff: string): string {
+export function redactDiffSecrets(diff: string, options: RedactDiffOptions = {}): string {
   const lines = redactSecrets(diff).split("\n");
   const out: string[] = [];
 
   let dotenvHunk = false;
   let inHunk = false;
+  let sawHunkHeader = false;
   let oldPath: string | null = null;
   let newPath: string | null = null;
 
@@ -139,8 +165,10 @@ export function redactDiffSecrets(diff: string): string {
     }
     if (line.startsWith("@@")) {
       inHunk = true;
+      sawHunkHeader = true;
       dotenvHunk =
-        (newPath !== null && isDotenvPath(newPath)) || (oldPath !== null && isDotenvPath(oldPath));
+        (newPath !== null && isDotenvAttributionPath(newPath)) ||
+        (oldPath !== null && isDotenvAttributionPath(oldPath));
       emit(line);
       continue;
     }
@@ -157,7 +185,18 @@ export function redactDiffSecrets(diff: string): string {
   }
 
   flush();
-  return out.join("\n");
+
+  // A caller-supplied diff with no hunk header gives attribution nothing to
+  // work with — every dotenv-shaped assignment in it would survive the walk.
+  // Structural redaction over the whole payload is safe there: the payload was
+  // handed to us AS diff content, not as source code, so treating each
+  // `KEY=value` line's value as a credential cannot damage attributed hunks
+  // (there are none). Git-sourced diffs keep the per-hunk behavior unchanged.
+  const walked = out.join("\n");
+  if (options.source === "argument" && !sawHunkHeader) {
+    return redactDotenvAssignments(walked);
+  }
+  return walked;
 }
 
 /** Seams for deterministic tests; both default to the real implementations. */
@@ -185,7 +224,7 @@ export function registerReviewTools(
         "The diff is read from the session's repo (cwd argument, else the session's memory-sync cwd), redacted, and " +
         "compacted before it is embedded; a failed read is reported as unavailable, never as an empty diff",
       inputSchema: {
-        sessionId: z.string().describe("Supervisor session ID"),
+        sessionId: z.string().min(1).describe("Supervisor session ID"),
         cwd: z
           .string()
           .optional()
@@ -238,8 +277,10 @@ export function registerReviewTools(
           // could leave half a credential intact on the truncation boundary.
           // The redaction is diff-aware so hunk bodies can be attributed to a
           // file — dotenv-shaped files get every value redacted by shape, not
-          // by hoping the value matches an enumerated vendor format.
-          const compacted = compactOutput(redactDiffSecrets(rawDiff), {
+          // by hoping the value matches an enumerated vendor format — and a
+          // caller-supplied diff with no hunk headers to attribute gets the
+          // structural pass over its whole payload instead.
+          const compacted = compactOutput(redactDiffSecrets(rawDiff, { source: diffSource }), {
             cap: REVIEW_DIFF_CAP,
             stripAnsi: true,
           });

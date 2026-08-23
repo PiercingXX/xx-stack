@@ -2,7 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { __testExports } from "./index.js";
+import { mapWithConcurrency } from "./routing_runtime.js";
 import { TIER_IDS } from "./runtime_constants.js";
+
+const settle = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 function buildRegistryFixture(tiers: Array<Record<string, unknown>>) {
   return {
@@ -200,5 +206,28 @@ test("routeArchitectEditor falls back with stated shortfall on unusable preferre
   assert.ok(
     gated.editor.reasoning.includes("non-routable tier"),
     "reasoning should state the cloud-gate shortfall"
+  );
+});
+
+test("mapWithConcurrency stops scheduling work after a sibling rejection", async () => {
+  const invocations: number[] = [];
+
+  await assert.rejects(
+    mapWithConcurrency([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], 2, async (item: number) => {
+      invocations.push(item);
+      if (item === 0) throw new Error("sibling failure");
+      await settle(20);
+      return item;
+    }),
+    /sibling failure/
+  );
+
+  // Worker A took item 0 and rejected; worker B was already inside item 1.
+  // Both must stop there instead of draining the remaining eight items.
+  await settle(50);
+  assert.deepEqual(
+    invocations,
+    [0, 1],
+    `post-failure side effects must stop, got: ${JSON.stringify(invocations)}`
   );
 });

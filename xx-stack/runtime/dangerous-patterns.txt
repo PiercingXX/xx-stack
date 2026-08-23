@@ -31,9 +31,11 @@
 # xx-stack/scripts/check-dangerous-patterns.mjs (block/allow cases + pinned
 # content hash). `npm run guardrails:check` fails until both move together.
 
-# --- rm with a recursive flag targeting root, home, or everything -----------
-rm[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*-[A-Za-z]*[rR][A-Za-z]*[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*(/\*?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
-rm[ \t]+(.*[ \t])?--recursive([ \t].*)?[ \t](/\*?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
+# --- rm with a recursive flag targeting root, home, cwd dots, or everything -
+# ./ and ../ delete the working directory's contents while looking harmless,
+# so they are token-bounded alternatives like / and ~.
+rm[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*-[A-Za-z]*[rR][A-Za-z]*[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*(/\*?|\.\.?/?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
+rm[ \t]+(.*[ \t])?--recursive([ \t].*)?[ \t](/\*?|\.\.?/?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
 
 # --- repo deletion: recursive rm of the git history --------------------------
 rm[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*-[A-Za-z]*[rR][A-Za-z]*[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*(\./)?\.git/?([ \t]|$)

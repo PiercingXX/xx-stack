@@ -63,7 +63,7 @@ Three properties define the whole design, and every change should preserve them:
 - **Single source of truth.** `inventory.json` describes your hardware. Every
   other registry is generated from it and carries a `_generated` banner.
 
-It ships as an MCP server (47 tools), a prompt/content layer (28 skills, 21
+It ships as an MCP server (47 tools), a prompt/content layer (27 skills, 21
 agents, 2 vendored packs), a standalone Python control plane for Hermes, and a
 CLI.
 
@@ -71,17 +71,17 @@ CLI.
 
 | Thing | Count |
 |---|---|
-| Tracked files | 899 |
+| Tracked files | 906 |
 | MCP tools registered | 47 (45 always, 2 behind a flag) |
-| TypeScript source | ~24,000 lines |
-| Test files / tests | 32 files, 542 tests (plus 83 Python tests) |
-| Runtime skills | 28 |
+| TypeScript source | ~18,200 lines (~34,000 including tests) |
+| Test files / tests | 32 files, 547 tests (plus 83 Python tests) |
+| Runtime skills | 27 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
 | Brand design systems | 151 (vendored, pinned to `e1c277c`) |
 
 These counts drift. Regenerate them rather than trusting them:
-`grep -rhoP 'server\.tool\(\s*\n?\s*"\K[^"]+' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
+`perl -0777 -ne 'print "$1\n" while /server\.registerTool\(\s*"([^"]+)"/g' xx-stack/mcp-server/src/*.ts | sort -u | wc -l`
 for tools, `npm test` for the suite size, `git ls-files | wc -l` for the total.
 
 ---
@@ -253,25 +253,25 @@ dependencies beyond the MCP SDK and zod.
 | Module | Lines | Role |
 |---|---|---|
 | `index.ts` | — | wires every tool group; the only place `register*` is called |
-| `routing_selection_runtime.ts` | 592 | tier scoring, model choice, the cloud gate |
+| `routing_selection_runtime.ts` | 838 | tier scoring, model choice, the cloud gate |
 | `routing_runtime.ts` | 488 | architect/editor split, competitive fan-out, review routing, batch fan-out |
 | `routing_tools.ts` | — | 7 routing tools |
-| `supervisor_completion_tools.ts` | 1002 | continuation/handoff/forced-synthesis prompts, completion gate |
-| `supervisor_session_tools.ts` | 635 | `supervisor_tick`, failover, lease revocation |
-| `supervisor_session_runtime.ts` | 336 | stall detection, backoff, dedupe |
-| `supervisor_store_runtime.ts` | 255 | session persistence |
-| `task_runtime.ts` | 411 | task store, goal contracts, leases |
-| `task_tools.ts` | 408 | 6 task tools |
-| `memory_runtime.ts` | 693 | agent memory, budgeted recall, compaction, CAS writes |
-| `execution_policy.ts` | 683 | the exec gate: denylist → allowlist → process-group spawn |
-| `observability_tools.ts` | 526 | platform listing, health, telemetry, tool search |
-| `cli.ts` | 767 | the `xx` CLI |
-| `repo_map_runtime.ts` | 418 | budget-fitted repo map |
+| `supervisor_completion_tools.ts` | 1557 | continuation/handoff/forced-synthesis prompts, completion gate |
+| `supervisor_session_tools.ts` | 777 | `supervisor_tick`, failover, lease revocation |
+| `supervisor_session_runtime.ts` | 403 | stall detection, backoff, dedupe |
+| `supervisor_store_runtime.ts` | 384 | session persistence |
+| `task_runtime.ts` | 560 | task store, goal contracts, leases |
+| `task_tools.ts` | 583 | 6 task tools |
+| `memory_runtime.ts` | 758 | agent memory, budgeted recall, compaction, CAS writes |
+| `execution_policy.ts` | 705 | the exec gate: denylist → allowlist → process-group spawn |
+| `observability_tools.ts` | 1101 | platform listing, health, telemetry, tool search |
+| `cli.ts` | 693 | the `xx` CLI |
+| `repo_map_runtime.ts` | 1159 | budget-fitted repo map |
 | `context_selection_runtime.ts` | — | lazy-greedy submodular selection |
 | `output_compaction.ts` | — | head/tail truncation |
 | `hook_tools.ts` | — | `_Stop` / `_PostCompact`, flag-gated |
 | `platform_runtime.ts` | — | registry load, hardware probe, cost lookup |
-| `config_runtime.ts` | 305 | agent profile merge, tool policy |
+| `config_runtime.ts` | 425 | agent profile merge, tool policy |
 
 ### The execution gate
 
@@ -456,8 +456,10 @@ Canonical: `xx-stack/runtime/agents/<name>.md`, registered in
 `xx-stack/runtime/config.json`. `xx-stack/adapters/agents/*.agent.md` are
 **generated** — run `npm run agents:sync`, never hand-edit.
 
-**Important limitation:** the sync script covers 8 of 21 agents (see §11,
-BUILD-1). A green `agents:check` does not mean all agents are mirrored.
+BUILD-1 (§11) records when this script hardcoded 8 agent specs and silently
+skipped the rest; it now derives the expected mirror set from each component's
+agent directory, with explicit opt-outs in its `NOT_MIRRORED` maps. A green
+`agents:check` means every agent is mirrored or explicitly opted out.
 
 ---
 
@@ -649,21 +651,22 @@ files. See §11, HERMES-1 for what was done about this.
 
 ```
 layout:verify → agents:check → drift:check → rules:check → nano:check
-              → inventory:check → guardrails:check → lint → format:check
-              → design:golden → design:html-gate → design:craft-refs
-              → design:anti-slop-test → design:systems-lint
-              → test → hermes:test
+              → inventory:check → guardrails:check → ci:parity → lint
+              → format:check → design:golden → design:html-gate
+              → design:systems-lint → design:craft-refs
+              → design:anti-slop-test → test → hermes:test
 ```
 
 | Gate | What it proves | Blind spot |
 |---|---|---|
-| `layout:verify` | component layout, symlinks, executable bits, and every vendored rulebook and license file by name (52 checks) | only the layouts it knows; an unmapped directory is invisible — this is how `xx-stack/vscode/` rotted, and how `packs/design/craft/` was briefly deletable without failing a gate |
+| `layout:verify` | component layout, symlinks, executable bits, and every vendored rulebook and license file by name (54 checks) | only the layouts it knows; an unmapped directory is invisible — this is how `xx-stack/vscode/` rotted, and how `packs/design/craft/` was briefly deletable without failing a gate |
 | `agents:check` | every canonical agent is mirrored or explicitly opted out | — (was 8 of 21 before the audit) |
 | `drift:check` | names **and content** of 63 mirrored pairs, after normalizing the deliberate deltas | waived deltas — see below |
 | `rules:check` | coverage map matches the skill/agent surface | — |
 | `nano:check` | nano variants exist, under cap, canonical hashes pinned, mirrors identical | — |
 | `inventory:check` | generated registries are current | — |
 | `guardrails:check` | denylist patterns behave; file hash pinned | pattern *coverage* — it proves the listed patterns work, not that the list is complete |
+| `ci:parity` | every gate in the verify chain has a matching step in ci.yml | deliberately one-directional — CI legitimately runs more than verify (audit, catalog, Node matrix) |
 | `lint` | `.ts`, `.mjs`, and `.js` | — |
 | `format:check` | `mcp-server/src` and `scripts` only | everything else, deliberately (`packs/` is vendored) |
 | `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two rule sources disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
@@ -992,7 +995,7 @@ Four items moved out of §11.1. Each has a test or gate that fails without the f
 
 1. `xx-stack/runtime/agents/<name>.md`, register in `runtime/config.json`.
 2. Mirror to the OpenCode tree and register there too.
-3. `npm run agents:sync` — but note it only knows 8 agents (BUILD-1).
+3. `npm run agents:sync`.
 4. Coverage entry, then `npm run verify`.
 
 ### Changing hardware

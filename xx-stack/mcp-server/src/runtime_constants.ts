@@ -11,7 +11,7 @@ type RuntimeConstants = {
   };
   hosts: {
     localWorkstation: string;
-    gpuRig: string;
+    exampleGpuBox: string;
     testBenchArchlinux: string;
     localOpenAiCompatible: string;
     tailscaleOpenAiCompatiblePrimary: string;
@@ -59,13 +59,30 @@ const CONSTANTS_CANDIDATES = [
   "../../opencode/runtime-constants.json",
 ] as const;
 
+/**
+ * Parse runtime constants, rethrowing parse failures with the file that was
+ * being parsed. A bare JSON.parse SyntaxError names no file, which sent the
+ * last "constants are broken" debugging session to the tried-paths error that
+ * only covers not-found.
+ */
+export function parseRuntimeConstants(raw: string, sourcePath: string): RuntimeConstants {
+  try {
+    return JSON.parse(raw) as RuntimeConstants;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `xx-stack mcp-server: runtime constants at ${sourcePath} are not valid JSON: ${message}`
+    );
+  }
+}
+
 function loadRuntimeConstants(): RuntimeConstants {
   const tried: string[] = [];
   for (const candidate of CONSTANTS_CANDIDATES) {
     const url = new URL(candidate, import.meta.url);
     tried.push(url.pathname);
     if (existsSync(url)) {
-      return JSON.parse(readFileSync(url, "utf8")) as RuntimeConstants;
+      return parseRuntimeConstants(readFileSync(url, "utf8"), url.pathname);
     }
   }
   throw new Error(

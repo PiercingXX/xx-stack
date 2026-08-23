@@ -7,6 +7,10 @@ set -eu
 # Expected input: a JSON payload on stdin from a host runtime that supports
 # pre-tool hooks. This script is intentionally conservative and acts as a
 # reusable starter, not an enforced repo policy.
+#
+# WARNING: this substring denylist is bypassable (flag reordering, whitespace
+# padding, matches inside Write-tool file bodies); execution_policy.ts in
+# xx-stack/mcp-server/src/ is the enforced gate.
 
 payload="$(cat)"
 

@@ -1081,7 +1081,7 @@ test("sync-runtime-config falls back when a remote tier disappears and restores 
         label: "remote",
         hosts: [
           {
-            id: HOST_IDS.gpuRig,
+            id: HOST_IDS.exampleGpuBox,
             label: "server",
             provider: PROVIDER_IDS.ollamaRemote,
             endpoint: "http://100.100.0.1:11434",
@@ -1667,7 +1667,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
         priority: 2,
         hosts: [
           {
-            id: HOST_IDS.gpuRig,
+            id: HOST_IDS.exampleGpuBox,
             label: "server",
             provider: PROVIDER_IDS.ollamaRemote,
             endpoint: "http://127.0.0.1:11434",
@@ -1680,7 +1680,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
     ],
   };
 
-  const banned = new Set([`${HOST_IDS.gpuRig}::fallback-model`]);
+  const banned = new Set([`${HOST_IDS.exampleGpuBox}::fallback-model`]);
   const result = await __testExports.buildWatchdogRouteCandidates(
     registry as never,
     "implement feature",
@@ -1691,7 +1691,7 @@ test("buildWatchdogRouteCandidates respects banned host/model circuit breakers",
   );
 
   const bannedEntry = result.health.find(
-    (entry) => (entry as { host?: string }).host === HOST_IDS.gpuRig
+    (entry) => (entry as { host?: string }).host === HOST_IDS.exampleGpuBox
   );
   assert.ok(bannedEntry, "banned host should appear in health report");
   assert.ok(
@@ -1817,16 +1817,73 @@ async function loadJson(rel: string): Promise<Record<string, any>> {
   return JSON.parse(await readFile(new URL(rel, import.meta.url), "utf-8"));
 }
 
+// inventory.json holds private machine truth and is git-ignored, so a fresh
+// clone does not have it. Until it exists, the shipped template answers —
+// the same fallback contract as generate-registries.mjs and toggle-lane.mjs.
+async function loadInventorySource(): Promise<{ raw: string; isTemplate: boolean }> {
+  try {
+    return {
+      raw: await readFile(new URL("../../../inventory.json", import.meta.url), "utf-8"),
+      isTemplate: false,
+    };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    return {
+      raw: await readFile(new URL("../../../inventory.example.json", import.meta.url), "utf-8"),
+      isTemplate: true,
+    };
+  }
+}
+
+async function readInventoryText(): Promise<string> {
+  return (await loadInventorySource()).raw;
+}
+
+// The two LIVE registries are rendered from whichever inventory answers. On a
+// machine with a real inventory.json they must match it exactly; when the
+// template is answering (fresh clone, inventory.json absent) they legitimately
+// describe the resident machines instead, so only the shipped host-agnostic
+// registry — always rendered from the template — is required to be current.
+const LIVE_REGISTRY_PATHS = new Set([
+  "opencode-orchestration/opencode/platforms.json",
+  "hermes-orchestration/config/orchestration.json",
+]);
+
 test("generated registries stay in sync with inventory.json", async () => {
   const script = join(process.cwd(), "..", "scripts", "generate-registries.mjs");
   // --check exits non-zero when any consumer config has drifted from the
   // inventory, which is the whole point of having one source of truth.
-  await execFileAsync(process.execPath, [script, "--check"]);
+  try {
+    await execFileAsync(process.execPath, [script, "--check"]);
+    return;
+  } catch (err) {
+    const { isTemplate } = await loadInventorySource();
+    if (!isTemplate) throw err;
+    const stdout = String((err as unknown as { stdout?: unknown }).stdout ?? "");
+    const stale = [...stdout.matchAll(/^\s*STALE\s+(.+)$/gm)].map((m) => m[1].trim());
+    assert.deepEqual(
+      stale.filter((rel) => !LIVE_REGISTRY_PATHS.has(rel)),
+      [],
+      "with no inventory.json present, only the machine-local live registries may be stale"
+    );
+    assert.ok(
+      !stale.includes("xx-stack/runtime/platforms.json"),
+      "the shipped host-agnostic registry must always match inventory.example.json"
+    );
+  }
 });
 
 test("a machine's hardware is written once and inherited by all its runtimes", async () => {
-  const inventory = await loadJson("../../../inventory.json");
-  const registry = await loadJson("../../../opencode-orchestration/opencode/platforms.json");
+  const source = await loadInventorySource();
+  const inventory = JSON.parse(source.raw);
+  // The shipped registry is always rendered from the template, so when the
+  // template is also answering as the inventory (fresh clone) it is the
+  // consistent comparison partner; otherwise use the live registry.
+  const registry = await loadJson(
+    source.isTemplate
+      ? "../../runtime/platforms.json"
+      : "../../../opencode-orchestration/opencode/platforms.json"
+  );
 
   const multiRuntime = inventory.machines.find(
     (m: Record<string, any>) => m.runtimes.length > 1 && m.hardware?.detected
@@ -1852,9 +1909,18 @@ test("a machine's hardware is written once and inherited by all its runtimes", a
 });
 
 test("hermes lanes and TS hosts agree on endpoints for the same runtime", async () => {
-  const inventory = await loadJson("../../../inventory.json");
+  const source = await loadInventorySource();
+  const inventory = JSON.parse(source.raw);
+  // Same partner choice as the hardware-inheritance test above: the template
+  // pairs with the shipped registry. The live hermes config describes the
+  // resident machines, so its lanes can only be cross-checked when a real
+  // inventory.json is answering.
   const hermes = await loadJson("../../../hermes-orchestration/config/orchestration.json");
-  const registry = await loadJson("../../../opencode-orchestration/opencode/platforms.json");
+  const registry = await loadJson(
+    source.isTemplate
+      ? "../../runtime/platforms.json"
+      : "../../../opencode-orchestration/opencode/platforms.json"
+  );
 
   const tsHosts = new Map<string, string>(
     registry.tiers
@@ -1864,6 +1930,17 @@ test("hermes lanes and TS hosts agree on endpoints for the same runtime", async 
 
   for (const machine of inventory.machines) {
     if (machine.network.scope === "localhost" || machine.network.scope === "loopback") continue;
+    if (source.isTemplate) {
+      // Template pairing: every non-local template machine must have its TS
+      // hosts on well-formed endpoints in the shipped registry. Hermes lane
+      // agreement is asserted on the real pair below.
+      for (const runtime of machine.runtimes) {
+        const endpoint = tsHosts.get(`${machine.id}-${runtime.kind}`);
+        assert.ok(endpoint, `shipped registry missing host for ${machine.id}-${runtime.kind}`);
+        assert.match(endpoint, /^http:\/\/[^:]+:\d+$/);
+      }
+      continue;
+    }
     for (const runtime of machine.runtimes) {
       const lane = Object.values(hermes.lanes).find(
         (l: any) => l.name === `${machine.id}-${runtime.kind}`
@@ -1884,7 +1961,14 @@ test("hermes lanes and TS hosts agree on endpoints for the same runtime", async 
 
 test("the shipped example registry carries no personal hardware", async () => {
   const shipped = JSON.stringify(await loadJson("../../runtime/platforms.json"));
-  const inventory = await loadJson("../../../inventory.json");
+  const { raw, isTemplate } = await loadInventorySource();
+  const inventory = JSON.parse(raw);
+
+  // The shipped registry is generated from the template (see
+  // generate-registries.mjs), so when the template is also answering as the
+  // inventory there is no personal inventory to leak — every machine it
+  // names is the template's own.
+  if (isTemplate) return;
 
   for (const machine of inventory.machines) {
     if (machine.network.scope === "localhost" || machine.network.scope === "loopback") continue;
@@ -1918,13 +2002,13 @@ test("scan and toggle scripts are valid and self-documenting", async () => {
 
 test("toggle-lane lists lanes without mutating the inventory", async () => {
   const script = join(process.cwd(), "..", "scripts", "toggle-lane.mjs");
-  const before = await readFile(new URL("../../../inventory.json", import.meta.url), "utf-8");
+  const before = await readInventoryText();
 
   const { stdout } = await execFileAsync(process.execPath, [script, "list"]);
   assert.match(stdout, /Machines and lanes/);
   assert.match(stdout, /cloud escalation/);
 
-  const after = await readFile(new URL("../../../inventory.json", import.meta.url), "utf-8");
+  const after = await readInventoryText();
   assert.equal(before, after, "`list` must be read-only");
 });
 

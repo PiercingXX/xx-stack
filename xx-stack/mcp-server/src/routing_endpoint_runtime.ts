@@ -29,6 +29,70 @@ export function endpointFamilyForHost(host: Host): "ollama" | "openai-compatible
   return host.capabilities?.endpointFamily ?? endpointFamilyForProvider(host.provider);
 }
 
+function ipv4OctetsOf(hostname: string): number[] | null {
+  const parts = hostname.split(".");
+  if (parts.length !== 4) return null;
+  const octets = parts.map((part) => (/^[0-9]{1,3}$/.test(part) ? Number(part) : NaN));
+  if (octets.some((octet) => Number.isNaN(octet) || octet > 255)) return null;
+  return octets;
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  const octets = ipv4OctetsOf(hostname);
+  if (octets) return octets[0] === 127;
+  return hostname === "localhost" || hostname === "::1";
+}
+
+const MAGIC_DNS_HOSTNAME = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i;
+
+function isTailscaleHostname(hostname: string): boolean {
+  // Tailscale assigns out of 100.64.0.0/10 (CGNAT space); a raw IPv4 literal
+  // must come from there, while anything else may only be a MagicDNS name.
+  const octets = ipv4OctetsOf(hostname);
+  if (octets) return octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
+  return MAGIC_DNS_HOSTNAME.test(hostname);
+}
+
+/**
+ * Why a host's endpoint contradicts the network scope it declares, or `null`
+ * when it does not.
+ *
+ * generate-registries.mjs enforces these same rules at generation time; this
+ * re-checks at the boundary where a lane would actually be dialled, so a
+ * hand-edited registry cannot quietly turn a "loopback" tier into requests to
+ * some routable address. Cloud/internet scopes declare public reachability
+ * themselves and stay governed by the XX_STACK_ALLOW_CLOUD escalation gate,
+ * not by topology; an undeclared scope gives nothing here to contradict.
+ *
+ * Pure on purpose — the accept/reject matrix is unit-tested without sockets.
+ */
+export function networkScopeDenial(host: Pick<Host, "endpoint" | "networkScope">): string | null {
+  const scope = host.networkScope;
+  if (!scope) return null;
+
+  let hostname: string;
+  try {
+    // new URL lowercases the hostname; bracketed IPv6 keeps its brackets there.
+    hostname = new URL(host.endpoint).hostname.replace(/^\[/, "").replace(/\]$/, "");
+  } catch {
+    return `endpoint "${host.endpoint}" does not parse as a URL for networkScope "${scope}"`;
+  }
+
+  if (scope === "localhost" || scope === "loopback") {
+    if (!isLoopbackHostname(hostname)) {
+      return `endpoint host "${hostname}" is outside declared networkScope "${scope}" (loopback only)`;
+    }
+    return null;
+  }
+  if (scope === "tailscale") {
+    if (!isTailscaleHostname(hostname)) {
+      return `endpoint host "${hostname}" is outside declared networkScope "${scope}" (100.64.0.0/10 or a MagicDNS name required)`;
+    }
+    return null;
+  }
+  return null;
+}
+
 async function fetchOllamaModels(endpoint: string): Promise<string[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -116,6 +180,9 @@ export async function fetchResidentModels(host: Host): Promise<ResidentModel[] |
   // Only Ollama exposes /api/ps, so anything else is unknown rather than empty.
   if (endpointFamilyForHost(host) !== "ollama") return null;
   if (!host.endpoint.startsWith("http://") && !host.endpoint.startsWith("https://")) return null;
+  // A lane whose URL contradicts its declared scope is not a lane to inspect.
+  const scopeDenial = networkScopeDenial(host);
+  if (scopeDenial !== null) return null;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -333,6 +400,20 @@ export async function checkHostModelHealth(
       checkedModel,
       source: "none",
       reason: "endpoint is not HTTP(S)",
+    };
+  }
+
+  // Deny before dialling: an endpoint that contradicts its declared scope is
+  // unhealthy by definition, whatever might answer if it were pinged.
+  const scopeDenial = networkScopeDenial(host);
+  if (scopeDenial !== null) {
+    return {
+      hostHealthy: false,
+      modelAvailable: false,
+      latencyMs: null,
+      checkedModel,
+      source: "none",
+      reason: scopeDenial,
     };
   }
 

@@ -5,10 +5,12 @@ import type { Host, Registry } from "./platform_types.js";
 import type { ResidentModel } from "./routing_endpoint_runtime.js";
 import {
   buildWatchdogRouteCandidates,
+  chooseModelForTask,
   hostCapacityScore,
   rankLanesByLiveCapacity,
   residencyRankAdjustment,
   routeParallelTasks,
+  routeTask,
   MEMORY_PRESSURE_PENALTY,
   RESIDENCY_ADJUSTMENT_CEILING,
   RESIDENT_MODEL_BONUS,
@@ -16,6 +18,7 @@ import {
   type ParallelTaskInput,
   type WatchdogProbeDeps,
 } from "./routing_selection_runtime.js";
+import { failureKey } from "./supervisor_session_runtime.js";
 import { TIER_IDS } from "./runtime_constants.js";
 
 /**
@@ -514,4 +517,134 @@ test("the live term is bounded: it cannot invert a pair the static score separat
     inversionsWithinCeiling > 0,
     "the term must actually reorder near-ties, or it is decoration"
   );
+});
+
+// --- the breaker set governs the primary lane too ----------------------------
+
+test("a banned host::model pair is demoted from primary to candidates-only", async () => {
+  const spare = lane("spare-lane", 2, 24, "shared-model");
+  const registry = watchdogRegistry([{ id: TIER_IDS.local, hosts: [PRIMARY, spare] }]);
+  // Pin the model override so the pair under test is exactly what a primary
+  // route would carry, independent of what routeTask scores first.
+  const preferredModel = "primary-model";
+
+  // Control: with a clean breaker set, the preferred lane comes back as primary.
+  const clean = await buildWatchdogRouteCandidates(
+    registry,
+    "implement feature",
+    PRIMARY.id,
+    preferredModel,
+    4,
+    new Set<string>(),
+    probes({})
+  );
+  assert.equal(clean.primary?.host, PRIMARY.id);
+  assert.equal(clean.primary?.model, preferredModel);
+  assert.equal(clean.healthyPrimary, true);
+
+  // Ban exactly the pair the primary route would use.
+  const banned = new Set([failureKey(PRIMARY.id, preferredModel)]);
+  const result = await buildWatchdogRouteCandidates(
+    registry,
+    "implement feature",
+    PRIMARY.id,
+    preferredModel,
+    4,
+    banned,
+    probes({})
+  );
+
+  assert.equal(
+    result.primary,
+    null,
+    "a pair that tripped its breaker must not be handed back as primary"
+  );
+  assert.equal(result.healthyPrimary, false);
+  assert.deepEqual(
+    result.candidates.map((candidate) => candidate.host),
+    ["spare-lane"],
+    "the healthy spare is still offered"
+  );
+
+  // The demoted lane stays visible and honestly labeled in the health report:
+  // once as the demoted primary entry, once as its own evaluated candidate.
+  const demotedPrimary = result.health.find((entry) => entry.kind === "primary") as Record<
+    string,
+    any
+  >;
+  assert.equal(demotedPrimary.host, PRIMARY.id);
+  assert.ok(
+    String(demotedPrimary.health.reason).includes("circuit breaker"),
+    JSON.stringify(demotedPrimary.health)
+  );
+  const demotedCandidate = (result.health as Array<Record<string, any>>).find(
+    (entry) => entry.kind === "fallback" && entry.host === PRIMARY.id
+  );
+  assert.ok(demotedCandidate, "the banned primary competes as an ordinary candidate");
+  assert.ok(String(demotedCandidate.health.reason).includes("circuit breaker"));
+  assert.equal(
+    result.candidates.some((c) => c.host === PRIMARY.id),
+    false
+  );
+});
+
+// --- embedding intent outranks overlapping code keywords ---------------------
+
+test("an embedding task gets the embedder even when the description also says 'code'", () => {
+  const host: Host = {
+    id: "embed-box",
+    label: "embed-box",
+    provider: "ollama",
+    endpoint: "http://embed-box:11434",
+    models: [
+      { name: "qwen2.5-coder:14b", roles: ["build", "review"] },
+      { name: "nomic-embed-text:v1.5", roles: ["embed"] },
+    ],
+  };
+
+  // "embed code snippets" used to match wantsCode on "code" and return the
+  // chat/coder model for an embedding job.
+  assert.equal(chooseModelForTask(host, "embed code snippets"), "nomic-embed-text:v1.5");
+  assert.equal(
+    chooseModelForTask(host, "generate embeddings for retrieval"),
+    "nomic-embed-text:v1.5"
+  );
+
+  // Non-embedding tasks keep today's selection untouched.
+  assert.equal(chooseModelForTask(host, "implement the loader"), "qwen2.5-coder:14b");
+});
+
+// --- both tier selectors agree when the cloud gate is closed -----------------
+
+test("route_parallel_tasks excludes a blocked cloud tier from preference, matching route_task", async (t) => {
+  const savedAllowCloud = process.env.XX_STACK_ALLOW_CLOUD;
+  delete process.env.XX_STACK_ALLOW_CLOUD;
+  t.after(() => {
+    if (savedAllowCloud === undefined) delete process.env.XX_STACK_ALLOW_CLOUD;
+    else process.env.XX_STACK_ALLOW_CLOUD = savedAllowCloud;
+  });
+
+  const localHost = lane("local-lane", 2, 8, "local-model");
+  const cloudHost = lane("cloud-big-lane", 8, 0, "cloud-model", {
+    provider: "openai",
+    capabilities: { endpointFamily: "openai-compatible" },
+  });
+  const optedIn = watchdogRegistry([
+    { id: TIER_IDS.local, hosts: [localHost] },
+    { id: TIER_IDS.cloud, hosts: [cloudHost] },
+  ]);
+  const gated: Registry = {
+    ...optedIn,
+    selectionPolicy: { ...optedIn.selectionPolicy, cloudEscalation: { optIn: false } },
+  };
+  const description = "multimodal image vision burst capability-gap";
+
+  // The fixture genuinely prefers cloud on keyword score — under opt-in it wins.
+  assert.equal(routeParallelTasks([description], optedIn).assignments[0]!.tier, TIER_IDS.cloud);
+
+  // Gated: neither selector may hand the task to cloud.
+  const assignment = routeParallelTasks([description], gated).assignments[0]!;
+  assert.notEqual(assignment.tier, TIER_IDS.cloud);
+  assert.notEqual(routeTask(description, gated).recommendedTier, TIER_IDS.cloud);
+  assert.equal(assignment.tier, routeTask(description, gated).recommendedTier);
 });

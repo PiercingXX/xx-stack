@@ -18,8 +18,8 @@ The contract below must match those files.
 
 - Orchestration decisions are always made on the orchestrator host; inference runs
   on self-hosted lanes first.
-- Self-hosted inference host: `gpu-rig` (Debian, 8x RTX 5090), reached
-  over Tailscale only (MagicDNS `gpu-rig`).
+- Self-hosted inference host: `example-gpu-box` (the example inventory's remote
+  GPU box), reached over Tailscale only (MagicDNS `example-gpu-box`).
 - Lanes are named config entries (`sglang`, `ollama`, `cloud`) with a `role`
   (`self_hosted` or `cloud`) and numeric `priority`; higher priority is tried first
   and cloud lanes are always policy-gated regardless of priority.
@@ -27,12 +27,12 @@ The contract below must match those files.
   order, so it selects *which* lanes participate; the order itself is always
   re-derived from `priority` (cloud last while `policy.self_hosted_first` is on).
 - Mandatory lane order for a primary task:
-  1. `gpu-rig-sglang` (sglang, port 30000)
-  2. `gpu-rig-ollama` (ollama, port 11434)
+  1. `example-gpu-box-sglang` (sglang, port 30000)
+  2. `example-gpu-box-ollama` (ollama, port 11434)
   3. Cloud lane when enabled and needed
 - Mandatory lane order for delegated subagent slices (`execution.subagent_profile_orders`):
-  1. `gpu-rig-sglang` (preferred — batched parallel serving on 8x 5090)
-  2. `gpu-rig-ollama`
+  1. `example-gpu-box-sglang` (preferred — batched parallel serving across the box's GPUs)
+  2. `example-gpu-box-ollama`
   3. Cloud lane for eligible presets only after self-hosted lanes are unavailable or unsuitable
 
 ## 3) Current default model mapping
@@ -85,7 +85,7 @@ python3 scripts/hermes_orchestrator.py run \
 
 - Self-hosted lanes must use Tailscale-only connectivity.
 - Do not expose sglang or ollama endpoints publicly.
-- On `gpu-rig`, prefer binding sglang/ollama to the tailnet interface
+- On `example-gpu-box`, prefer binding sglang/ollama to the tailnet interface
   (find it with `tailscale ip -4` on the rig) rather than `0.0.0.0`, or firewall the ports to the tailnet.
 - Ollama requires `OLLAMA_HOST` to be set away from its `127.0.0.1` default before
   the ollama lane is reachable.
@@ -123,7 +123,8 @@ python3 scripts/hermes_orchestrator.py subagents --task "check one||check two"
 - The `serve` command exposes a loopback-only OpenAI-compatible proxy
   (`/healthz`, `/v1/models`, `/v1/chat/completions`) that enforces this routing
   policy; it requires a bearer token and excludes cloud lanes unless explicitly
-  allowed.
+  allowed. Lane health on the proxied path is memoized for
+  `proxy.health_check_ttl_seconds` (default 30s) rather than probed per request.
 - The `bench` command produces qualification-matrix-schema reports in
   `logs/bench/`.
 

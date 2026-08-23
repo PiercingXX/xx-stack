@@ -155,7 +155,22 @@ async function runProcess(command, { cwd, input, shell = false, timeoutMs }) {
       shell,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
+
+    const killProcessTree = (signal) => {
+      try {
+        if (child.pid) {
+          process.kill(-child.pid, signal);
+        }
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          // The process tree is already gone; nothing left to signal.
+        }
+      }
+    };
 
     let stdout = "";
     let stderr = "";
@@ -206,9 +221,18 @@ async function runProcess(command, { cwd, input, shell = false, timeoutMs }) {
       timeoutHandle = setTimeout(() => {
         timedOut = true;
         stderr += `Process timed out after ${timeoutMs}ms\n`;
-        child.kill("SIGTERM");
+        killProcessTree("SIGTERM");
         forceKillHandle = setTimeout(() => {
-          child.kill("SIGKILL");
+          killProcessTree("SIGKILL");
+          // Orphaned grandchildren can hold the stdio pipes open forever, so
+          // 'close' may never fire. Resolve on the deadline regardless.
+          finish({
+            code: 124,
+            signal: "SIGKILL",
+            stdout,
+            stderr,
+            timedOut,
+          });
         }, 5000);
         forceKillHandle.unref?.();
       }, timeoutMs);
@@ -230,47 +254,57 @@ async function runProcess(command, { cwd, input, shell = false, timeoutMs }) {
 }
 
 async function getGitWorkspaceFingerprint(repoRoot) {
-  const head = await runProcess("git", {
-    cwd: repoRoot,
-    input: "",
-    shell: false,
-  });
-  if (head.code !== 0) {
-    return null;
-  }
-
+  // rev-parse pins the commit; status catches uncommitted edits, so an agent
+  // editing files without touching TODO or the contract still counts as
+  // progress. Outside a repo (or before the first commit) the status hash
+  // alone still tracks file changes.
   const rev = await runProcess("git rev-parse HEAD", {
     cwd: repoRoot,
     input: "",
     shell: true,
   });
-  if (rev.code !== 0) {
-    return null;
-  }
+  const head = rev.code === 0 ? rev.stdout.trim() : null;
 
   const status = await runProcess("git status --short --untracked-files=all", {
     cwd: repoRoot,
     input: "",
     shell: true,
   });
-  if (status.code !== 0) {
+  if (head === null && status.code !== 0) {
     return null;
   }
 
-  return hashText(`${rev.stdout.trim()}\n${status.stdout}`);
+  return hashText(`${head ?? "no-head"}\n${status.stdout}`);
 }
 
 async function readManifest(manifestPath) {
+  let raw;
   try {
-    const raw = await readFile(manifestPath, "utf-8");
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object" && parsed.version === MANIFEST_VERSION) {
-      return parsed;
-    }
+    raw = await readFile(manifestPath, "utf-8");
   } catch {
     return null;
   }
-  return null;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    fail(
+      `Loop manifest exists but is not valid JSON: ${manifestPath}\n` +
+        `Inspect the file and repair it by hand. Refusing to start a fresh session,\n` +
+        `because that would reset the iteration history and re-run finished work.`
+    );
+  }
+
+  if (!parsed || typeof parsed !== "object" || parsed.version !== MANIFEST_VERSION) {
+    fail(
+      `Loop manifest exists but fails version validation (expected version ${MANIFEST_VERSION}): ${manifestPath}\n` +
+        `Inspect the file and repair or migrate it by hand. Refusing to start a fresh session,\n` +
+        `because that would reset the iteration history and re-run finished work.`
+    );
+  }
+
+  return parsed;
 }
 
 async function writeJson(filePath, value) {
