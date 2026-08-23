@@ -95,14 +95,44 @@ async function runProbe(helperPath, options) {
       cwd: options.cwd,
       env: process.env,
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
 
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let forceKillHandle = null;
+
+    const killProcessTree = (signal) => {
+      try {
+        if (child.pid) {
+          process.kill(-child.pid, signal);
+        }
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          // The process tree is already gone; nothing left to signal.
+        }
+      }
+    };
+
     const timeout = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      killProcessTree("SIGTERM");
+      forceKillHandle = setTimeout(() => {
+        killProcessTree("SIGKILL");
+        // Orphaned grandchildren can hold the stdio pipes open forever, so
+        // 'close' may never fire. Resolve on the deadline regardless.
+        resolvePromise({
+          code: 124,
+          signal: "SIGKILL",
+          timedOut,
+          stdout,
+          stderr,
+        });
+      }, 5000);
+      forceKillHandle.unref?.();
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk) => {
@@ -116,8 +146,11 @@ async function runProbe(helperPath, options) {
     child.on("error", rejectPromise);
     child.on("close", (code, signal) => {
       clearTimeout(timeout);
+      if (forceKillHandle) {
+        clearTimeout(forceKillHandle);
+      }
       resolvePromise({
-        code: code ?? 0,
+        code: timedOut ? 124 : (code ?? 0),
         signal,
         timedOut,
         stdout,

@@ -76,15 +76,25 @@ function effectiveCapacity(host: Host): number {
   );
 }
 
+/** Same default the preflight uses; a hung endpoint must not stall the run. */
+const FETCH_TIMEOUT_MS = 5000;
+
 async function fetchModelCount(endpoint: string): Promise<number> {
-  const response = await fetch(`${endpoint.replace(/\/$/, "")}/api/tags`, {
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${endpoint.replace(/\/$/, "")}/api/tags`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return Array.isArray(data?.models) ? data.models.length : 0;
+  } finally {
+    clearTimeout(timer);
   }
-  const data = await response.json();
-  return Array.isArray(data?.models) ? data.models.length : 0;
 }
 
 async function main(): Promise<void> {

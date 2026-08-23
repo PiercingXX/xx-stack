@@ -70,6 +70,11 @@ export interface DiagnoseResult {
  * Ping every host in the registry — the disabled / non-HTTP / ping shaping the
  * check_health MCP tool returns. `ping` and `fetchResident` are injectable for
  * tests; both real callers use the defaults from routing_runtime.
+ *
+ * The defaults swallow their own network errors, but they are injectable — and
+ * `Promise.all` would let a single rejection fail the whole diagnose — so each
+ host's live work is isolated: a throwing probe degrades only its own host to
+ an "unreachable" result with the failure as the reason.
  */
 export async function diagnoseHosts(
   registry: Registry,
@@ -85,23 +90,32 @@ export async function diagnoseHosts(
       if (!host.endpoint.startsWith("http://") && !host.endpoint.startsWith("https://")) {
         return { tier: tier.id, host: host.id, status: "skipped", reason: "not an HTTP endpoint" };
       }
-      const result = await ping(host);
-      // Only a reachable, inspectable host is asked; for everything else
-      // fetchResident returns null without dialling and both fields stay off
-      // the result entirely.
-      const resident = result.ok ? await fetchResident(host) : null;
-      const pressure = laneMemoryPressure(host, resident);
-      return {
-        tier: tier.id,
-        host: host.id,
-        endpoint: host.endpoint,
-        provider: host.provider,
-        endpointFamily: endpointFamilyForHost(host),
-        status: result.ok ? "healthy" : "unreachable",
-        latencyMs: result.latencyMs,
-        ...(resident ? { residentModels: resident.map((model) => model.name) } : {}),
-        ...(pressure ? { memoryPressure: pressure } : {}),
-      };
+      try {
+        const result = await ping(host);
+        // Only a reachable, inspectable host is asked; for everything else
+        // fetchResident returns null without dialling and both fields stay off
+        // the result entirely.
+        const resident = result.ok ? await fetchResident(host) : null;
+        const pressure = laneMemoryPressure(host, resident);
+        return {
+          tier: tier.id,
+          host: host.id,
+          endpoint: host.endpoint,
+          provider: host.provider,
+          endpointFamily: endpointFamilyForHost(host),
+          status: result.ok ? "healthy" : "unreachable",
+          latencyMs: result.latencyMs,
+          ...(resident ? { residentModels: resident.map((model) => model.name) } : {}),
+          ...(pressure ? { memoryPressure: pressure } : {}),
+        };
+      } catch (error) {
+        return {
+          tier: tier.id,
+          host: host.id,
+          status: "unreachable",
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
     })
   );
 }

@@ -2,7 +2,7 @@
 """Self-hosted-first orchestration runner for OpenAI-compatible endpoints.
 
 Routes work to self-hosted inference lanes first (sglang and ollama on the
-gpu-rig rig over Tailscale) and only allows cloud on explicit gate.
+example remote GPU box over Tailscale) and only allows cloud on explicit gate.
 
 Lanes are named entries in config with a role ("self_hosted" or "cloud") and a
 numeric priority; higher priority is tried first. Cloud lanes are always gated
@@ -20,6 +20,8 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -28,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 @dataclass
@@ -43,7 +45,7 @@ class Lane:
     endpoint_type: str = "openai_compatible"
     provider: Optional[str] = None
     api_key_env: Optional[str] = None
-    api_key_command: Optional[str] = None
+    api_key_command: Optional[Union[str, List[str]]] = None
     fallback_models: Optional[List[str]] = None
     catalog_models: Optional[List[str]] = None
     chat_probe_on_models_failure: bool = False
@@ -202,10 +204,17 @@ def resolve_api_key(lane: Lane, timeout: int = API_KEY_COMMAND_TIMEOUT_SECONDS) 
             return value
 
     if lane.api_key_command:
+        # The string form is the documented operator-owned pattern and stays
+        # shell-interpreted. The argv-list form runs without a shell, so no
+        # config content can ever be expanded by one.
+        shell = not isinstance(lane.api_key_command, list)
+        command: Any = lane.api_key_command
+        if not shell:
+            command = [str(part) for part in lane.api_key_command]
         try:
             completed = subprocess.run(
-                lane.api_key_command,
-                shell=True,
+                command,
+                shell=shell,
                 text=True,
                 capture_output=True,
                 timeout=timeout,
@@ -512,6 +521,41 @@ def check_lane_health(cfg: Dict[str, Any], lane: Lane) -> Tuple[bool, str]:
     return lane_health(lane, health_timeout(cfg), request_timeout(cfg))
 
 
+# Default freshness window for proxied-request health results. A live probe
+# costs up to the models GET timeout (health_check_timeout_seconds) and up to
+# the full request timeout when a chat probe engages, so the proxy must not
+# pay that on every request.
+LANE_HEALTH_TTL_SECONDS = 30
+
+
+class LaneHealthCache:
+    """Short-TTL memo around check_lane_health for the proxy hot path.
+
+    Outcomes are cached per lane key — including failures, since a dead lane
+    is exactly where a per-request probe hurts most. A non-positive TTL
+    disables memoization. Probes run outside the lock: concurrent requests may
+    duplicate one probe after expiry, but never block each other's network I/O.
+    """
+
+    def __init__(self, ttl_seconds: int = LANE_HEALTH_TTL_SECONDS):
+        self.ttl_seconds = int(ttl_seconds)
+        self._entries: Dict[str, Tuple[float, Tuple[bool, str]]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, cfg: Dict[str, Any], lane: Lane) -> Tuple[bool, str]:
+        if self.ttl_seconds > 0:
+            now = time.monotonic()
+            with self._lock:
+                entry = self._entries.get(lane.key)
+                if entry is not None and now - entry[0] <= self.ttl_seconds:
+                    return entry[1]
+        ok, reason = check_lane_health(cfg, lane)
+        if self.ttl_seconds > 0:
+            with self._lock:
+                self._entries[lane.key] = (time.monotonic(), (ok, reason))
+        return ok, reason
+
+
 def append_jsonl(path: Path, event: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
@@ -706,10 +750,22 @@ def probe_tool_call_support(lane: Lane, timeout: int, model: str) -> Tuple[bool,
 
 
 def save_json(path: Path, obj: Dict[str, Any]) -> None:
+    """Write JSON atomically so a concurrent reader never sees torn content.
+
+    The capability cache is read on the proxy/subagent path while refreshes
+    rewrite it. Writing a temp file in the same directory and renaming keeps
+    every reader on either the previous file or the complete new one.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2, sort_keys=True)
-        f.write("\n")
+    payload = json.dumps(obj, indent=2, sort_keys=True) + "\n"
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            tmp.write(payload)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -1350,6 +1406,9 @@ def command_subagents(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
     chosen_models: List[str] = []
     lane_failures: List[Dict[str, str]] = []
     workers = 1
+    # Real escalation telemetry (cloud-escalation-policy.md): whether the
+    # delegation actually went out as multiple subtasks, not a hardcoded True.
+    decomposition_attempted = False
 
     for _ in range(len(ordered_lane_keys(cfg))):
         lane_key, lane = resolve_subagent_lane(
@@ -1365,6 +1424,7 @@ def command_subagents(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
             tasks = auto_split_subtasks(cfg, lane, args.task, args.parts)
         else:
             tasks = [args.task.strip()]
+        decomposition_attempted = len(tasks) > 1
 
         def run_slice(item: Tuple[int, str]) -> Dict[str, Any]:
             index, subtask = item
@@ -1424,7 +1484,7 @@ def command_subagents(args: argparse.Namespace, cfg: Dict[str, Any]) -> int:
             "task_id": args.task_id or f"subagents-{int(time.time())}",
             "reason_code": request["reason_code"],
             "selected_model": chosen_models[0] if chosen_models else chosen_lane.model,
-            "decomposition_attempted": True,
+            "decomposition_attempted": decomposition_attempted,
             "local_capacity_snapshot": args.local_capacity_snapshot,
             "remote_capacity_snapshot": args.remote_capacity_snapshot,
             "escalation_approved_by": args.escalation_approved_by,
@@ -1828,6 +1888,10 @@ class ProxyServer(ThreadingHTTPServer):
         self.cfg = cfg
         self.token = token
         self.allow_cloud = allow_cloud
+        proxy_cfg = cfg.get("proxy", {}) if isinstance(cfg.get("proxy"), dict) else {}
+        self.health_cache = LaneHealthCache(
+            int(proxy_cfg.get("health_check_ttl_seconds", LANE_HEALTH_TTL_SECONDS))
+        )
 
 
 def flatten_messages_for_cli(messages: List[Dict[str, Any]]) -> str:
@@ -2004,7 +2068,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 attempts.append(f"{lane.name}:cloud_not_allowed")
                 continue
             if not is_cloud_lane(cfg, lane_key):
-                ok, reason = check_lane_health(cfg, lane)
+                ok, reason = self.server.health_cache.get(cfg, lane)
                 if not ok:
                     attempts.append(f"{lane.name}:unhealthy:{reason}")
                     continue
@@ -2048,6 +2112,11 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         data = upstream
                         break
                     attempts.append(f"{lane.name}:{candidate_model}:http_{status}")
+                    if status in (401, 403, 404):
+                        # Auth and missing-endpoint failures are lane problems:
+                        # every fallback model hits the same credentials and
+                        # URL, so retrying them cannot succeed.
+                        break
                 if data is None:
                     continue
 

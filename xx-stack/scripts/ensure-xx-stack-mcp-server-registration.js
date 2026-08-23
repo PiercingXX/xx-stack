@@ -10,6 +10,21 @@ if (!targetConfigPath || !mcpEntrypoint) {
   process.exit(1);
 }
 
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Nothing to clean up.
+    }
+    throw error;
+  }
+}
+
 const config = JSON.parse(fs.readFileSync(targetConfigPath, "utf8"));
 
 config.mcp = config.mcp && typeof config.mcp === "object" ? config.mcp : {};
@@ -28,5 +43,5 @@ if (Object.prototype.hasOwnProperty.call(config, "mcpServers")) {
   delete config.mcpServers;
 }
 
-fs.writeFileSync(targetConfigPath, JSON.stringify(config, null, 2) + "\n");
+writeFileAtomic(targetConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 console.log("  ensured MCP server registration: xx-stack-platform-routing");

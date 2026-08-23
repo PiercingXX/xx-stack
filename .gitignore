@@ -34,6 +34,11 @@ Thumbs.db
 platforms.local.json
 config.local.json
 
+# Your real machine inventory: private MagicDNS names and hardware details.
+# Start from inventory.example.json; the inventory scripts fall back to it
+# while inventory.json is absent, so a fresh clone works out of the box.
+/inventory.json
+
 # Runtime compatibility shim created by setup (symlink to opencode/)
 .opencode
 

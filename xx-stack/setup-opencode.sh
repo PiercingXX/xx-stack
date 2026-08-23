@@ -206,8 +206,17 @@ if [[ $GLOBAL -eq 1 ]]; then
   cp -f "$RUNTIME_DIR"/agents/*.md "$USER_HOST_DIR/agents"/
 
   echo "[xx-stack] Installing skills to the user-level host config..."
-  # Copy each skill directory
-  for skill_dir in "$RUNTIME_DIR"/skills/*/; do
+  # Copy each skill directory. An unmatched glob would stay a literal "*",
+  # so bail before any partial install instead of failing mid-copy.
+  shopt -s nullglob
+  skill_dirs=("$RUNTIME_DIR"/skills/*/)
+  shopt -u nullglob
+  if [ "${#skill_dirs[@]}" -eq 0 ]; then
+    echo "Error: no skill directories found under: $RUNTIME_DIR/skills" >&2
+    echo "Nothing was installed beyond the runtime files and agents already copied." >&2
+    exit 1
+  fi
+  for skill_dir in "${skill_dirs[@]}"; do
     skill_name="$(basename "$skill_dir")"
     dest="$USER_HOST_DIR/skills/$skill_name"
     rm -rf "$dest"

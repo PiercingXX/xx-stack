@@ -104,12 +104,8 @@ async function main(): Promise<void> {
   // Generate advisory suggestions
   const suggestions: string[] = [];
 
-  // recovery_timing_budget: if p90 is much faster than current budget, suggest lowering progressTimeoutMs
-  const rtb = stats["recovery_timing_budget"];
-  if (rtb) {
-    // worst case is static (it's a sum of config values, not a wall-clock measurement)
-    // but we can advise based on how fast the OTHER scenarios run
-  }
+  // recovery_timing_budget advice reads the recorded worst-case values below;
+  // per-scenario wall-clock percentiles say nothing about a static config sum.
 
   if (worstCaseSamples.length > 0) {
     const sortedWc = [...worstCaseSamples].sort((a, b) => a - b);

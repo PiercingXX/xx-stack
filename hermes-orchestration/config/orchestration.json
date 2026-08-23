@@ -4,8 +4,7 @@
     "self_hosted_first": true,
     "primary_lane_order": [
       "sglang",
-      "ollama",
-      "cloud"
+      "ollama"
     ],
     "cloud_enabled_by_default": false,
     "require_manual_cloud_escalation": true
@@ -30,7 +29,7 @@
     "routing_log_file": "logs/routing.jsonl",
     "routing_presets": {
       "general": {
-        "description": "gpu-rig sglang first, then gpu-rig ollama, then premium GitHub cloud gpt-5.3-codex only if self-hosted lanes are unavailable or unsuitable.",
+        "description": "example-gpu-box sglang first, then example-gpu-box ollama, then premium GitHub cloud gpt-5.3-codex only if self-hosted lanes are unavailable or unsuitable.",
         "task_profile": "hardware-constrained",
         "required_model": "",
         "reason_code": "SUBAGENT_GENERAL"
@@ -97,40 +96,22 @@
   },
   "lanes": {
     "sglang": {
-      "name": "gpu-rig-sglang",
+      "name": "example-gpu-box-sglang",
       "role": "self_hosted",
       "priority": 100,
       "endpoint_type": "openai_compatible",
-      "base_url": "http://gpu-rig:30000/v1",
-      "model": "qwen3-coder-next",
-      "enabled": true
+      "base_url": "http://example-gpu-box:30000/v1",
+      "model": null,
+      "enabled": false
     },
     "ollama": {
-      "name": "gpu-rig-ollama",
+      "name": "example-gpu-box-ollama",
       "role": "self_hosted",
       "priority": 70,
       "endpoint_type": "openai_compatible",
-      "base_url": "http://gpu-rig:11434/v1",
-      "model": "qwen3-coder:30b",
+      "base_url": "http://example-gpu-box:11434/v1",
+      "model": null,
       "enabled": false
-    },
-    "cloud": {
-      "name": "github-premium-cloud",
-      "role": "cloud",
-      "priority": 50,
-      "endpoint_type": "hermes_cli",
-      "provider": "github-copilot",
-      "base_url": "github-premium://local-hermes-cli",
-      "model": "gpt-5.3-codex",
-      "fallback_models": [
-        "gpt-5.4"
-      ],
-      "catalog_models": [
-        "gpt-5.3-codex",
-        "gpt-5.4"
-      ],
-      "chat_probe_on_models_failure": true,
-      "enabled": true
     }
   }
 }

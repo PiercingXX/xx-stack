@@ -33,6 +33,13 @@ jobs:
       - name: Verify canonical and mirrored sources have not drifted
         run: npm run drift:check
 
+      # inventory.json is git-ignored (private machine truth), so a fresh clone
+      # has only inventory.example.json. Render the registries from whichever
+      # inventory answers — the template on CI — before checking them; without
+      # this the check compares template output against machine-local files.
+      - name: Render registries from the answering inventory
+        run: node xx-stack/scripts/generate-registries.mjs
+
       - name: Verify generated registries match inventory.json
         run: npm run inventory:check
 
@@ -89,6 +96,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Same reasoning as the layout job: on a fresh clone the template
+      # answers, so render the registries from it first and the suite's strict
+      # sync assertions compare like with like.
+      - name: Render registries from the answering inventory
+        run: node xx-stack/scripts/generate-registries.mjs
 
       - name: Build and test
         run: npm --prefix xx-stack/mcp-server test

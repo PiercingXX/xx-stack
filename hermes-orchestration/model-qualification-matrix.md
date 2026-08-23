@@ -22,7 +22,7 @@ and the retired hosts are named only under "Historical record".
 | Host id | Scope | Hardware | Runtimes |
 |---|---|---|---|
 | `local-workstation` | `localhost` (127.0.0.1) | detected at setup | ollama :11434 (enabled, primary), llama-cpp :8080 (disabled) |
-| `gpu-rig` | `tailscale` | 8x RTX 5090, 32 GB each (256 GB total VRAM) | sglang :30000 (enabled, primary), ollama :11434 (disabled) |
+| `example-gpu-box` | `tailscale` | 2x RTX 4090, 24 GB each (48 GB total VRAM) | sglang :30000 (disabled), ollama :11434 (disabled) |
 
 ## Lanes (from `config/orchestration.json`)
 
@@ -30,9 +30,12 @@ and the retired hosts are named only under "Historical record".
 
 | Lane key | Lane name | Role | Priority | Model | Enabled |
 |---|---|---|---|---|---|
-| `sglang` | `gpu-rig-sglang` | self_hosted | 100 | `qwen3-coder-next` | yes |
-| `ollama` | `gpu-rig-ollama` | self_hosted | 70 | `qwen3-coder:30b` | no |
-| `cloud` | `github-premium-cloud` | cloud | 50 | `gpt-5.3-codex` | yes (gated) |
+| `sglang` | `example-gpu-box-sglang` | self_hosted | 100 | TBD (none declared) | no |
+| `ollama` | `example-gpu-box-ollama` | self_hosted | 70 | TBD (none declared) | no |
+
+A cloud lane (`hermes_cli`, gated behind explicit policy) is not part of the
+shipped template; declare it under `cloud.hermesCli` in your `inventory.json`
+and re-run `npm run inventory:sync` to generate one.
 
 Two things follow from the generator and are easy to trip over:
 
@@ -55,16 +58,16 @@ Two things follow from the generator and are easy to trip over:
 - 32k
 - 64k (only where host/model fit suggests feasible)
 
-The qualified sglang default `qwen3-coder-next` declares a 262k context window,
-so the ladder above does not exercise its top end. Extend it only where you are
-prepared to hold the VRAM.
+No model ships qualified with the template, so no default context window is
+promised. Once you have qualified a sglang model, extend the ladder toward its
+declared window only where you are prepared to hold the VRAM.
 
 ### B) Parallel slice counts
 - 1
 - 2
 - 4
 
-`gpu-rig` declares `maxParallelSlices: 8`; sglang batches concurrent
+`example-gpu-box` declares `maxParallelSlices: 4`; sglang batches concurrent
 requests across the GPUs, so parallel slices there are close to free relative to
 sequential execution. Slice counts above 4 are worth measuring on that lane.
 
@@ -174,8 +177,8 @@ this line is enforceable today; this section is not.
 
 They are unset because no defensible value can be invented from this repo. A
 throughput floor is a property of one model on one runtime on one host at one
-context size and slice count — `qwen3-coder-next` on sglang across 8x RTX 5090
-has no shared scale with `qwen3-coder:30b` on ollama, and the historical
+context size and slice count — one model on sglang across the previous
+production rig's 8x RTX 5090 has no shared scale with `qwen3-coder:30b` on ollama, and the historical
 llama.cpp numbers at the bottom of this file were measured on hardware that is
 no longer in `inventory.json`. Copying a number across any of those boundaries
 would be fabrication.
@@ -209,11 +212,11 @@ A threshold is only meaningful paired with the slice count it was measured at.
 
 ### Threshold template
 
-- Lane `sglang` (`gpu-rig-sglang`, primary self-hosted)
+- Lane `sglang` (`example-gpu-box-sglang`, primary self-hosted)
   - min_tokens_per_sec: TBD — see above
   - max_p95_latency_ms: TBD — see above
   - required_gpu_resident: true
-- Lane `ollama` (`gpu-rig-ollama`, compatibility/fallback)
+- Lane `ollama` (`example-gpu-box-ollama`, compatibility/fallback)
   - min_tokens_per_sec: TBD — see above
   - max_p95_latency_ms: TBD — see above
   - required_gpu_resident: true
@@ -224,15 +227,16 @@ A threshold is only meaningful paired with the slice count it was measured at.
 
 ## Candidate baseline queue
 
-`gpu-rig`, sglang lane
-- `qwen3-coder-next` (currently qualified default; 262k context, tool-call probe
-  PASS 2026-07-05)
+`example-gpu-box`, sglang lane — blocked
+- Nothing queued. The runtime ships `enabled: false` with no models declared;
+  point the machine at hardware you own, declare a model, enable the lane, and
+  queue a candidate here.
 
-`gpu-rig`, ollama lane — blocked
-- `qwen3-coder:30b`. The runtime is `enabled: false` in `inventory.json`: Ollama
-  binds to 127.0.0.1 by default and is not reachable over Tailscale until
-  `OLLAMA_HOST` is set on the rig and it is restarted. Nothing on this lane can
-  be qualified until that is done.
+`example-gpu-box`, ollama lane — blocked
+- `qwen3-coder:30b` is the shape of a candidate, but the runtime is
+  `enabled: false`: Ollama binds to 127.0.0.1 by default and is not reachable
+  over Tailscale until `OLLAMA_HOST` is set on the box and it is restarted.
+  Nothing on this lane can be qualified until that is done.
 
 `local-workstation`, ollama lane
 - No models are declared in `inventory.json`. Populate that list first.
@@ -247,7 +251,7 @@ Each run produces one machine-readable JSON file at
 
 | Field | Notes |
 |---|---|
-| `host` | lane name, e.g. `gpu-rig-sglang` |
+| `host` | lane name, e.g. `example-gpu-box-sglang` |
 | `lane_key` | lane key, e.g. `sglang` |
 | `model` | model benched |
 | `context` | `--context-tokens` |
@@ -287,7 +291,7 @@ record for 2 of 12 required fields. They are moved here rather than faked:
 
 | Field | Emitted by bench | Why the bench cannot produce it |
 |---|---|---|
-| `gpu_residency_pass` | `null`, with `gpu_residency_method: "not_measured_by_bench"` | The bench is an HTTP client. GPU residency is an on-host `nvidia-smi` fact, and the production lane (`gpu-rig`) is remote over Tailscale, so a local probe would be measuring the wrong machine. Collect it on the rig per "Mandatory runtime telemetry" and attach it to the run directory. |
+| `gpu_residency_pass` | `null`, with `gpu_residency_method: "not_measured_by_bench"` | The bench is an HTTP client. GPU residency is an on-host `nvidia-smi` fact, and the production lane (`example-gpu-box`) is remote over Tailscale, so a local probe would be measuring the wrong machine. Collect it on the rig per "Mandatory runtime telemetry" and attach it to the run directory. |
 | `lane_classification` | `null`, with `lane_classification_reason` | P0/P1/P2 is derived by comparing the run against the lane thresholds — which are `TBD`. The bench cannot classify against a threshold that does not exist. Once a lane's thresholds are set per the procedure above, classification becomes derivable and can move back into the required set. |
 
 Both are `null` rather than `""`, so a consumer can distinguish "not measured"
@@ -307,15 +311,14 @@ from "measured as empty".
 
 ## Current qualified baseline
 
-- **sglang lane (`gpu-rig`): `qwen3-coder-next`.** Qualified on
-  capability, not on throughput: 262k context, tool-call probe PASS on
-  2026-07-05. No throughput or latency qualification exists, because the
-  thresholds are unset.
-- **ollama lane (`gpu-rig`): `qwen3-coder:30b` — unqualified.** The
-  runtime is disabled in `inventory.json`; see the candidate queue above.
+None. The shipped template enables no remote lanes and declares no models, so
+nothing is qualified. The previous production baseline — `qwen3-coder-next` on
+sglang (262k context, tool-call probe PASS 2026-07-05; capability only, no
+throughput or latency qualification because thresholds were unset) — was
+measured on a retired rig and is kept under Historical record below.
 
-These are encoded in `config/orchestration.json`, which is generated from
-`inventory.json`.
+Lane definitions come from `inventory.json` via `npm run inventory:sync` and
+are encoded in `config/orchestration.json`.
 
 ## Historical record (superseded, not current)
 
@@ -336,6 +339,8 @@ runs passed an output-validity gate because there was none.
   `qwen2.5-coder-14b-instruct-q5_k_m`: PASS at context=32768, parallel=2,
   iterations=3.
 
-2026-07-05: production moved to `gpu-rig` (8x RTX 5090) running
-sglang :30000 and ollama :11434 over Tailscale. The llama.cpp-era defaults
+2026-07-05: production moved to the then-current tailscale GPU box (8x RTX 5090)
+running sglang :30000 and ollama :11434 over Tailscale. That box is retired from
+this tree; its host id survives nowhere in the shipped configuration. The
+llama.cpp-era defaults
 (`qwen2.5-coder-14b/7b`, `qwen3.6-35b`, `qwen2.5-coder-32b`) are retired.

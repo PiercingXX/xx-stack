@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 type ProviderConfig = {
   options?: {
@@ -130,7 +131,17 @@ function clipBody(text: string): string {
   return `${text.slice(0, max)}\n[truncated ${text.length - max} chars]`;
 }
 
-async function startProxy(
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function respondJson(res: http.ServerResponse, statusCode: number, payload: unknown): void {
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json");
+  res.end(JSON.stringify(payload));
+}
+
+export async function startProxy(
   upstreamBaseUrl: string,
   traceFile: string
 ): Promise<{ origin: string; close: () => Promise<void> }> {
@@ -161,16 +172,24 @@ async function startProxy(
 
       const upstreamUrl = `${upstream.origin}${normalizedPath}`;
 
-      logRecord({
-        timestamp: new Date().toISOString(),
-        direction: "request",
-        id,
-        method: req.method || "GET",
-        path: requestPath,
-        upstreamUrl,
-        headers: sanitizeHeaders(req.headers),
-        bodyText: clipBody(requestBody.toString("utf8")),
-      });
+      // A failing trace medium must degrade to a 502-style answer for this
+      // request only; letting the append throw would escape the handler as an
+      // unhandled rejection and take down the whole proxy.
+      try {
+        logRecord({
+          timestamp: new Date().toISOString(),
+          direction: "request",
+          id,
+          method: req.method || "GET",
+          path: requestPath,
+          upstreamUrl,
+          headers: sanitizeHeaders(req.headers),
+          bodyText: clipBody(requestBody.toString("utf8")),
+        });
+      } catch (error) {
+        respondJson(res, 502, { error: `trace write failure: ${describeError(error)}` });
+        return;
+      }
 
       try {
         const response = await fetch(upstreamUrl, {
@@ -196,17 +215,19 @@ async function startProxy(
         }
         res.end(responseText);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logRecord({
-          timestamp: new Date().toISOString(),
-          direction: "response",
-          id,
-          status: 502,
-          bodyText: `proxy error: ${message}`,
-        });
-        res.statusCode = 502;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ error: `proxy error: ${message}` }));
+        const message = describeError(error);
+        try {
+          logRecord({
+            timestamp: new Date().toISOString(),
+            direction: "response",
+            id,
+            status: 502,
+            bodyText: `proxy error: ${message}`,
+          });
+        } catch {
+          // The trace medium is failing; answering the client still comes first.
+        }
+        respondJson(res, 502, { error: `proxy error: ${message}` });
       }
     });
   });
@@ -229,15 +250,23 @@ async function startProxy(
   };
 }
 
-async function runOpencode(
+/**
+ * How long the child's stdio pipes get to drain after it exits. A grandchild
+ * inheriting those pipes can stall the 'close' event forever, so resolution
+ * falls back to 'exit' once this grace window elapses.
+ */
+const CLOSE_GRACE_MS = 250;
+
+export async function runOpencode(
   args: CliArgs,
   tempHome: string,
-  runLogPath: string
+  runLogPath: string,
+  command: string = "opencode"
 ): Promise<{ exitCode: number | null; timedOut: boolean }> {
   return await new Promise((resolve) => {
     const out = fs.createWriteStream(runLogPath, { flags: "w" });
     const child = spawn(
-      "opencode",
+      command,
       ["run", "--agent", args.agent, "--print-logs", "--dir", args.runDir, args.prompt],
       {
         env: {
@@ -249,24 +278,64 @@ async function runOpencode(
       }
     );
 
-    child.stdout.on("data", (d) => out.write(d));
-    child.stderr.on("data", (d) => out.write(d));
-
     let timedOut = false;
-    const timer = setTimeout(() => {
+    let settled = false;
+    let sawExit = false;
+    let pipesClosed = false;
+    let exitCode: number | null = null;
+    let closeGrace: NodeJS.Timeout | undefined;
+
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (closeGrace !== undefined) clearTimeout(closeGrace);
+      out.end();
+      resolve({ exitCode, timedOut });
+    };
+
+    child.stdout.on("data", (d) => {
+      if (!settled) out.write(d);
+    });
+    child.stderr.on("data", (d) => {
+      if (!settled) out.write(d);
+    });
+
+    const timeout = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, args.timeoutSec * 1000);
 
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      out.end();
-      resolve({ exitCode: code, timedOut });
+    child.on("error", () => {
+      // Spawn failures (ENOENT and friends) never produce a process; report a
+      // nonzero exit code so callers see a failed run instead of crashing on
+      // an unhandled 'error' event.
+      if (!sawExit) exitCode = 1;
+      finish();
+    });
+
+    child.on("exit", (code) => {
+      sawExit = true;
+      exitCode = code;
+      if (pipesClosed) {
+        finish();
+        return;
+      }
+      closeGrace = setTimeout(() => {
+        if (child.stdout) child.stdout.destroy();
+        if (child.stderr) child.stderr.destroy();
+        finish();
+      }, CLOSE_GRACE_MS);
+    });
+
+    child.on("close", () => {
+      pipesClosed = true;
+      if (sawExit) finish();
     });
   });
 }
 
-function summarize(
+export function summarize(
   tracePath: string,
   runLogPath: string,
   summaryPath: string,
@@ -275,9 +344,19 @@ function summarize(
   const traceLines = fs.existsSync(tracePath)
     ? fs.readFileSync(tracePath, "utf8").split("\n").filter(Boolean)
     : [];
-  const requests = traceLines
-    .map((line) => JSON.parse(line) as ProxyRecord)
-    .filter((record) => record.direction === "request");
+
+  // Parse per line: one partial/corrupt record must not discard the whole
+  // post-run summary. Skip malformed lines and report how many there were.
+  const requests: ProxyRecord[] = [];
+  let malformedTraceLineCount = 0;
+  for (const line of traceLines) {
+    try {
+      const record = JSON.parse(line) as ProxyRecord;
+      if (record.direction === "request") requests.push(record);
+    } catch {
+      malformedTraceLineCount += 1;
+    }
+  }
 
   const requestBodies = requests.map((r) => r.bodyText || "");
   const sawNoThink = requestBodies.some((body) => body.includes("/no_think"));
@@ -299,6 +378,7 @@ function summarize(
     tracePath,
     runLogPath,
     totalProxyRequests: requests.length,
+    malformedTraceLineCount,
     sawNoThinkInOutboundPayload: sawNoThink,
     sawExactPromptInOutboundPayload: sawPromptLiteral,
     llmLines,
@@ -309,8 +389,21 @@ function summarize(
   fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+export type TraceSessionResult = {
+  proxyOrigin: string;
+  runResult: { exitCode: number | null; timedOut: boolean };
+};
+
+export type TraceSessionDeps = {
+  startProxy?: typeof startProxy;
+};
+
+export async function runTraceSession(
+  args: CliArgs,
+  deps: TraceSessionDeps = {}
+): Promise<TraceSessionResult> {
+  const start = deps.startProxy ?? startProxy;
+
   ensureDir(args.outputDir);
   ensureDir(args.runDir);
 
@@ -329,22 +422,29 @@ async function main(): Promise<void> {
   const currentBaseUrl =
     provider.options?.baseURL || provider.baseURL || provider.url || args.upstreamBaseUrl;
 
-  const proxy = await startProxy(currentBaseUrl, tracePath);
+  const proxy = await start(currentBaseUrl, tracePath);
 
-  const nextProvider: ProviderConfig = {
-    ...provider,
-    options: {
-      ...(provider.options || {}),
-      baseURL: proxy.origin,
-    },
-  };
-  config.provider[args.providerId] = nextProvider;
+  let runResult: { exitCode: number | null; timedOut: boolean };
+  try {
+    const nextProvider: ProviderConfig = {
+      ...provider,
+      options: {
+        ...(provider.options || {}),
+        baseURL: proxy.origin,
+      },
+    };
+    config.provider[args.providerId] = nextProvider;
 
-  const tempConfigPath = path.join(tempHome, ".config", "opencode", "config.json");
-  fs.writeFileSync(tempConfigPath, JSON.stringify(config, null, 2));
+    const tempConfigPath = path.join(tempHome, ".config", "opencode", "config.json");
+    fs.writeFileSync(tempConfigPath, JSON.stringify(config, null, 2));
 
-  const runResult = await runOpencode(args, tempHome, runLogPath);
-  await proxy.close();
+    runResult = await runOpencode(args, tempHome, runLogPath);
+  } finally {
+    // Setup or the traced run can throw (config write ENOSPC and friends); the
+    // listening proxy must never leak either way. Close errors are swallowed
+    // so they cannot mask the original failure.
+    await proxy.close().catch(() => undefined);
+  }
 
   summarize(tracePath, runLogPath, summaryPath, args.prompt);
 
@@ -353,10 +453,32 @@ async function main(): Promise<void> {
   console.log(`proxy trace: ${tracePath}`);
   console.log(`summary: ${summaryPath}`);
   console.log(`exitCode: ${String(runResult.exitCode)} timedOut: ${String(runResult.timedOut)}`);
+
+  return { proxyOrigin: proxy.origin, runResult };
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`trace-provider-proxy failed: ${message}`);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  await runTraceSession(parseArgs(process.argv.slice(2)));
+}
+
+// --- Direct execution guard (same realpath pattern as cli.ts / index.ts) ---
+// Without it, importing this module from a test would spawn a live run.
+
+const isDirectExecution = ((): boolean => {
+  if (!process.argv[1]) return false;
+  const realOrSelf = (candidate: string): string => {
+    try {
+      return fs.realpathSync(candidate);
+    } catch {
+      return path.resolve(candidate);
+    }
+  };
+  return realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url));
+})();
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    console.error(`trace-provider-proxy failed: ${describeError(error)}`);
+    process.exit(1);
+  });
+}

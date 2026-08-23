@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const inventoryPath = path.join(repoRoot, "inventory.json");
+const fallbackInventoryPath = path.join(repoRoot, "inventory.example.json");
 const checkOnly = process.argv.includes("--check");
 
 /**
@@ -88,16 +89,41 @@ function fail(message) {
   process.exit(2);
 }
 
-const examplePath = path.join(repoRoot, "inventory.example.json");
+// Live registries are read by running systems; a half-written file would be
+// worse than a stale one, so content lands via rename in the same directory.
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Nothing to clean up.
+    }
+    throw error;
+  }
+}
 
+// inventory.json holds your private machine truth (MagicDNS names, hardware)
+// and is git-ignored. Until you create it, the shipped template answers, so a
+// fresh clone can sync and check without carrying anyone's real inventory.
+let inventorySourcePath = inventoryPath;
 if (!fs.existsSync(inventoryPath)) {
-  fail(
-    `no inventory.json found.\n  Start from the template:  cp inventory.example.json inventory.json`
+  inventorySourcePath = fallbackInventoryPath;
+  console.log(
+    `generate-registries: ${path.basename(inventoryPath)} not found — ` +
+      `falling back to ${path.basename(fallbackInventoryPath)}. ` +
+      `To describe your own machines: cp ${path.basename(fallbackInventoryPath)} ${path.basename(inventoryPath)}`
   );
 }
 
-const inventory = JSON.parse(fs.readFileSync(inventoryPath, "utf8"));
-const exampleInventory = JSON.parse(fs.readFileSync(examplePath, "utf8"));
+const exampleInventory = JSON.parse(fs.readFileSync(fallbackInventoryPath, "utf8"));
+const inventory =
+  inventorySourcePath === fallbackInventoryPath
+    ? exampleInventory
+    : JSON.parse(fs.readFileSync(inventorySourcePath, "utf8"));
 
 // ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -109,7 +135,69 @@ function runtimeSpec(kind) {
   return spec;
 }
 
+// ── network-scope guard ──────────────────────────────────────────────────────
+
+function ipv4Octets(address) {
+  const octets = address.split(".");
+  if (octets.length !== 4 || !octets.every((part) => /^[0-9]{1,3}$/.test(part))) return null;
+  const numbers = octets.map(Number);
+  return numbers.every((number) => number <= 255) ? numbers : null;
+}
+
+function isLoopbackAddress(address) {
+  const octets = ipv4Octets(address);
+  if (octets) return octets[0] === 127;
+  return ["localhost", "::1", "[::1]"].includes(address.toLowerCase());
+}
+
+const MAGIC_DNS_HOSTNAME = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
+
+function isTailscaleAddress(address) {
+  // Tailscale assigns out of 100.64.0.0/10 (CGNAT space); a raw IPv4 literal
+  // must come from there, while anything else may only be a MagicDNS name.
+  const octets = ipv4Octets(address);
+  if (octets) return octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127;
+  return MAGIC_DNS_HOSTNAME.test(address);
+}
+
+/**
+ * The rule every emitted endpoint URL must satisfy: the address a lane dials
+ * has to be plausible for the scope its machine declares. A "loopback" machine
+ * pointing at a routable IP, or a tailscale machine at something that is not a
+ * tailnet address or MagicDNS name, is either a typo or a misdeclared machine
+ * — both stop generation here instead of shipping as a dialable URL.
+ * "internet" scopes declare public reachability themselves, so they are exempt.
+ */
+function scopedAddressViolation(scope, address) {
+  if (scope === "localhost" || scope === "loopback") {
+    if (!isLoopbackAddress(address)) {
+      return `scope "${scope}" requires an address in 127.0.0.0/8, ::1, or "localhost"`;
+    }
+    return null;
+  }
+  if (scope === "tailscale") {
+    if (!isTailscaleAddress(address)) {
+      return 'scope "tailscale" requires a 100.64.0.0/10 IP or a MagicDNS hostname (.ts.net preferred)';
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Fail closed: a contradicting endpoint stops generation at the offending machine. */
+function assertScopedAddress(network, owner) {
+  const address = String(network?.address ?? "").trim();
+  if (!address) {
+    fail(`${owner}: network.address is empty`);
+  }
+  const violation = scopedAddressViolation(network?.scope, address);
+  if (violation) {
+    fail(`${owner}: ${violation}, got "${address}"`);
+  }
+}
+
 function baseUrl(machine, runtime) {
+  assertScopedAddress(machine.network, `machine "${machine.id}" (${runtime.kind})`);
   const spec = runtimeSpec(runtime.kind);
   return `${spec.scheme}://${machine.network.address}:${runtime.port}`;
 }
@@ -126,8 +214,7 @@ function tierIdFor(machine, runtime) {
 function hostIdFor(machine, runtime) {
   // A machine running one runtime keeps its own id; multiple runtimes get
   // suffixed so both are addressable and stable across regeneration.
-  const siblings = machine.runtimes.filter((r) => r.enabled !== undefined);
-  return siblings.length > 1 ? `${machine.id}-${runtime.kind}` : machine.id;
+  return machine.runtimes.length > 1 ? `${machine.id}-${runtime.kind}` : machine.id;
 }
 
 function notesFor(machine, runtime) {
@@ -163,6 +250,7 @@ function buildTsHost(machine, runtime) {
 }
 
 function buildAggregatorHost(agg) {
+  assertScopedAddress(agg.network, `aggregator "${agg.id}"`);
   const host = {
     id: agg.id,
     label: agg.label,
@@ -210,11 +298,15 @@ function buildTsRegistry(inv) {
     }
   }
   for (const agg of inv.aggregators ?? []) {
-    ensureTier("local", order.indexOf("local") + 1).hosts.push(buildAggregatorHost(agg));
+    ensureTier("local", order.indexOf("local") + 1 || order.length + 1).hosts.push(
+      buildAggregatorHost(agg)
+    );
   }
   const cloudHosts = buildCloudHosts(inv.cloud);
   if (cloudHosts.length) {
-    ensureTier("cloud", order.indexOf("cloud") + 1).hosts.push(...cloudHosts);
+    // Same fallback as the tiers above: a laneOrder missing "cloud" must not
+    // silently assign priority 0.
+    ensureTier("cloud", order.indexOf("cloud") + 1 || order.length + 1).hosts.push(...cloudHosts);
   }
 
   const ordered = order.map((id) => tiers.get(id)).filter(Boolean);
@@ -319,7 +411,7 @@ for (const { file, content } of outputs) {
     console.log(`  STALE  ${rel}`);
     stale++;
   } else {
-    fs.writeFileSync(file, content, "utf8");
+    writeFileAtomic(file, content);
     console.log(`  wrote  ${rel}`);
   }
 }

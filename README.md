@@ -228,16 +228,19 @@ specialised for OpenCode and kept structurally in step by
 | `npm run inventory:scan` | Find machines on your Tailscale network |
 | `npm run inventory:list` | Show machines and which are enabled |
 | `npm run inventory:sync` | Apply inventory changes |
-| `npm test` | MCP server tests (542) |
+| `npm test` | MCP server tests (547) |
 | `npm run design:systems-lint` | Check the 151 design systems parse and meet contrast |
 
 ---
 
 ## A note on the examples
 
-Some files mention `gpu-rig`, an 8×RTX 5090 box. That's the author's
-hardware, included as a worked example. **You don't need it** — nothing assumes
-it exists, and the stack falls back to running everything locally.
+The example inventory (`inventory.example.json`) describes two machines: your
+own workstation (`local-workstation`, the only lane enabled out of the box) and
+`example-gpu-box`, a stand-in remote GPU box (2×RTX 4090, sglang and ollama,
+both disabled) reached over Tailscale by MagicDNS name. Some files mention it
+as a worked example. **You don't need it** — delete that machine from your
+`inventory.json`, and the stack runs everything locally.
 
 ---
 

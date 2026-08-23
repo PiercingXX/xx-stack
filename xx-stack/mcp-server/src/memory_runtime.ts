@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -193,16 +193,28 @@ export function buildMemoryResyncHelperPrompt(
   ].join(" ");
 }
 
+/**
+ * Write one `.snapshots/` history entry (memory, snapshot, meta) and return its
+ * base name. Two entries written in the same millisecond would collide on the
+ * timestamp-derived base and silently overwrite each other's history, so a
+ * colliding base gets a short random suffix — every entry keeps its own files.
+ *
+ * `now` is injectable so a test can force the collision deterministically.
+ */
 export async function writeSnapshotHistoryEntry(
   snapshotsDir: string,
   direction: "capture" | "apply",
   memoryContent: string,
   snapshotContent: string,
-  meta: Record<string, unknown>
+  meta: Record<string, unknown>,
+  now: Date = new Date()
 ): Promise<string> {
   await mkdir(snapshotsDir, { recursive: true });
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const base = `${timestamp}-${direction}`;
+  const timestamp = now.toISOString().replace(/[:.]/g, "-");
+  let base = `${timestamp}-${direction}`;
+  while (historyEntryExists(snapshotsDir, base)) {
+    base = `${base}-${randomBytes(3).toString("hex")}`;
+  }
   const memoryHistoryPath = resolve(snapshotsDir, `${base}-MEMORY.md`);
   const snapshotHistoryPath = resolve(snapshotsDir, `${base}-SNAPSHOT.md`);
   const metaHistoryPath = resolve(snapshotsDir, `${base}-meta.json`);
@@ -216,6 +228,14 @@ export async function writeSnapshotHistoryEntry(
   );
   await atomicWriteTextFile(metaHistoryPath, JSON.stringify(meta, null, 2) + "\n");
   return base;
+}
+
+function historyEntryExists(snapshotsDir: string, base: string): boolean {
+  return (
+    existsSync(resolve(snapshotsDir, `${base}-MEMORY.md`)) ||
+    existsSync(resolve(snapshotsDir, `${base}-SNAPSHOT.md`)) ||
+    existsSync(resolve(snapshotsDir, `${base}-meta.json`))
+  );
 }
 
 export interface CompletionMemorySyncStatusOptions {

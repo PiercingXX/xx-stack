@@ -296,34 +296,46 @@ export async function runHarnessScenarios(): Promise<ScenarioResult[]> {
       llamaCorrectness,
     ].every((value) => typeof value === "number");
 
+    // The baseline values feed divisions, so each must be present AND
+    // positive. A truthiness gate here once turned degenerate data (a zero or
+    // missing denominator in an otherwise complete run) into a vacuous pass:
+    // ratios stayed null and every `=== null` short-circuit reported true.
+    const usableBaseline =
+      hasAllData &&
+      ollamaP50 !== null &&
+      ollamaP50 > 0 &&
+      ollamaP95 !== null &&
+      ollamaP95 > 0 &&
+      ollamaTokensPerSec !== null &&
+      ollamaTokensPerSec > 0 &&
+      ollamaPeakVramGb !== null &&
+      ollamaPeakVramGb > 0;
+
     let p50Ratio: number | null = null;
     let p95Ratio: number | null = null;
     let throughputRatio: number | null = null;
     let vramRatio: number | null = null;
     let correctnessDrop: number | null = null;
 
-    if (
-      hasAllData &&
-      ollamaP50 &&
-      ollamaP95 &&
-      ollamaTokensPerSec &&
-      ollamaPeakVramGb &&
-      ollamaCorrectness !== null
-    ) {
-      p50Ratio = (llamaP50 as number) / ollamaP50;
-      p95Ratio = (llamaP95 as number) / ollamaP95;
-      throughputRatio = (llamaTokensPerSec as number) / ollamaTokensPerSec;
-      vramRatio = (llamaPeakVramGb as number) / ollamaPeakVramGb;
+    if (usableBaseline) {
+      p50Ratio = (llamaP50 as number) / (ollamaP50 as number);
+      p95Ratio = (llamaP95 as number) / (ollamaP95 as number);
+      throughputRatio = (llamaTokensPerSec as number) / (ollamaTokensPerSec as number);
+      vramRatio = (llamaPeakVramGb as number) / (ollamaPeakVramGb as number);
       correctnessDrop = (ollamaCorrectness as number) - (llamaCorrectness as number);
     }
 
     const skipped = !hasAllData;
+    // Present but unusable is a FAILURE, not a skip: the run claimed to have
+    // benchmark data and the data cannot answer the question it was asked.
+    const degenerateBaseline = hasAllData && !usableBaseline;
     const p50Pass = p50Ratio === null || p50Ratio <= maxP50RegressionRatio;
     const p95Pass = p95Ratio === null || p95Ratio <= maxP95RegressionRatio;
     const throughputPass = throughputRatio === null || throughputRatio >= minThroughputRatio;
     const vramPass = vramRatio === null || vramRatio <= maxVramRatio;
     const correctnessPass = correctnessDrop === null || correctnessDrop <= maxCorrectnessDrop;
-    const passed = skipped || (p50Pass && p95Pass && throughputPass && vramPass && correctnessPass);
+    const metricsPass = p50Pass && p95Pass && throughputPass && vramPass && correctnessPass;
+    const passed = skipped ? true : degenerateBaseline ? false : metricsPass;
 
     results.push({
       name: "benchmark_ollama_vs_llama_cpp",
@@ -331,6 +343,7 @@ export async function runHarnessScenarios(): Promise<ScenarioResult[]> {
       durationMs: Date.now() - t0,
       details: {
         skipped,
+        degenerateBaseline,
         ollamaP50,
         ollamaP95,
         ollamaTokensPerSec,

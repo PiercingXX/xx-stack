@@ -16,20 +16,63 @@ const serverConfig = {
   args: ["${workspaceFolder}/mcp-server/dist/index.js"],
 };
 
-function ensureFile(path) {
-  let doc = {};
-  if (fs.existsSync(path)) {
+function timestamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return (
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  );
+}
+
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
     try {
-      doc = JSON.parse(fs.readFileSync(path, "utf8"));
+      fs.unlinkSync(tempPath);
     } catch {
-      doc = {};
+      // Nothing to clean up.
     }
+    throw error;
+  }
+}
+
+function readExistingConfig(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {};
   }
 
-  if (!doc || typeof doc !== "object") {
-    doc = {};
+  const raw = fs.readFileSync(filePath, "utf8");
+  // An empty file is "no config yet", same as a missing one.
+  if (raw.trim().length === 0) {
+    return {};
   }
-  if (!doc.servers || typeof doc.servers !== "object") {
+
+  let doc;
+  try {
+    doc = JSON.parse(raw);
+  } catch (error) {
+    console.error(`existing MCP config is not valid JSON: ${filePath} (${error.message})`);
+    console.error("Fix or remove the file by hand; refusing to overwrite it with a fresh config.");
+    process.exit(1);
+  }
+
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+    console.error(`existing MCP config is not a JSON object: ${filePath}`);
+    console.error("Fix or remove the file by hand; refusing to overwrite it with a fresh config.");
+    process.exit(1);
+  }
+
+  return doc;
+}
+
+function ensureFile(filePath) {
+  const doc = readExistingConfig(filePath);
+
+  if (!doc.servers || typeof doc.servers !== "object" || Array.isArray(doc.servers)) {
     doc.servers = {};
   }
 
@@ -38,7 +81,13 @@ function ensureFile(path) {
     ...serverConfig,
   };
 
-  fs.writeFileSync(path, JSON.stringify(doc, null, 2) + "\n");
+  if (fs.existsSync(filePath)) {
+    const backupPath = `${filePath}.bak.${timestamp()}`;
+    fs.copyFileSync(filePath, backupPath);
+    console.log(`  backed up existing MCP config: ${backupPath}`);
+  }
+
+  writeFileAtomic(filePath, `${JSON.stringify(doc, null, 2)}\n`);
 }
 
 ensureFile(installedPath);
