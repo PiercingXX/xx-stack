@@ -43,6 +43,21 @@ const LLAMA_CPP_LOCAL_PROVIDER = PROVIDER_IDS.llamaCppLocal;
 const SGLANG_REMOTE_PROVIDER = PROVIDER_IDS.sglangRemote;
 const CLOUD_TIER = TIER_IDS.cloud;
 
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Nothing to clean up.
+    }
+    throw error;
+  }
+}
+
 function buildInventorySnapshot() {
   const localDiscovered = registryHostModels(registry, TIER_IDS.local, HOST_IDS.localWorkstation);
   const remotePrimaryHost = primaryTierHost(registry, TIER_IDS.tailscaleOllama);
@@ -447,7 +462,7 @@ applyAgentAssignments(config, assignableModelsByProvider, policy.ifUnavailableAs
 applyControllerAssignments(policy, assignableModelsByProvider);
 applyAgentAssignments(config, assignableModelsByProvider, policy.alwaysAssignments);
 
-fs.writeFileSync(targetConfigPath, JSON.stringify(config, null, 2) + "\n");
+writeFileAtomic(targetConfigPath, `${JSON.stringify(config, null, 2)}\n`);
 const cloudModelCount = cloudProviders.reduce(
   (total, entry) => total + entry.availableNames.length,
   0

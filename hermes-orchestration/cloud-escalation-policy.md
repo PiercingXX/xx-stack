@@ -20,7 +20,7 @@ Purpose
 Escalate only if every condition is true:
 
 1. Local decision-first: the control plane attempted self-hosted-first resolution.
-2. Hardware limit or specialized model need: the sglang and ollama lanes on `gpu-rig` cannot satisfy profile constraints or required model availability.
+2. Hardware limit or specialized model need: the sglang and ollama lanes on `example-gpu-box` cannot satisfy profile constraints or required model availability.
 3. Decomposition exhausted for constrained workloads, or the active specialized preset explicitly requires cloud.
 4. Manual approval for primary task cloud use, or eligible delegated subagent profile for cloud delegation.
 
@@ -28,8 +28,8 @@ If any condition is false, cloud is denied.
 
 ## Delegation order
 
-1. `gpu-rig-sglang` over Tailscale (preferred delegated lane, 8x RTX 5090)
-2. `gpu-rig-ollama` over Tailscale (fallback runtime on the same rig)
+1. `example-gpu-box-sglang` over Tailscale (preferred delegated lane, batched GPU serving)
+2. `example-gpu-box-ollama` over Tailscale (fallback runtime on the same box)
 3. Cloud lane for eligible delegated tasks only after self-hosted exhaustion or model mismatch
 
 ## Specialized-model rule

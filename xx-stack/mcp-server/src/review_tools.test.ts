@@ -573,3 +573,66 @@ test("a diff with no dotenv file is byte-identical to the pathless redaction", (
     "with no dotenv file the walker must change nothing the generic pass would not"
   );
 });
+
+// --- SECURITY: caller-supplied diffs carry no hunk headers to attribute -----
+//
+// A diff passed as the tool's `diff` argument is free-form text. Real `git
+// diff` output always has `--- / +++ / @@` headers, but pasted env bodies and
+// partial patches may have none — attribution then has nothing to work with
+// and every dotenv assignment survived verbatim. For that source the
+// structural pass now runs over the whole payload.
+
+const HEADERLESS_CALLER_DIFF = [
+  "# production environment",
+  "DATABASE_URL=postgres://u:p@h/db",
+  "STRIPE_KEY=sk_live_51ABCdefGHI",
+].join("\n");
+
+test("a caller-supplied diff without hunk headers gets structural dotenv redaction", async () => {
+  const h = harness();
+  const payload = await callReview(h, {
+    sessionId: "sx-review-001",
+    notes: ["rotate these"],
+    diff: HEADERLESS_CALLER_DIFF,
+  });
+
+  assert.equal(payload.diffSource, "argument");
+  assert.ok(!payload.prompt.includes("postgres://u:p@h/db"), "the URL credential must not leak");
+  assert.ok(!payload.prompt.includes("sk_live_51ABCdefGHI"), "the live key must not leak");
+  assert.ok(
+    payload.prompt.includes("DATABASE_URL=[redacted-secret]") &&
+      payload.prompt.includes("STRIPE_KEY=[redacted-secret]"),
+    "key names survive so the handoff can still say what was where"
+  );
+});
+
+test("structural whole-payload redaction preserves keys, comments, and line count", () => {
+  const out = redactDiffSecrets(HEADERLESS_CALLER_DIFF, { source: "argument" });
+  const lines = out.split("\n");
+
+  assert.equal(lines.length, HEADERLESS_CALLER_DIFF.split("\n").length);
+  assert.equal(lines[0], "# production environment", "comments survive");
+  assert.equal(lines[1], "DATABASE_URL=[redacted-secret]");
+  assert.equal(lines[2], "STRIPE_KEY=[redacted-secret]");
+});
+
+test("a git-sourced diff without hunk headers keeps the per-hunk behavior", () => {
+  // Only caller-supplied content gets the fallback: a header-less GIT diff is
+  // ordinary prose-like output where `KEY=value` lines are not credentials.
+  const diff = "+const greeting = hunter2;\n";
+  assert.equal(redactDiffSecrets(diff, { source: "git" }), diff);
+});
+
+test("dotless basenames ending in .env are attributed as dotenv-shaped", () => {
+  const diff = [
+    "diff --git a/config/secrets.env b/config/secrets.env",
+    "--- a/config/secrets.env",
+    "+++ b/config/secrets.env",
+    "@@ -0,0 +1,1 @@",
+    "+SMTP_PASS=hunter2",
+  ].join("\n");
+
+  const out = redactDiffSecrets(diff);
+  assert.ok(!out.includes("hunter2"), "`secrets.env` fails the dotted pattern but ends in .env");
+  assert.ok(out.includes("+SMTP_PASS=[redacted-secret]"));
+});

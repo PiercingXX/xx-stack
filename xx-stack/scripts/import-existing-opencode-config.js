@@ -12,6 +12,21 @@ if (!registryPath || !targetConfigPath || !recommendationsPath) {
   process.exit(1);
 }
 
+function writeFileAtomic(filePath, data) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    fs.writeFileSync(tempPath, data);
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    try {
+      fs.unlinkSync(tempPath);
+    } catch {
+      // Nothing to clean up.
+    }
+    throw error;
+  }
+}
+
 const registry = JSON.parse(fs.readFileSync(registryPath, "utf8"));
 const config = JSON.parse(fs.readFileSync(targetConfigPath, "utf8"));
 const recommendations = fs.existsSync(recommendationsPath)
@@ -132,7 +147,7 @@ for (const [providerKey, providerValue] of Object.entries(providers)) {
   if (providerKey === PROVIDER_IDS.ollamaRemote || providerKey.startsWith("ollama-")) {
     const remoteHostId =
       providerKey === PROVIDER_IDS.ollamaRemote
-        ? HOST_IDS.gpuRig
+        ? HOST_IDS.exampleGpuBox
         : providerKey === PROVIDER_IDS.ollama5090
           ? HOST_IDS.testBenchArchlinux
           : providerKey;
@@ -213,5 +228,5 @@ if (localHost) {
   }
 }
 
-fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + "\n");
+writeFileAtomic(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 console.log(`  imported prior config: providers=${importedProviders} models=${importedModels}`);

@@ -11,14 +11,19 @@ unavailable or unsuitable.
 
 ## Topology
 
-All self-hosted inference runs on the AI rig `gpu-rig` (Debian, 8x RTX 5090),
-reached over Tailscale (MagicDNS name `gpu-rig`):
+Self-hosted inference runs on the remote GPU box `example-gpu-box` (the example
+inventory's 2x RTX 4090 host), reached over Tailscale (MagicDNS name
+`example-gpu-box`). Both lanes ship **disabled** until you point them at a real
+machine:
 
 | Lane key | Name | Endpoint | Runtime | Priority | Role |
 |----------|------|----------|---------|----------|------|
-| `sglang` | `gpu-rig-sglang` | `http://gpu-rig:30000/v1` | sglang | 100 | Primary lane (262k context, batched parallel subagents) — the only lane currently live |
-| `ollama` | `gpu-rig-ollama` | `http://gpu-rig:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
-| `cloud` | `github-premium-cloud` | local `hermes` CLI | GitHub premium | 50 | Last-resort escalation |
+| `sglang` | `example-gpu-box-sglang` | `http://example-gpu-box:30000/v1` | sglang | 100 | Primary lane when enabled — enable after pointing the machine at hardware you own |
+| `ollama` | `example-gpu-box-ollama` | `http://example-gpu-box:11434/v1` | ollama | 70 | Fallback self-hosted lane — **disabled** until Ollama is exposed on the tailnet (see below) |
+
+A cloud lane is not part of the shipped template; add one under `cloud.hermesCli`
+in your `inventory.json` and re-run `npm run inventory:sync` if you want Hermes
+to hold a last-resort escalation lane.
 
 Lanes are named entries in `config/orchestration.json` with a `role`
 (`self_hosted` or `cloud`) and a numeric `priority` — higher priority is tried
@@ -32,7 +37,7 @@ The lane ships with `lanes.ollama.enabled: false` because Ollama binds to
 the tailnet interface on the rig:
 
 ```bash
-# On gpu-rig:
+# On example-gpu-box:
 sudo systemctl edit ollama
 # Add:
 #   [Service]
@@ -64,8 +69,8 @@ host in `../xx-stack/runtime/platforms.json`.
 1. Verify Tailscale can reach the rig:
 
 ```bash
-tailscale status | grep gpu-rig
-curl -s http://gpu-rig:30000/v1/models
+tailscale status | grep example-gpu-box
+curl -s http://example-gpu-box:30000/v1/models
 ```
 
 2. Run unit tests and health checks:
@@ -121,7 +126,7 @@ python3 scripts/hermes_orchestrator.py subagents \
 
 Subagent slices run concurrently on the selected lane via a thread pool
 (`execution.max_parallel_subagents`, default 4). sglang batches concurrent
-requests across the 8x 5090s, so parallel slices are close to free relative to
+requests across the box's GPUs, so parallel slices are close to free relative to
 sequential execution.
 
 ## Local proxy mode (serve)
@@ -150,9 +155,15 @@ python3 scripts/hermes_orchestrator.py serve
   switch that would enable one.
 - Request bodies are capped (8 MiB → `413`) and the handler socket has a
   timeout, so a slow or oversized client cannot park a thread.
+- Lane health checks are memoized per lane for
+  `proxy.health_check_ttl_seconds` (default 30) instead of probing on every
+  request; failures are cached too, so a lane that just recovered may wait out
+  the TTL. Set it to `0` to probe every request.
 
 A user systemd unit is provided at `systemd/hermes-proxy.service`; it reads
-`HERMES_PROXY_TOKEN` from `~/.config/hermes-orchestration/proxy.env`.
+`HERMES_PROXY_TOKEN` from `~/.config/hermes-orchestration/proxy.env` and runs
+the service sandboxed (no privilege escalation, read-only filesystem with only
+the repo's `logs/` directory writable).
 See [Installing the systemd units](#installing-the-systemd-units) below.
 
 ## Using this as an xx-stack routing lane

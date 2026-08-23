@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_CONTEXT_RESERVE_PERCENT,
   bytesToGb,
@@ -57,7 +59,18 @@ type CliArgs = {
   json: boolean;
 };
 
-function parseArgs(argv: string[]): CliArgs {
+/**
+ * Numeric CLI values must be finite: `Number("abc")` yields NaN, and a NaN
+ * timeout would make every host report unreachable by aborting instantly.
+ * Anything unparseable falls back to the default instead.
+ */
+function parseFiniteNumberArg(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function parseArgs(argv: string[]): CliArgs {
   const defaults: CliArgs = {
     registryPath: "",
     contextGbPerModel: 3,
@@ -74,17 +87,17 @@ function parseArgs(argv: string[]): CliArgs {
       continue;
     }
     if (arg === "--context-gb-per-model" && argv[i + 1]) {
-      defaults.contextGbPerModel = Number(argv[i + 1]);
+      defaults.contextGbPerModel = parseFiniteNumberArg(argv[i + 1], defaults.contextGbPerModel);
       i += 1;
       continue;
     }
     if (arg === "--extra-context-gb" && argv[i + 1]) {
-      defaults.extraContextGb = Number(argv[i + 1]);
+      defaults.extraContextGb = parseFiniteNumberArg(argv[i + 1], defaults.extraContextGb);
       i += 1;
       continue;
     }
     if (arg === "--timeout-ms" && argv[i + 1]) {
-      defaults.timeoutMs = Number(argv[i + 1]);
+      defaults.timeoutMs = parseFiniteNumberArg(argv[i + 1], defaults.timeoutMs);
       i += 1;
       continue;
     }
@@ -350,8 +363,25 @@ async function main(): Promise<void> {
   printHuman(results, args);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`monitor-memory failed: ${message}`);
-  process.exit(1);
-});
+// --- Direct execution guard (same realpath pattern as cli.ts / index.ts) ---
+// Without it, importing this module from a test would run the monitor.
+
+const isDirectExecution = ((): boolean => {
+  if (!process.argv[1]) return false;
+  const realOrSelf = (candidate: string): string => {
+    try {
+      return fs.realpathSync(candidate);
+    } catch {
+      return path.resolve(candidate);
+    }
+  };
+  return realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url));
+})();
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`monitor-memory failed: ${message}`);
+    process.exit(1);
+  });
+}

@@ -10,9 +10,9 @@
     },
     "sglang-remote": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "SGLang-GPU-Rig",
+      "name": "SGLang-Example-GPU-Box",
       "options": {
-        "baseURL": "http://gpu-rig:30000/v1"
+        "baseURL": "http://example-gpu-box:30000/v1"
       }
     },
     "ollama-local": {
@@ -24,9 +24,9 @@
     },
     "ollama": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Ollama-GPU-Rig",
+      "name": "Ollama-Example-GPU-Box",
       "options": {
-        "baseURL": "http://gpu-rig:11434/v1"
+        "baseURL": "http://example-gpu-box:11434/v1"
       }
     }
   },

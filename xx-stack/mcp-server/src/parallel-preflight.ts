@@ -2,6 +2,9 @@
 
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { atomicWriteTextFile } from "./io_runtime.js";
 import {
   PATH_CONSTANTS,
   TIER_IDS,
@@ -17,6 +20,26 @@ type ModelMeta = {
     quantization_level?: string;
     family?: string;
   };
+};
+
+/**
+ * A registry model card. The live endpoint only reports a subset of these —
+ * context window, VRAM estimates and tool-use reliability are curated registry
+ * data that a sync must preserve, not rebuild.
+ */
+export type ModelEntry = {
+  name?: string;
+  roles?: string[];
+  size?: number;
+  format?: string;
+  quantization?: string;
+  weightBits?: number;
+  kernelFamily?: string;
+  contextWindow?: number;
+  estimatedVramGb?: number;
+  supportsToolUse?: boolean;
+  toolCallReliability?: "unknown" | "low" | "validated";
+  jsonModeReliability?: "unknown" | "low" | "validated";
 };
 
 type Host = {
@@ -43,13 +66,7 @@ type Host = {
       inventorySource?: string;
     };
   };
-  models?: Array<{
-    name?: string;
-    roles?: string[];
-    size?: number;
-    quantization?: string;
-    kernelFamily?: string;
-  }>;
+  models?: ModelEntry[];
 };
 
 type Tier = {
@@ -77,7 +94,18 @@ type HostSyncResult = {
   reason?: string;
 };
 
-function parseArgs(argv: string[]): CliArgs {
+/**
+ * Numeric CLI values must be finite: `Number("abc")` yields NaN, and a NaN
+ * timeout would make every host report unreachable by aborting instantly.
+ * Anything unparseable falls back to the default instead.
+ */
+function parseFiniteNumberArg(raw: string | undefined, fallback: number): number {
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     registryPath: "",
     timeoutMs: 5000,
@@ -92,7 +120,7 @@ function parseArgs(argv: string[]): CliArgs {
       continue;
     }
     if (arg === "--timeout-ms" && argv[i + 1]) {
-      args.timeoutMs = Number(argv[i + 1]);
+      args.timeoutMs = parseFiniteNumberArg(argv[i + 1], args.timeoutMs);
       i += 1;
       continue;
     }
@@ -170,6 +198,45 @@ async function fetchJson(url: string, timeoutMs: number): Promise<Record<string,
   }
 }
 
+/**
+ * Fold a live /api/tags catalog into the registry's model cards.
+ *
+ * The probe is authoritative for name, size, quantization and kernel family,
+ * and for nothing else. Everything a card already carries — curated roles,
+ * context window, VRAM estimates, tool-use reliability — merges through
+ * untouched: rebuilding the entry here once permanently degraded the registry
+ * every time a preflight ran.
+ */
+export function mergeSyncedModels(existing: ModelEntry[], probed: ModelMeta[]): ModelEntry[] {
+  const previousByName = new Map<string, ModelEntry>();
+  for (const entry of existing) {
+    if (!entry?.name) continue;
+    previousByName.set(entry.name, entry);
+  }
+
+  const merged: ModelEntry[] = [];
+  for (const model of probed) {
+    const name = typeof model?.name === "string" ? model.name : "";
+    if (!name) {
+      continue;
+    }
+    const previous = previousByName.get(name);
+    merged.push({
+      ...(previous ?? {}),
+      name,
+      roles: previous
+        ? Array.isArray(previous.roles)
+          ? previous.roles
+          : []
+        : ["imported-from-live-endpoint"],
+      size: typeof model?.size === "number" ? model.size : undefined,
+      quantization: model?.details?.quantization_level,
+      kernelFamily: model?.details?.family,
+    });
+  }
+  return merged;
+}
+
 async function syncHost(host: Host, timeoutMs: number): Promise<HostSyncResult> {
   const endpoint = (host.endpoint ?? "").replace(/\/$/, "");
   if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
@@ -188,41 +255,21 @@ async function syncHost(host: Host, timeoutMs: number): Promise<HostSyncResult> 
   try {
     const tags = await fetchJson(`${endpoint}/api/tags`, timeoutMs);
     const models: ModelMeta[] = Array.isArray(tags?.models) ? tags.models : [];
-    const existingRoles = new Map<string, string[]>();
-    for (const entry of host.models ?? []) {
-      if (!entry?.name) continue;
-      existingRoles.set(entry.name, Array.isArray(entry.roles) ? entry.roles : []);
-    }
-
-    const syncedModels: NonNullable<Host["models"]> = [];
-    for (const model of models) {
-      const name = typeof model?.name === "string" ? model.name : "";
-      if (!name) {
-        continue;
-      }
-      const roles = existingRoles.get(name) ?? ["imported-from-live-endpoint"];
-      syncedModels.push({
-        name,
-        roles,
-        size: typeof model?.size === "number" ? model.size : undefined,
-        quantization: model?.details?.quantization_level,
-        kernelFamily: model?.details?.family,
-      });
-    }
-    host.models = syncedModels;
+    host.models = mergeSyncedModels(host.models ?? [], models);
 
     const maxModelSizeGb = models
       .map((model) => (typeof model?.size === "number" ? toGb(model.size) : 0))
       .reduce((max, sizeGb) => Math.max(max, sizeGb), 0);
 
     host.reachable = true;
+    const syncedCount = host.models?.length ?? 0;
     host.hardware = {
       ...(host.hardware ?? {}),
       detected: {
         ...(host.hardware?.detected ?? {}),
         gpuCount: inferGpuCount(host),
         maxModelSizeGb,
-        catalogedModelCount: syncedModels.length,
+        catalogedModelCount: syncedCount,
         inventorySyncedAt: new Date().toISOString(),
         inventorySource: "ollama-api-tags",
       },
@@ -232,7 +279,7 @@ async function syncHost(host: Host, timeoutMs: number): Promise<HostSyncResult> 
       hostId: host.id,
       endpoint,
       reachable: true,
-      modelCount: syncedModels.length,
+      modelCount: syncedCount,
       maxModelSizeGb,
       effectiveCapacity: effectiveCapacity(host),
     };
@@ -264,18 +311,27 @@ async function main(): Promise<void> {
   }
 
   const results = await Promise.all(hosts.map((host) => syncHost(host, args.timeoutMs)));
+  const reachable = results.filter((result) => result.reachable);
 
-  if (args.write) {
-    fs.writeFileSync(args.registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+  // A probe outage must never become a durable registry change: persist only
+  // when something was actually reachable, and then atomically — a plain
+  // write here once left the LIVE registry truncated on a crash mid-write.
+  let persisted = false;
+  if (args.write && reachable.length > 0) {
+    await atomicWriteTextFile(args.registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+    persisted = true;
   }
 
-  const reachable = results.filter((result) => result.reachable);
   const totalCapacity = reachable.reduce((sum, result) => sum + result.effectiveCapacity, 0);
   const suggestedWave = Math.max(1, totalCapacity);
 
   console.log("parallel preflight summary");
   console.log(`registry: ${args.registryPath}`);
-  console.log(`write mode: ${args.write ? "enabled" : "disabled"}`);
+  console.log(
+    `registry write: ${
+      !args.write ? "disabled" : persisted ? "applied (atomic)" : "skipped: no reachable hosts"
+    }`
+  );
   for (const result of results) {
     console.log(`- ${result.hostId} @ ${result.endpoint}`);
     console.log(`  reachable: ${result.reachable}`);
@@ -293,8 +349,25 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`parallel-preflight failed: ${message}`);
-  process.exit(1);
-});
+// --- Direct execution guard (same realpath pattern as cli.ts / index.ts) ---
+// Without it, importing this module from a test would run a live preflight.
+
+const isDirectExecution = ((): boolean => {
+  if (!process.argv[1]) return false;
+  const realOrSelf = (candidate: string): string => {
+    try {
+      return fs.realpathSync(candidate);
+    } catch {
+      return path.resolve(candidate);
+    }
+  };
+  return realOrSelf(process.argv[1]) === realOrSelf(fileURLToPath(import.meta.url));
+})();
+
+if (isDirectExecution) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`parallel-preflight failed: ${message}`);
+    process.exit(1);
+  });
+}

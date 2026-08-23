@@ -163,8 +163,9 @@ python3 scripts/hermes_orchestrator.py run \
 
 ## Historical note
 
-The 2026-07-05 retarget moved self-hosted lanes to `gpu-rig`
+The 2026-07-05 retarget moved self-hosted lanes to a dedicated remote GPU box
 (8x RTX 5090) over Tailscale: sglang on port 30000 (primary, `qwen3-coder-next`)
 and ollama on port 11434 (fallback, pending `OLLAMA_HOST` exposure on the rig).
-Older references to "Debian local llama.cpp" and "Arch over Tailscale" map to the
-sglang and ollama lanes respectively.
+That box is retired from this tree; the example inventory now represents it as
+`example-gpu-box`. Older references to "Debian local llama.cpp" and "Arch over
+Tailscale" map to the sglang and ollama lanes respectively.

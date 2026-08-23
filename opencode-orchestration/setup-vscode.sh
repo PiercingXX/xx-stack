@@ -167,8 +167,12 @@ servers["xx-stack-platform-routing"] = {
 
 next.servers = servers;
 
+// Live config: land the content via rename in the same directory so a crash
+// mid-write can never leave a half-written mcp.json behind.
+const tempPath = `${configPath}.tmp-${process.pid}`;
 fs.mkdirSync(path.dirname(configPath), { recursive: true });
-fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+fs.writeFileSync(tempPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+fs.renameSync(tempPath, configPath);
 NODE
 }
 

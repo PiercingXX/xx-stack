@@ -7,7 +7,18 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-Nothing yet.
+- **Every tracked file now uses one consistent example topology.** The
+  placeholder host id introduced in 1.64.0 still carried author-hardware flavor
+  ("GPU rig") and drifted from the example inventory, whose machine ids are the
+  canonical ones the generators emit (`example-gpu-box`, lanes
+  `example-gpu-box-sglang` / `example-gpu-box-ollama`). The runtime constant,
+  its TypeScript type, the setup environment variable, the shipped opencode
+  provider entries, the Hermes docstring, and all prose now use those ids, and
+  the three generated registries were regenerated so a fresh clone (and CI,
+  which runs generation with no private inventory present) is self-consistent.
+  Users running setup were previously installed an opencode config whose remote
+  providers pointed at an unresolvable hostname; the shipped default now points
+  at the clearly-marked example name instead.
 
 ## [1.64.0] — 2026-08-14
 
@@ -168,14 +179,15 @@ fixes that followed are recorded in `MANUAL.md` §11.
   address, carried in `inventory.json` as `network.address`, in both generated
   registries, in the Hermes lanes, in seven docs, and — because
   `runtime-constants.json` is in the package's `files` — in anything published
-  from this tree. It is now `gpu-rig`, a placeholder the inventory tells you to
-  replace, across 62 occurrences in 18 files, including the `skippyDebian5090`
-  constant, its TypeScript type, and the `XX_STACK_HOST_SKIPPY_DEBIAN_5090`
-  setup variable. The 1.63.0 entry below claims "No private network addresses,
-  tailnet names, or absolute home paths in the repository"; that claim was
-  false when written, and is true as of this release. Re-checked at the same
-  time: no absolute home paths, no RFC1918 or CGNAT addresses, and no
-  `*.ts.net` names remain in tracked files.
+  from this tree. It was replaced with an obviously-placeholder host id that
+  the inventory tells you to replace, across 62 occurrences in 18 files,
+  including the constant, its TypeScript type, and the matching setup variable.
+  (That placeholder has since been standardized to the example inventory's
+  `example-gpu-box`; see Unreleased.) The 1.63.0 entry below claims "No private
+  network addresses, tailnet names, or absolute home paths in the repository";
+  that claim was false when written, and is true as of this release. Re-checked
+  at the same time: no absolute home paths, no RFC1918 or CGNAT addresses, and
+  no `*.ts.net` names remain in tracked files.
 - Known and deliberately not gated: `eslint` is pinned at `8.57.1`, which is
   end-of-life and pulls a `js-yaml` carrying two high advisories. Dev-only, so
   it does not ship; clearing it means an ESLint 9 flat-config migration.

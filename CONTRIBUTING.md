@@ -28,12 +28,14 @@ npm run verify
 
 `npm run verify` runs every gate CI runs in a single pass: layout, agent mirror
 sync, drift, rules coverage, nano tiers, inventory registries, guardrails,
-`lint`, `format:check`, the five design-pack gates (`design:golden`,
-`design:html-gate`, `design:systems-lint`, `design:craft-refs`,
-`design:anti-slop-test`), the MCP server suite, and the Hermes suite.
+CI-parity (`ci:parity`), `lint`, `format:check`, the five design-pack gates
+(`design:golden`, `design:html-gate`, `design:systems-lint`,
+`design:craft-refs`, `design:anti-slop-test`), the MCP server suite, and the
+Hermes suite.
 
 The two suites are the same set as of 2026-08-14, and that is a property worth
-keeping rather than an accident. Until then CI ran ten of the sixteen gates:
+keeping rather than an accident. Until then CI skipped six gates that `verify`
+ran:
 `rules:check`, `nano:check`, `guardrails:check`, `design:systems-lint`,
 `design:craft-refs` and `design:anti-slop-test` existed, passed locally, and
 never ran on a pull request. **If you add a gate to `verify`, add it to
@@ -112,10 +114,7 @@ CommonJS half. The vendored design pack (`xx-stack/packs/**`) is in
 ours to restyle.
 
 Lint must be **clean of errors**. Warnings are allowed but should not grow.
-`npm run lint` currently reports **0 errors and 1 warning**: a missing return
-type at `xx-stack/mcp-server/src/index.ts:130`
-(`@typescript-eslint/explicit-function-return-type`). That is the only
-outstanding warning — annotate it and this section should say zero.
+`npm run lint` currently reports **0 errors and 0 warnings**.
 
 ### Dependencies and Portability
 
@@ -235,8 +234,8 @@ through that gate**, and do not change its default.
 ### Testing
 
 ```bash
-npm test              # MCP server suite (290 tests)
-npm run hermes:test   # Hermes control plane (25 tests)
+npm test              # MCP server suite (547 tests)
+npm run hermes:test   # Hermes control plane (83 tests)
 npm run layout:verify # Component layout and compatibility symlinks
 ```
 

@@ -558,14 +558,18 @@ function runGuardedProcess(
           reject(failure(`guarded_exec_aborted: ${commandLine}`, code ?? null, signal, true));
           return;
         }
+        // A clean exit always wins, even when the timeout fired moments
+        // earlier: the child finished its work before the teardown mattered,
+        // and reporting a timeout here would discard good output. Only an
+        // actually-signalled close is classified as a timeout.
+        if (code === 0 && signal === null) {
+          resolve(buildOutput());
+          return;
+        }
         if (timedOut) {
           reject(
             failure(`Command failed: ${commandLine}`, code ?? null, signal ?? "SIGTERM", true)
           );
-          return;
-        }
-        if (code === 0) {
-          resolve(buildOutput());
           return;
         }
         const { stderr } = buildOutput();

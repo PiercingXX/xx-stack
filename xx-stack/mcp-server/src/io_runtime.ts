@@ -1,4 +1,4 @@
-import { open, rename, type FileHandle } from "node:fs/promises";
+import { open, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -89,6 +89,20 @@ async function fsyncDirectoryBestEffort(directory: string, io: AtomicWriteIo): P
  * happens. This is a deliberate choice to make the common case slower so the
  * rare case is not silent data loss — not a free improvement.
  */
+/**
+ * Best-effort removal of a temp file a failed write left behind. The write may
+ * have failed before creating anything (an injected `io` never touches disk) or
+ * the file may already be gone, so any unlink failure is ignored — the point is
+ * only that a `.tmp-*` orphan does not accumulate next to the real store.
+ */
+async function removeTempFileBestEffort(tempPath: string): Promise<void> {
+  try {
+    await unlink(tempPath);
+  } catch {
+    // Nothing to clean up, or someone else removed it — either is fine.
+  }
+}
+
 export async function atomicWriteTextFile(
   path: string,
   content: string,
@@ -97,14 +111,19 @@ export async function atomicWriteTextFile(
   const tempPath = `${path}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const handle = await io.open(tempPath, "w");
   try {
-    await handle.writeFile(content, "utf-8");
-    // Flush the temp file's data before it is given the real name: a rename
-    // that publishes a name pointing at unflushed blocks is exactly the
-    // truncation this is meant to prevent.
-    await handle.sync();
-  } finally {
-    await handle.close();
+    try {
+      await handle.writeFile(content, "utf-8");
+      // Flush the temp file's data before it is given the real name: a rename
+      // that publishes a name pointing at unflushed blocks is exactly the
+      // truncation this is meant to prevent.
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await io.rename(tempPath, path);
+  } catch (error) {
+    await removeTempFileBestEffort(tempPath);
+    throw error;
   }
-  await io.rename(tempPath, path);
   await fsyncDirectoryBestEffort(dirname(path), io);
 }

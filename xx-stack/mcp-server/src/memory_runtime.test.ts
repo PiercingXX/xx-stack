@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 
@@ -21,9 +21,16 @@ import {
   parseMemoryEntries,
   sanitizeNameForPath,
   selectMemoryForBudget,
+  writeSnapshotHistoryEntry,
 } from "./memory_runtime.js";
 import { registerAgentMemoryTools } from "./agent_memory_tools.js";
 import { PATH_CONSTANTS } from "./runtime_constants.js";
+
+// The tool-level tests below deliberately root project-scope memory in tmp
+// directories, which sit outside the server-launch-directory boundary the
+// memory tools enforce. They cover memory semantics, not path policy (the
+// boundary has its own suite), so this file opts out once for its own process.
+process.env.XX_STACK_ALLOW_ANY_CWD = "1";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -928,6 +935,81 @@ test("a well-formed memory file gains no blank line and stays byte-clean", async
       `no spurious blank line: ${JSON.stringify(content)}`
     );
     assert.ok(content.startsWith("# Agent Memory\n\n"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot history names derive from a millisecond timestamp, so two entries
+// written in the same millisecond used to collide on one base name and each
+// atomic write overwrote the previous entry's files — history silently lost.
+// ---------------------------------------------------------------------------
+
+test("two snapshots in the same millisecond land under distinct history names", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-snapname-"));
+  try {
+    const snapshotsDir = join(dir, ".snapshots");
+    const sameInstant = new Date("2026-03-04T05:06:07.890Z");
+
+    const firstBase = await writeSnapshotHistoryEntry(
+      snapshotsDir,
+      "capture",
+      "memory one",
+      "snapshot one",
+      { seq: 1 },
+      sameInstant
+    );
+    const secondBase = await writeSnapshotHistoryEntry(
+      snapshotsDir,
+      "capture",
+      "memory two",
+      "snapshot two",
+      { seq: 2 },
+      sameInstant
+    );
+
+    assert.notEqual(firstBase, secondBase, "a colliding base must be suffixed, not reused");
+    assert.match(secondBase.slice(firstBase.length + 1), /^[0-9a-f]{6}$/);
+
+    // Both entries exist and hold their own content — nothing was overwritten.
+    assert.equal(
+      await readFile(join(snapshotsDir, `${firstBase}-MEMORY.md`), "utf-8"),
+      "memory one"
+    );
+    assert.equal(
+      await readFile(join(snapshotsDir, `${secondBase}-MEMORY.md`), "utf-8"),
+      "memory two"
+    );
+    assert.deepEqual(
+      (await readdir(snapshotsDir)).sort(),
+      [
+        `${firstBase}-MEMORY.md`,
+        `${firstBase}-SNAPSHOT.md`,
+        `${firstBase}-meta.json`,
+        `${secondBase}-MEMORY.md`,
+        `${secondBase}-SNAPSHOT.md`,
+        `${secondBase}-meta.json`,
+      ].sort()
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a snapshot at a fresh timestamp keeps its unsuffixed history name", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-snapname-unique-"));
+  try {
+    const snapshotsDir = join(dir, ".snapshots");
+    const base = await writeSnapshotHistoryEntry(
+      snapshotsDir,
+      "apply",
+      "memory",
+      "snapshot",
+      {},
+      new Date("2026-03-04T05:06:07.890Z")
+    );
+    assert.equal(base, "2026-03-04T05-06-07-890Z-apply", "no suffix without a collision");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

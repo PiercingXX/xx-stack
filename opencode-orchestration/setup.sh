@@ -1,23 +1,39 @@
 #!/usr/bin/env bash
 # xx-stack setup for OpenCode + multi-provider endpoints
-set -eo pipefail
+set -euo pipefail
 
-SETUP_STEP_WARNINGS=()
+# Required steps are the reason setup runs: a working registry, a merged agent
+# surface, and repaired provider config in the live OpenCode config. Failing
+# them is a failed install and must fail the script, not print "ready".
+REQUIRED_STEP_FAILURES=()
+OPTIONAL_STEP_WARNINGS=()
 
-note_step_failure() {
-  SETUP_STEP_WARNINGS+=("$1")
-  echo "warning: setup step failed (continuing): $1" >&2
+note_required_step_failure() {
+  REQUIRED_STEP_FAILURES+=("$1")
+  echo "error: REQUIRED setup step failed: $1" >&2
 }
 
-print_step_warning_summary() {
-  if [ ${#SETUP_STEP_WARNINGS[@]} -eq 0 ]; then
-    return 0
+note_optional_step_warning() {
+  OPTIONAL_STEP_WARNINGS+=("$1")
+  echo "warning: optional setup step failed (continuing): $1" >&2
+}
+
+print_step_failure_summary() {
+  if [ "${#OPTIONAL_STEP_WARNINGS[@]}" -gt 0 ]; then
+    echo ""
+    echo "setup finished with ${#OPTIONAL_STEP_WARNINGS[@]} optional step warning(s):" >&2
+    for warning in "${OPTIONAL_STEP_WARNINGS[@]}"; do
+      echo "  - $warning" >&2
+    done
   fi
-  echo ""
-  echo "setup finished with ${#SETUP_STEP_WARNINGS[@]} step warning(s):" >&2
-  for warning in "${SETUP_STEP_WARNINGS[@]}"; do
-    echo "  - $warning" >&2
-  done
+  if [ "${#REQUIRED_STEP_FAILURES[@]}" -gt 0 ]; then
+    echo ""
+    echo "setup finished with ${#REQUIRED_STEP_FAILURES[@]} required step failure(s):" >&2
+    for failure in "${REQUIRED_STEP_FAILURES[@]}"; do
+      echo "  - $failure" >&2
+    done
+    echo "xx-stack setup FAILED: one or more required steps did not complete." >&2
+  fi
 }
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd -P)"
@@ -56,9 +72,17 @@ PRUNE_UNMANAGED_SHIMS="0"
 CONFIRM_PRUNE_UNMANAGED_SHIMS="0"
 CONFIG_BACKUP_PATH=""
 
+require_flag_value() {
+  if [ $# -lt 2 ] || [ -z "$2" ]; then
+    echo "xx-stack setup failed: $1 requires a value" >&2
+    exit 1
+  fi
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --mode)
+      require_flag_value "$@"
       INSTALL_MODE="$2"
       shift 2
       ;;
@@ -71,6 +95,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --backend)
+      require_flag_value "$@"
       BACKEND="$2"
       shift 2
       ;;
@@ -79,6 +104,7 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --strict-agent-validation)
+      require_flag_value "$@"
       STRICT_AGENT_VALIDATION="$2"
       shift 2
       ;;
@@ -211,16 +237,16 @@ if [ ! -e "$OPENCODE_RUNTIME_COMPAT_DIR" ] && [ -d "$OPENCODE_TARGET_DIR/$XX_STA
 fi
 
 echo "Exporting xx-stack skills for OpenCode discovery..."
-prune_obsolete_unmanaged_skill_shims "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_step_failure "prune_obsolete_unmanaged_skill_shims"
-export_skills_for_opencode "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_step_failure "export_skills_for_opencode"
+prune_obsolete_unmanaged_skill_shims "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_optional_step_warning "prune_obsolete_unmanaged_skill_shims"
+export_skills_for_opencode "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR" || note_required_step_failure "export_skills_for_opencode"
 
 # Regenerate the registry from inventory.json first, so setup can never install
-# a stale topology. Non-fatal: a checkout without inventory.json still installs
-# the committed registry.
+# a stale topology. Required when inventory.json exists: installing the stale
+# committed registry over a newer inventory quietly forks the topology.
 XX_STACK_GENERATOR="$REPO_DIR/../xx-stack/scripts/generate-registries.mjs"
 if [ -f "$REPO_DIR/../inventory.json" ] && [ -f "$XX_STACK_GENERATOR" ]; then
   echo "Regenerating platform registry from inventory.json..."
-  node "$XX_STACK_GENERATOR" || note_step_failure "generate_registries_from_inventory"
+  node "$XX_STACK_GENERATOR" || note_required_step_failure "generate_registries_from_inventory"
 elif [ -f "$XX_STACK_GENERATOR" ]; then
   echo "  no inventory.json found — installing the committed registry."
   echo "  to describe your own machines: cp inventory.example.json inventory.json"
@@ -237,14 +263,14 @@ if [ -f "$REPO_OPENCODE_DIR/$XX_STACK_OPENCODE_PLATFORMS_FILE" ]; then
   cp -f "$REPO_OPENCODE_DIR/$XX_STACK_OPENCODE_PLATFORMS_FILE" "$GLOBAL_PLATFORM_REGISTRY_PATH"
   echo "  seeded live registry from generated topology: $GLOBAL_PLATFORM_REGISTRY_PATH"
 else
-  note_step_failure "seed_platform_registry"
+  note_required_step_failure "seed_platform_registry"
 fi
 
 echo "Detecting local hardware for routing and recommendations..."
-detect_local_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_local_hardware"
+detect_local_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_optional_step_warning "detect_local_hardware"
 
 echo "Importing providers and model preferences from existing OpenCode config..."
-import_existing_opencode_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$OPENCODE_CONFIG_PATH" "$MODEL_RECOMMENDATIONS_PATH" || note_step_failure "import_existing_opencode_config"
+import_existing_opencode_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$OPENCODE_CONFIG_PATH" "$MODEL_RECOMMENDATIONS_PATH" || note_required_step_failure "import_existing_opencode_config"
 
 # Remote host topology comes from inventory.json, which the registry above was
 # generated from. Setup no longer runs its own interactive Tailscale discovery:
@@ -276,43 +302,43 @@ apply_llama_cpp_rollout_phase "$GLOBAL_PLATFORM_REGISTRY_PATH"
 prompt_remote_ssh_user "$GLOBAL_PLATFORM_REGISTRY_PATH"
 
 echo "Detecting remote hardware from reachable Tailscale hosts (best effort)..."
-detect_remote_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "detect_remote_hardware"
+detect_remote_hardware "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_optional_step_warning "detect_remote_hardware"
 
 echo "Syncing discovered Ollama models into platform registry..."
-sync_platform_models "$GLOBAL_PLATFORM_REGISTRY_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_platform_models"
+sync_platform_models "$GLOBAL_PLATFORM_REGISTRY_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_optional_step_warning "sync_platform_models"
 
 # `run_llama_cpp_regression_gate` and `evaluate_llama_cpp_host_support_matrix`
 # were called here but are likewise undefined. Removed rather than stubbed —
 # reintroduce them alongside a real implementation.
 
 echo "Recommending local models when Ollama inventory is empty..."
-recommend_local_models_if_empty "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_step_failure "recommend_local_models_if_empty"
+recommend_local_models_if_empty "$GLOBAL_PLATFORM_REGISTRY_PATH" || note_optional_step_warning "recommend_local_models_if_empty"
 
 # (No re-install step: enrichment already happened in the live registry.)
 
 echo "Backing up existing OpenCode config before mutation..."
-backup_global_config_once "$OPENCODE_CONFIG_PATH" || note_step_failure "backup_global_config_once"
+backup_global_config_once "$OPENCODE_CONFIG_PATH" || note_required_step_failure "backup_global_config_once"
 
 echo "Initializing global OpenCode config when missing..."
-initialize_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_step_failure "initialize_global_config"
+initialize_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_required_step_failure "initialize_global_config"
 
 echo "Merging xx-stack subagents into global OpenCode config..."
-merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_step_failure "merge_repo_agents_into_global_config"
+merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_required_step_failure "merge_repo_agents_into_global_config"
 
 echo "Syncing discovered runtime models into global OpenCode config..."
-sync_runtime_models_into_global_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "sync_runtime_models_into_global_config"
+sync_runtime_models_into_global_config "$GLOBAL_PLATFORM_REGISTRY_PATH" "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" "$LOCAL_OLLAMA_URL" "$REMOTE_OLLAMA_URL" "$LOCAL_OPENAI_COMPAT_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_required_step_failure "sync_runtime_models_into_global_config"
 
 echo "Reapplying canonical xx-stack agent surface after model sync..."
-merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_step_failure "merge_repo_agents_into_global_config"
+merge_repo_agents_into_global_config "$REPO_OPENCODE_CONFIG_PATH" "$OPENCODE_CONFIG_PATH" || note_required_step_failure "merge_repo_agents_into_global_config"
 
 echo "Repairing remote provider settings in global OpenCode config..."
-repair_remote_provider_config "$OPENCODE_CONFIG_PATH" "$REMOTE_OLLAMA_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_step_failure "repair_remote_provider_config"
+repair_remote_provider_config "$OPENCODE_CONFIG_PATH" "$REMOTE_OLLAMA_URL" "$REMOTE_OPENAI_COMPAT_URL" || note_required_step_failure "repair_remote_provider_config"
 
 echo "Ensuring xx-stack MCP server is installed and registered..."
 ensure_xx_stack_mcp_server_registration "$OPENCODE_CONFIG_PATH" "$OPENCODE_TARGET_DIR"
 
 echo "Ensuring VS Code MCP workspace config includes xx-stack server..."
-ensure_vscode_workspace_mcp_config "$OPENCODE_TARGET_DIR" "$REPO_DIR" || note_step_failure "ensure_vscode_workspace_mcp_config"
+ensure_vscode_workspace_mcp_config "$OPENCODE_TARGET_DIR" "$REPO_DIR" || note_optional_step_warning "ensure_vscode_workspace_mcp_config"
 
 echo "Validating merged agent profiles in global OpenCode config..."
 validate_merged_agent_profiles "$OPENCODE_CONFIG_PATH" "$STRICT_AGENT_VALIDATION"
@@ -320,7 +346,11 @@ validate_merged_agent_profiles "$OPENCODE_CONFIG_PATH" "$STRICT_AGENT_VALIDATION
 echo "Running xx-stack MCP startup self-test..."
 self_test_xx_stack_mcp_server "$OPENCODE_CONFIG_PATH"
 
-SKILL_COUNT="$(find "$OPENCODE_RUNTIME_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+# Best-effort count for the ready banner: a missing skills dir must reach the
+# failure summary below instead of killing the script here under set -e.
+if ! SKILL_COUNT="$(find "$OPENCODE_RUNTIME_SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"; then
+  SKILL_COUNT=0
+fi
 
 echo "xx-stack ready (opencode + model endpoints)."
 echo "  backend lane: $BACKEND"
@@ -351,4 +381,8 @@ if backend_includes "localai"; then
   check_openai_compatible_endpoint "remote OpenAI-compatible" "$REMOTE_OPENAI_COMPAT_URL" || true
 fi
 
-print_step_warning_summary
+print_step_failure_summary
+
+if [ "${#REQUIRED_STEP_FAILURES[@]}" -gt 0 ]; then
+  exit 1
+fi

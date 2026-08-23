@@ -19,7 +19,12 @@ import {
   selectMemoryForBudget,
   syncAgentMemorySnapshot,
 } from "./memory_runtime.js";
-import { jsonContent, resolveAgentContext } from "./agent_tool_helpers.js";
+import {
+  confineCwdToLaunchDir,
+  jsonContent,
+  resolveAgentContext,
+  type JsonToolResult,
+} from "./agent_tool_helpers.js";
 import { toolAnnotations } from "./observability_tools.js";
 
 /**
@@ -62,6 +67,36 @@ async function needsLeadingNewline(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * The one boundary every filesystem-reaching memory tool applies before its
+ * resolved cwd can influence a path on disk: project scope writes under
+ * `<cwd>/.xx-stack/` and local scope keys a home-directory path off it, so an
+ * unconstrained cwd is an arbitrary-directory write. User scope never touches
+ * the cwd (its files live under homedir), so it passes through unconfined.
+ *
+ * Returns the structured error result when the cwd escapes the server launch
+ * directory and `XX_STACK_ALLOW_ANY_CWD` has not opted out; null when the call
+ * may proceed.
+ */
+function cwdOutOfBoundsResult(
+  agentId: string,
+  resolvedScope: "user" | "project" | "local",
+  resolvedCwd: string
+): JsonToolResult | null {
+  if (resolvedScope === "user") return null;
+  const confined = confineCwdToLaunchDir(resolvedCwd);
+  if (confined.ok) return null;
+  return jsonContent({
+    status: "error",
+    reasonCode: confined.reasonCode,
+    agentId,
+    scope: resolvedScope,
+    cwd: confined.cwd,
+    boundaryRoot: confined.boundaryRoot,
+    hint: `cwd escapes the server launch directory (${confined.boundaryRoot}); pass a repo under it or set ${confined.envOptOut}=1`,
+  });
+}
+
 export function registerAgentMemoryTools(server: McpServer): void {
   server.registerTool(
     "agent_memory_get",
@@ -71,7 +106,12 @@ export function registerAgentMemoryTools(server: McpServer): void {
       inputSchema: {
         agentId: z.string().min(1).describe("Agent identifier"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
         tokenBudget: z
           .number()
           .int()
@@ -94,6 +134,8 @@ export function registerAgentMemoryTools(server: McpServer): void {
     async ({ agentId, scope, cwd, tokenBudget, query, includeSuperseded }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const path = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
       await ensureMemoryEntrypoint(path);
       const content = await readMemoryEntrypoint(path);
@@ -136,13 +178,20 @@ export function registerAgentMemoryTools(server: McpServer): void {
         agentId: z.string().min(1).describe("Agent identifier"),
         note: z.string().min(1).max(8000).describe("Memory note content"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
       },
       annotations: toolAnnotations("agent_memory_append"),
     },
     async ({ agentId, note, scope, cwd }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const path = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
       await ensureMemoryEntrypoint(path);
       const entry = `- ${new Date().toISOString()} ${note.trim()}\n`;
@@ -178,13 +227,20 @@ export function registerAgentMemoryTools(server: McpServer): void {
       inputSchema: {
         agentId: z.string().min(1).describe("Agent identifier"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
       },
       annotations: toolAnnotations("agent_memory_snapshot_status"),
     },
     async ({ agentId, scope, cwd }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const memoryPath = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
       const snapshotPath = getAgentMemorySnapshotPath(agentId, resolvedScope, resolvedCwd);
       const metaPath = getAgentMemorySnapshotMetaPath(agentId, resolvedScope, resolvedCwd);
@@ -229,7 +285,12 @@ export function registerAgentMemoryTools(server: McpServer): void {
       inputSchema: {
         agentId: z.string().min(1).describe("Agent identifier"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
         direction: z
           .enum(["capture", "apply"])
           .optional()
@@ -251,6 +312,8 @@ export function registerAgentMemoryTools(server: McpServer): void {
     async ({ agentId, scope, cwd, direction, retainHistory, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const outcome = await syncAgentMemorySnapshot({
         agentId,
         scope: resolvedScope,
@@ -298,7 +361,12 @@ export function registerAgentMemoryTools(server: McpServer): void {
       inputSchema: {
         agentId: z.string().min(1).describe("Agent identifier"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
         maxEntries: z
           .number()
           .int()
@@ -311,6 +379,8 @@ export function registerAgentMemoryTools(server: McpServer): void {
     async ({ agentId, scope, cwd, maxEntries }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const path = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
       await ensureMemoryEntrypoint(path);
       const content = await readMemoryEntrypoint(path);
@@ -346,7 +416,12 @@ export function registerAgentMemoryTools(server: McpServer): void {
           .min(1)
           .describe("Reference to what replaced the entries (e.g. the compactionId)"),
         scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z.string().optional().describe("Optional project root for project/local scope"),
+        cwd: z
+          .string()
+          .optional()
+          .describe(
+            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
+          ),
         expectedHash: z
           .string()
           .min(1)
@@ -360,6 +435,8 @@ export function registerAgentMemoryTools(server: McpServer): void {
     async ({ agentId, entryIds, supersededBy, scope, cwd, expectedHash }) => {
       const runtime = await loadMergedAgentRuntimeConfig();
       const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
+      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
+      if (blocked) return blocked;
       const outcome = await markAgentMemorySupersededOnDisk({
         agentId,
         scope: resolvedScope,
