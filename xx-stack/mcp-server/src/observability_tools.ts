@@ -51,6 +51,7 @@ export const TOOL_CATEGORIES = [
   "agents",
   "context",
   "verification",
+  "evidence",
 ] as const;
 
 export type ToolCategory = (typeof TOOL_CATEGORIES)[number];
@@ -749,6 +750,68 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
+    },
+  },
+  {
+    name: "finding_record",
+    category: "evidence",
+    description:
+      "Record a result or finding; lane policy decides confirmed vs incubator vs diagnostic",
+    keywords: ["finding", "evidence", "lane", "incubator", "confirmed", "diagnostic", "canary"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "finding_list",
+    category: "evidence",
+    description: "List recorded findings by lane, generation, task, or parent-eligibility",
+    keywords: ["finding", "evidence", "list", "lane", "frontier"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "generation_open",
+    category: "evidence",
+    description:
+      "Open a research generation for a task cohort after an unchanged-tree canary when required",
+    keywords: ["generation", "cohort", "canary", "open", "research"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "generation_close",
+    category: "evidence",
+    description: "Commit a generation boundary so late evidence cannot rewrite membership",
+    keywords: ["generation", "close", "boundary", "cutoff", "agenda"],
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "generation_status",
+    category: "evidence",
+    description: "Inspect a generation's committed findings, late signals, and agenda",
+    keywords: ["generation", "status", "frontier", "late"],
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
     },
   },
 ];

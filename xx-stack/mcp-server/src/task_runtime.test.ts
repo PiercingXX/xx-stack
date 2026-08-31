@@ -60,6 +60,26 @@ test("goal contract schema round-trips through parse and JSON serialization", ()
   assert.equal(minimalRoundTrip.docsNote, undefined);
 });
 
+test("goal contract metric and baseline are additive and never invent a zero", () => {
+  const withMetric: GoalContract = {
+    ...FULL_CONTRACT,
+    metric: { name: "pass-rate", direction: "unknown" },
+    baseline: { value: "unknown", provenance: "placeholder", note: "not yet measured" },
+    maturity: "smoke",
+    parentEligible: false,
+    canaryCmd: "npm test -- --filter payment",
+  };
+  const parsed = GOAL_CONTRACT_SCHEMA.parse(withMetric);
+  assert.equal(parsed.metric?.direction, "unknown");
+  assert.equal(parsed.baseline?.value, "unknown");
+  assert.notEqual(parsed.baseline?.value, 0);
+
+  const oldShape = GOAL_CONTRACT_SCHEMA.parse(FULL_CONTRACT);
+  assert.equal(oldShape.metric, undefined);
+  assert.equal(oldShape.baseline, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(oldShape)), FULL_CONTRACT);
+});
+
 test("goal contract schema rejects missing required parts", () => {
   assert.throws(() => GOAL_CONTRACT_SCHEMA.parse({ constraints: ["x"], stopCondition: "done" }));
   assert.throws(() => GOAL_CONTRACT_SCHEMA.parse({ objective: "x", constraints: ["x"] }));

@@ -65,7 +65,7 @@ consider cloud without being asked.
 ```
 
 Works with any MCP-compatible host — OpenCode, VS Code, or your own client.
-Your agent gets 45 new tools for routing, health checks, and supervision, plus 2
+Your agent gets 50 new tools for routing, health checks, supervision, and evidence lanes, plus 2
 optional lifecycle hooks behind `XX_STACK_HOOK_TOOLS=1`. Every tool declares
 whether it only reads, whether it can destroy state, and whether it reaches the
 network — so a host can auto-approve the safe ones instead of prompting on all

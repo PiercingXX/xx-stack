@@ -170,6 +170,8 @@ Persist this contract in a concrete artifact before implementation:
 
 For `complex-orchestration`, if `supervisor_start_session` is available, start a supervised session before the first implementation slice and carry the session ID through the rest of the loop. If supervisor tools are unavailable in the active host, continue with the same contract manually and state that supervision is degraded.
 
+When the mechanism is still unknown, lock it before generator edits (`plan-mechanism-contract`): map the baseline, compare alternatives, record a `mechanism_contract` finding, and do not edit tests, eval, CI, or metric calculation. Competing hypotheses use `route_parallel_tasks` with `cohortKind: hypothesis` and a `diversityCell`; duplicate cells are flagged on the plan. Run any `validationCmd` / `canaryCmd` on the unchanged tree and record a canary finding before `generation_open`. Close with `generation_close` so late evidence cannot rewrite membership. Force-synthesized work is incubator, never confirmed.
+
 ## Autonomous Outer Loop Mode
 
 When the caller names a todo or plan file and says this agent is running inside an unattended outer loop:

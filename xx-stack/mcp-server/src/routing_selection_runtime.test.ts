@@ -97,6 +97,50 @@ test("edged input assigns the same lanes as the flat form — one host-assignmen
   }
 });
 
+test("hypothesis cohort attaches qualityDiversity and flags duplicate cells; flat form stays identical", () => {
+  const schedule = routeParallelTasks(
+    [
+      {
+        id: "queue-a",
+        description: "retry with a queue",
+        cohortKind: "hypothesis",
+        diversityCell: { mechanismFamily: "queue", surface: "worker", intent: "retry" },
+      },
+      {
+        id: "queue-b",
+        description: "retry with the same queue",
+        cohortKind: "hypothesis",
+        diversityCell: { mechanismFamily: "queue", surface: "worker", intent: "retry" },
+      },
+      {
+        id: "cache",
+        description: "cache the lookup",
+        cohortKind: "hypothesis",
+        diversityCell: { mechanismFamily: "cache", surface: "lookup", intent: "ttl" },
+      },
+    ],
+    registry()
+  );
+
+  assert.equal(schedule.qualityDiversity?.ok, false);
+  assert.deepEqual(schedule.qualityDiversity?.assigned, ["queue-a", "cache"]);
+  const collided = schedule.assignments.find((assignment) => assignment.taskGraphId === "queue-b");
+  assert.equal(collided?.diversityCollision, true);
+  assert.equal(collided?.diversityReasonCode, "duplicate_cell");
+
+  const ordinary = routeParallelTasks(
+    [
+      { id: "impl", description: "implement the loader" },
+      { id: "docs", description: "document the loader" },
+    ],
+    registry()
+  );
+  assert.equal(ordinary.qualityDiversity, undefined);
+  for (const assignment of ordinary.assignments) {
+    assert.equal(assignment.diversityCollision, undefined);
+  }
+});
+
 test("edged input returns dependency waves and stamps each assignment with its wave", () => {
   const schedule = routeParallelTasks(
     [
