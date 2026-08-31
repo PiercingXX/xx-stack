@@ -1,3 +1,8 @@
+import {
+  allocateHypothesisCohort,
+  type DiversityCell,
+  type QdAllocation,
+} from "./finding_runtime.js";
 import { computeHostMemoryPressure, type HostMemoryPressure } from "./host_memory_runtime.js";
 import type { Host, Registry, RouteRecommendation } from "./platform_types.js";
 import {
@@ -656,6 +661,13 @@ export interface ParallelTaskInput {
   description: string;
   /** IDs of tasks in this same array that must finish first. */
   blockedBy?: string[];
+  /**
+   * `hypothesis` marks competing approaches. `slice` (the default) is ordinary
+   * independent work. Quality-diversity caps apply only to hypothesis members.
+   */
+  cohortKind?: "slice" | "hypothesis";
+  /** Design cell for a hypothesis slice. Required in spirit when cohortKind is hypothesis. */
+  diversityCell?: DiversityCell;
 }
 
 export interface ParallelSchedule {
@@ -666,6 +678,11 @@ export interface ParallelSchedule {
    * byte-identical document to the one it always has.
    */
   dependencySchedule?: TaskWavePlan & { note: string };
+  /**
+   * Present only when at least one slice is a hypothesis. Never attached to
+   * the flat string[] form.
+   */
+  qualityDiversity?: QdAllocation & { note: string };
 }
 
 /**
@@ -680,16 +697,23 @@ const DEPENDENCY_SCHEDULE_NOTE =
   "xx-stack does not dispatch, poll, or sequence these — the calling agent runs a wave, " +
   "confirms it finished, and comes back for the next.";
 
-function normalizeParallelTasks(
-  tasks: Array<string | ParallelTaskInput>
-): Array<{ id: string; description: string; blockedBy: string[] }> {
+function normalizeParallelTasks(tasks: Array<string | ParallelTaskInput>): Array<{
+  id: string;
+  description: string;
+  blockedBy: string[];
+  cohortKind: "slice" | "hypothesis";
+  diversityCell?: DiversityCell;
+}> {
   return tasks.map((task, index) =>
     typeof task === "string"
-      ? { id: String(index), description: task, blockedBy: [] }
+      ? { id: String(index), description: task, blockedBy: [], cohortKind: "slice" as const }
       : {
           id: task.id?.trim() || String(index),
           description: task.description,
           blockedBy: (task.blockedBy ?? []).map((id) => id.trim()).filter(Boolean),
+          cohortKind:
+            task.cohortKind === "hypothesis" || task.diversityCell ? "hypothesis" : "slice",
+          ...(task.diversityCell ? { diversityCell: task.diversityCell } : {}),
         }
   );
 }
@@ -855,7 +879,7 @@ export function routeParallelTasks(
     for (const taskId of wave) waveByTaskId.set(taskId, index);
   });
 
-  return {
+  const schedule: ParallelSchedule = {
     assignments: assignments.map((assignment, index) => ({
       ...assignment,
       taskGraphId: normalized[index]!.id,
@@ -865,4 +889,36 @@ export function routeParallelTasks(
     hostUtilization,
     dependencySchedule: { ...plan, note: DEPENDENCY_SCHEDULE_NOTE },
   };
+
+  const hypothesis = normalized.filter((task) => task.cohortKind === "hypothesis");
+  if (hypothesis.length === 0) return schedule;
+
+  const qd = allocateHypothesisCohort(
+    hypothesis.map((task) => ({
+      id: task.id,
+      cell: task.diversityCell ?? {
+        mechanismFamily: "unspecified",
+        surface: "unspecified",
+        intent: "unspecified",
+      },
+    }))
+  );
+  const collided = new Set(qd.collisions.map((item) => item.id));
+  schedule.assignments = schedule.assignments.map((assignment) => {
+    const id = String(assignment.taskGraphId ?? "");
+    if (!collided.has(id)) return assignment;
+    const collision = qd.collisions.find((item) => item.id === id);
+    return {
+      ...assignment,
+      diversityCollision: true,
+      diversityReasonCode: collision?.reasonCode ?? "duplicate_cell",
+    };
+  });
+  schedule.qualityDiversity = {
+    ...qd,
+    note:
+      "Plan only: hypothesis slices that share a diversity cell or exceed the family cap are " +
+      "flagged, not reassigned. xx-stack does not dispatch; restack the cohort before running it.",
+  };
+  return schedule;
 }

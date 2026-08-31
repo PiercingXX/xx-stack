@@ -53,6 +53,7 @@ import { registerHookToolsIfEnabled } from "./hook_tools.js";
 import { readTaskStore } from "./task_runtime.js";
 import { registerReviewTools } from "./review_tools.js";
 import { registerVerifyEditTools } from "./verify_edit_tools.js";
+import { registerFindingTools } from "./finding_tools.js";
 import {
   applySupervisorEventTransition,
   buildCompletionRepairChecklist,
@@ -209,6 +210,8 @@ const hookToolsRegistered = registerHookToolsIfEnabled(server, {
 registerVerifyEditTools(server, {
   allowedCommands: ["echo", "cat", "node", "npm", "npx", "ruff", "pytest"],
 });
+
+registerFindingTools(server);
 
 registerReviewTools(server, {
   withSupervisorStoreLock,

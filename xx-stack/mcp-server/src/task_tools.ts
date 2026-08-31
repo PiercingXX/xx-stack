@@ -246,8 +246,9 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
       description:
         "Create a persistent task item for long-running orchestrated work. For supervised " +
         "autonomous tasks, attach a goalContract (objective, constraints, validationCmd, " +
-        "stopCondition, docsNote); inspect the repo and surface hidden constraints before " +
-        "writing the contract, and never delete, skip, weaken, or narrow tests to make the goal pass",
+        "stopCondition, docsNote, optional metric/baseline/canaryCmd); inspect the repo and " +
+        "surface hidden constraints before writing the contract, and never delete, skip, " +
+        "weaken, or narrow tests to make the goal pass",
       inputSchema: {
         title: z.string().min(1).max(200).describe("Task title"),
         description: z.string().max(4000).optional().describe("Optional task description"),

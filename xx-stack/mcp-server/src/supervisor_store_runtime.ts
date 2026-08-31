@@ -274,11 +274,11 @@ export async function loadReliabilityConfig(): Promise<ReliabilityConfig> {
  * EACCES, EIO, a truncated document — raises this and the caller decides.
  */
 export class StoreAccessError extends Error {
-  readonly store: "supervisor" | "task";
+  readonly store: "supervisor" | "task" | "finding";
   readonly path: string;
   readonly code: string | null;
 
-  constructor(store: "supervisor" | "task", path: string, cause: unknown) {
+  constructor(store: "supervisor" | "task" | "finding", path: string, cause: unknown) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     super(`${store} store at ${path} exists but could not be read: ${detail}`, { cause });
     this.name = "StoreAccessError";

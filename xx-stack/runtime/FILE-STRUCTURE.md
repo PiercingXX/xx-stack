@@ -35,6 +35,7 @@ This file is a navigation map, not a full product overview.
 
 `mcp-server/`
 - TypeScript MCP server source, tests, and package scripts
+- finding store (confirmed / incubator / diagnostic lanes, generation close) lives beside the task and supervisor stores under `~/.config/opencode/`
 
 `hooks/`
 - optional local hook scaffolding

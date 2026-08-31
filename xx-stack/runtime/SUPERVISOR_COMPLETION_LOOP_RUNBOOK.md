@@ -47,7 +47,7 @@ Sessions end in one of three distinguished outcomes — the record never blurs t
 
 - `completed` — the strict loop finished: fresh evidence, judge pass, memory drift resolved, goal contracts satisfied.
 - failed (`blocked` / `interrupted` / `exhausted`) — the work did not finish and no synthesis was demanded.
-- `force_synthesized` — budget-exhausted forced synthesis (below). Never presented as a normal completion.
+- `force_synthesized` — budget-exhausted forced synthesis (below). Never presented as a normal completion. The finding store records it as an incubator `partial_output` finding; it cannot be promoted to confirmed.
 
 ### Terminal is terminal — ending something that already ended is a no-op
 

@@ -63,7 +63,7 @@ Three properties define the whole design, and every change should preserve them:
 - **Single source of truth.** `inventory.json` describes your hardware. Every
   other registry is generated from it and carries a `_generated` banner.
 
-It ships as an MCP server (47 tools), a prompt/content layer (27 skills, 21
+It ships as an MCP server (52 tools), a prompt/content layer (28 skills, 21
 agents, 2 vendored packs), a standalone Python control plane for Hermes, and a
 CLI.
 
@@ -72,10 +72,10 @@ CLI.
 | Thing | Count |
 |---|---|
 | Tracked files | 906 |
-| MCP tools registered | 47 (45 always, 2 behind a flag) |
+| MCP tools registered | 52 (50 always, 2 behind a flag) |
 | TypeScript source | ~18,200 lines (~34,000 including tests) |
 | Test files / tests | 32 files, 547 tests (plus 83 Python tests) |
-| Runtime skills | 27 |
+| Runtime skills | 28 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `xx-stack/scripts`, 6 in `packs/design/scripts` |
 | Brand design systems | 151 (vendored, pinned to `e1c277c`) |
@@ -299,7 +299,7 @@ honestly wherever you describe it.
 
 ## 5. Tool reference
 
-47 registrations across 12 modules. All names unique; every group reachable
+52 registrations across 13 modules. All names unique; every group reachable
 from `index.ts`.
 
 ### Routing (7) — `routing_tools.ts`
@@ -330,13 +330,29 @@ Cloud is excluded from all of them unless `XX_STACK_ALLOW_CLOUD=1` or
 Two optional metadata blocks matter:
 
 - **`goalContract`** — `{objective, constraints[], validationCmd?,
-  stopCondition, docsNote?}`. When present, completion evaluation cites the
+  stopCondition, docsNote?, metric?, baseline?, maturity?, parentEligible?,
+  canaryCmd?}`. When present, completion evaluation cites the
   stop condition and expects a `verify_edit` result for the validation command.
   Carries a mandatory anti-reward-hacking clause: *do not delete, skip, weaken,
-  or narrow tests to make the goal pass.*
+  or narrow tests to make the goal pass.* Metric direction `unknown` stays
+  unknown and cannot confirm; a missing value is never stored as 0. A canary
+  command (defaulting to `validationCmd`) must run on the unchanged tree
+  before `generation_open`; `could_not_run` blocks fan-out.
 - **`lease`** — `{expiresAt, revoked?}`. Failover revokes the prior lane's
   lease; a write-back against a dead lease returns a structured `lease_revoked`
   rejection.
+
+### Evidence (5) — `finding_tools.ts`
+
+`finding_record`, `finding_list`, `generation_open`, `generation_close`,
+`generation_status`.
+
+Findings have a **result vs finding** split and three lanes: `confirmed`
+(parent-eligible), `incubator` (promising, including force-synthesized
+salvage), `diagnostic` (failures, canaries, mechanism contracts). Requested
+lane is a hint; `assignLane` is the policy. After `generation_close`, new
+records that name that generation stay visible as late signals and cannot
+rewrite committed membership. The server still does not dispatch work.
 
 ### Supervisor (11) — three modules
 

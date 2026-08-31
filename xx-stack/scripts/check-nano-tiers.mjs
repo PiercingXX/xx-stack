@@ -45,7 +45,7 @@ const SURFACES = [
     canonical: "runtime/agents/execution-orchestrator.md",
     nano: "runtime/agents/execution-orchestrator.nano.md",
     mirrorNano: "agents/execution-orchestrator.nano.md",
-    canonicalSha256: "a710eece79bfa19592776cee61e6230f23c92465fe8a1b37e5fef7fb7790fd39",
+    canonicalSha256: "53c319d44b69ffa2363a63960d1d19c35c8b097311b0b45634205881326a6457",
   },
   {
     id: "fast-build",

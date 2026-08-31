@@ -12,7 +12,7 @@ const MANIFEST_VERSION = 1;
 
 function usage() {
   process.stdout.write(
-    `Usage:\n  node scripts/run-agent-loop.mjs --runner '<command>' --todo TODO.md [options]\n\nOptions:\n  --runner <command>            Shell command that reads prompt text from stdin and writes agent output to stdout.\n  --runner-timeout-ms <n>       Timeout per runner invocation. Defaults to 900000.\n  --runner-preflight <command>  Optional validation command. Defaults to --runner when preflight is enabled.\n  --preflight-input <text>      Optional small prompt sent to the preflight command before iteration 1.\n  --preflight-success <text>    Required substring expected in preflight output when preflight is enabled.\n  --preflight-timeout-ms <n>    Timeout for preflight execution. Defaults to 45000.\n  --todo <path>                 Todo or implementation plan file to execute end-to-end.\n  --goal <text>                 Optional explicit goal statement.\n  --cwd <path>                  Working directory for the loop. Defaults to current directory.\n  --state-dir <path>            Directory for loop state and logs. Defaults to .xx-stack/loops/<todo-name>.\n  --contract <path>             Path to active completion contract file. Defaults inside the state dir.\n  --prompt-template <path>      Prompt template file. Defaults to runtime/AUTONOMOUS_TODO_LOOP_PROMPT.md.\n  --max-iterations <n>          Maximum loop iterations. Defaults to 50.\n  --max-stalled <n>             Consecutive no-progress iterations before stopping. Defaults to 3.\n  --completion-promise <text>   Success marker. Defaults to <promise>DONE</promise>.\n  --agent <name>                Agent name inserted into the prompt. Defaults to execution-orchestrator.\n  --help                        Show this help.\n`
+    `Usage:\n  node scripts/run-agent-loop.mjs --runner '<command>' --todo TODO.md [options]\n\nOptions:\n  --runner <command>            Shell command that reads prompt text from stdin and writes agent output to stdout.\n  --runner-timeout-ms <n>       Timeout per runner invocation. Defaults to 900000.\n  --runner-preflight <command>  Optional validation command. Defaults to --runner when preflight is enabled.\n  --preflight-input <text>      Optional small prompt sent to the preflight command before iteration 1.\n  --preflight-success <text>    Required substring expected in preflight output when preflight is enabled.\n  --preflight-timeout-ms <n>    Timeout for preflight execution. Defaults to 45000.\n  --todo <path>                 Todo or implementation plan file to execute end-to-end.\n  --goal <text>                 Optional explicit goal statement.\n  --cwd <path>                  Working directory for the loop. Defaults to current directory.\n  --state-dir <path>            Directory for loop state and logs. Defaults to .xx-stack/loops/<todo-name>.\n  --contract <path>             Path to active completion contract file. Defaults inside the state dir.\n  --prompt-template <path>      Prompt template file. Defaults to runtime/AUTONOMOUS_TODO_LOOP_PROMPT.md.\n  --max-iterations <n>          Maximum loop iterations. Defaults to 50.\n  --max-stalled <n>             Consecutive no-progress iterations before stopping. Defaults to 3.\n  --generation-size <n>         Optional. Close a generation every N iterations (and on <loop-state>GENERATION_CLOSE</loop-state>). Off by default.\n  --completion-promise <text>   Success marker. Defaults to <promise>DONE</promise>.\n  --agent <name>                Agent name inserted into the prompt. Defaults to execution-orchestrator.\n  --help                        Show this help.\n`
   );
 }
 
@@ -92,6 +92,60 @@ function renderTemplate(template, values) {
 function extractLoopState(output) {
   const match = output.match(/<loop-state>([^<]+)<\/loop-state>/i);
   return match ? match[1].trim().toUpperCase() : null;
+}
+
+function generationDir(stateDir, index) {
+  return join(stateDir, "generations", `gen_${index}`);
+}
+
+function generationBoundaryPath(stateDir, index) {
+  return join(generationDir(stateDir, index), "generation_boundary.json");
+}
+
+function buildGenerationContext(manifest, stateDir, repoRoot) {
+  if (manifest.generationIndex === undefined || manifest.generationIndex === null) {
+    return "";
+  }
+  const index = Number(manifest.generationIndex);
+  const previous =
+    index > 0 ? toDisplayPath(repoRoot, generationBoundaryPath(stateDir, index - 1)) : "none";
+  const lines = [
+    "## Generation",
+    "",
+    `- index: ${index}`,
+    `- opened-at: ${manifest.generationOpenedAt ?? "unknown"}`,
+    `- status: ${manifest.generationStatus ?? "open"}`,
+    `- previous-boundary: ${previous}`,
+    "- After close, call generation_close if MCP finding tools exist. Late evidence cannot rewrite a closed generation.",
+    "- Emit <loop-state>GENERATION_CLOSE</loop-state> to commit this generation without ending the loop.",
+    "",
+  ];
+  if (manifest.generationSize) {
+    lines.splice(
+      6,
+      0,
+      `- close-every: ${manifest.generationSize} iterations (or GENERATION_CLOSE)`
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+async function writeGenerationBoundary(stateDir, manifest, nowIso) {
+  const index = Number(manifest.generationIndex ?? 0);
+  const path = generationBoundaryPath(stateDir, index);
+  const payload = {
+    generationIndex: index,
+    status: "closed",
+    openedAt: manifest.generationOpenedAt ?? manifest.createdAt,
+    closedAt: nowIso,
+    evidenceCutoffAt: nowIso,
+    iterations: (manifest.history ?? [])
+      .map((entry) => entry.iteration)
+      .filter((iteration) => Number(iteration) >= Number(manifest.generationStartIteration ?? 1)),
+    note: "Canonical findings live in the MCP finding store. This file is the loop's commit acknowledgement so resume cannot rewrite this generation.",
+  };
+  await writeJson(path, payload);
+  return path;
 }
 
 function formatDurationMs(value) {
@@ -341,6 +395,9 @@ async function writeOuterState(filePath, manifest, repoRoot) {
     `- max-iterations: ${manifest.maxIterations}`,
     `- stalled-streak: ${manifest.stalledIterations}`,
     `- max-stalled: ${manifest.maxStalled}`,
+    ...(manifest.generationIndex !== undefined && manifest.generationIndex !== null
+      ? [`- generation: ${manifest.generationIndex} (${manifest.generationStatus ?? "open"})`]
+      : []),
     `- runner-timeout: ${formatDurationMs(manifest.runnerTimeoutMs)}`,
     `- todo: ${toDisplayPath(repoRoot, manifest.todoPath)}`,
     `- contract: ${toDisplayPath(repoRoot, manifest.contractPath)}`,
@@ -402,6 +459,9 @@ const logsDir = join(stateDir, "logs");
 const agentName = args.agent ?? DEFAULT_AGENT;
 const maxIterations = parsePositiveInt(args["max-iterations"], 50, "max-iterations");
 const maxStalled = parsePositiveInt(args["max-stalled"], 3, "max-stalled");
+const generationSize = args["generation-size"]
+  ? parsePositiveInt(args["generation-size"], 0, "generation-size")
+  : 0;
 const runnerTimeoutMs = parsePositiveInt(args["runner-timeout-ms"], 900000, "runner-timeout-ms");
 const completionPromise = args["completion-promise"] ?? DEFAULT_COMPLETION_PROMISE;
 const preflightInput = args["preflight-input"];
@@ -476,6 +536,15 @@ manifest.todoPath = todoPath;
 manifest.contractPath = contractPath;
 manifest.promptTemplatePath = promptTemplatePath;
 manifest.updatedAt = new Date().toISOString();
+if (generationSize > 0 && manifest.generationIndex === undefined) {
+  manifest.generationIndex = 0;
+  manifest.generationOpenedAt = new Date().toISOString();
+  manifest.generationStartIteration = Number(manifest.iteration) + 1;
+  manifest.generationStatus = "open";
+}
+if (generationSize > 0) {
+  manifest.generationSize = generationSize;
+}
 
 await writeJson(manifestPath, manifest);
 await writeOuterState(outerStatePath, manifest, repoRoot);
@@ -551,6 +620,7 @@ for (let iteration = Number(manifest.iteration) + 1; iteration <= maxIterations;
     STALLED_ITERATIONS: manifest.stalledIterations,
     MAX_STALLED: maxStalled,
     COMPLETION_PROMISE: completionPromise,
+    GENERATION_CONTEXT: buildGenerationContext(manifest, stateDir, repoRoot),
   });
 
   await writeFile(promptPath, prompt, "utf-8");
@@ -572,7 +642,7 @@ for (let iteration = Number(manifest.iteration) + 1; iteration <= maxIterations;
     workspaceHash: await getGitWorkspaceFingerprint(repoRoot),
   };
 
-  const progressDetected =
+  let progressDetected =
     preSnapshot.todoHash !== postSnapshot.todoHash ||
     preSnapshot.contractHash !== postSnapshot.contractHash ||
     preSnapshot.workspaceHash !== postSnapshot.workspaceHash;
@@ -580,6 +650,9 @@ for (let iteration = Number(manifest.iteration) + 1; iteration <= maxIterations;
   const combinedOutput = `${result.stdout}\n${result.stderr}`;
   const loopState = extractLoopState(combinedOutput) ?? "CONTINUE";
   const completed = combinedOutput.includes(completionPromise);
+  if (loopState === "GENERATION_CLOSE") {
+    progressDetected = true;
+  }
 
   manifest.iteration = iteration;
   manifest.stalledIterations = progressDetected ? 0 : Number(manifest.stalledIterations) + 1;
@@ -609,6 +682,30 @@ for (let iteration = Number(manifest.iteration) + 1; iteration <= maxIterations;
     manifest.status = "exhausted";
   } else {
     manifest.status = "running";
+  }
+
+  const iterationsInGen = iteration - Number(manifest.generationStartIteration ?? 1) + 1;
+  const sizeHit =
+    generationSize > 0 && iterationsInGen > 0 && iterationsInGen % generationSize === 0;
+  const shouldCloseGeneration =
+    !completed && loopState !== "BLOCKED" && (loopState === "GENERATION_CLOSE" || sizeHit);
+
+  if (shouldCloseGeneration) {
+    const nowIso = new Date().toISOString();
+    if (manifest.generationIndex === undefined) {
+      manifest.generationIndex = 0;
+      manifest.generationOpenedAt = manifest.createdAt;
+      manifest.generationStartIteration = 1;
+    }
+    const boundaryPath = await writeGenerationBoundary(stateDir, manifest, nowIso);
+    manifest.generationStatus = "closed";
+    manifest.generationIndex = Number(manifest.generationIndex) + 1;
+    manifest.generationOpenedAt = nowIso;
+    manifest.generationStartIteration = iteration + 1;
+    manifest.generationStatus = "open";
+    process.stdout.write(
+      `[loop] generation closed. Boundary: ${toDisplayPath(repoRoot, boundaryPath)}\n`
+    );
   }
 
   await writeJson(manifestPath, manifest);

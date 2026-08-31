@@ -93,7 +93,7 @@ Additional routing pattern:
 - Purpose: Release gates and deployment verification
 - Model: sglang-remote/qwen3-coder-next
 
-## Advanced Workflows (14)
+## Advanced Workflows (15)
 
 6. debug-investigate
 - Root-cause debugging workflow
@@ -134,33 +134,36 @@ Additional routing pattern:
 18. research-deep
 - Budget-bounded iterative research loop (search → read → reason → reflect) with an explicit knowledge-gaps queue and completion-judge-gated termination
 
-19. design-prototype
+19. plan-mechanism-contract
+- Lock a mechanism contract before implementation when the path is unknown; write-gates tests/eval/CI/metrics
+
+20. design-prototype
 - Ships HTML design artifacts — web prototypes, mobile screens, decks, dashboards, office docs — by reading the design content pack (`packs/design/design-systems/`, `packs/design/design-skills/`, `packs/design/workflow-skills/`) rather than inventing visual language
 
 ## Utility Workflows (8)
 
-20. diagnose-stack
+21. diagnose-stack
 - Stack health check: verifies MCP server, agent definitions, skill structure, environment variables, and config wiring
 
-21. write-docs
+22. write-docs
 - README/API/deployment doc generation
 
-22. setup-observability
+23. setup-observability
 - Metrics, logs, alerts, traces
 
-23. test-qa
+24. test-qa
 - Journey QA with regression checks
 
-24. release-doc-sync
+25. release-doc-sync
 - Post-release documentation synchronization
 
-25. safety-guardrails
+26. safety-guardrails
 - Destructive-command and edit-scope safety mode
 
-26. orchestrate-platform-routing
+27. orchestrate-platform-routing
 - Delegation planning across the four registry tiers: `local`, `tailscale-openai-compatible`, `tailscale-ollama`, `cloud`
 
-27. ensemble-consensus
+28. ensemble-consensus
 - Ask at least three models the same question in parallel — across machines, or
   three local models when nothing can be delegated — then merge the answers and
   report where they disagreed
