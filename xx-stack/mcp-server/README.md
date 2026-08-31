@@ -3,9 +3,10 @@
 Local-first routing and supervision for AI coding agents, exposed over
 [MCP](https://modelcontextprotocol.io).
 
-45 tools covering platform inventory, health checks, task routing, agent
-profiles, and supervision of long-running work, plus 2 lifecycle hook tools
-(`_Stop`, `_PostCompact`) registered only when `XX_STACK_HOOK_TOOLS=1`.
+50 tools covering platform inventory, health checks, task routing, agent
+profiles, supervision of long-running work, and evidence lanes, plus 2
+lifecycle hook tools (`_Stop`, `_PostCompact`) registered only when
+`XX_STACK_HOOK_TOOLS=1`.
 
 **Cloud is off by default.** Routing never selects a cloud host unless you set
 `selectionPolicy.cloudEscalation.optIn` in your registry or export

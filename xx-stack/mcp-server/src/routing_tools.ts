@@ -88,6 +88,20 @@ export function registerRoutingTools(server: McpServer, deps: RoutingToolDeps): 
                     .max(32)
                     .optional()
                     .describe("IDs of slices in this same array that must finish before this one"),
+                  cohortKind: z
+                    .enum(["slice", "hypothesis"])
+                    .optional()
+                    .describe(
+                      "hypothesis = competing approaches (QD caps apply). slice = ordinary independent work. Default slice."
+                    ),
+                  diversityCell: z
+                    .object({
+                      mechanismFamily: z.string().min(1).max(120),
+                      surface: z.string().min(1).max(120),
+                      intent: z.string().min(1).max(120),
+                    })
+                    .optional()
+                    .describe("Design cell for a hypothesis slice; implied cohortKind=hypothesis"),
                 })
               )
               .min(1)

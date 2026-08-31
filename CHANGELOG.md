@@ -7,6 +7,22 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Evidence lanes, generations, canaries, and QD-lite.** A finding store
+  (`finding_record`, `finding_list`, `generation_open`, `generation_close`,
+  `generation_status`) records results as confirmed / incubator / diagnostic.
+  Force-synthesized salvage lands in incubator as `partial_output` and cannot
+  be marked completed. Failed experiments land in diagnostic. Unknown metric
+  direction stays unknown and never confirms; missing values are never stored
+  as 0. `goalContract` optionally carries metric, baseline, maturity, and
+  `canaryCmd`; a canary must run on the unchanged tree before `generation_open`
+  when a validation command exists (`could_not_run` blocks fan-out; fail is a
+  measured baseline). `route_parallel_tasks` accepts `cohortKind: hypothesis`
+  plus a `diversityCell` and flags duplicate cells / family overconcentration
+  on the plan without dispatching. The autonomous loop can close generations
+  (`--generation-size` or `<loop-state>GENERATION_CLOSE</loop-state>`). New
+  skill `plan-mechanism-contract` write-gates tests/eval/CI/metric calculation
+  before implementation. Patterns only — no Praxist source.
+
 - **Every tracked file now uses one consistent example topology.** The
   placeholder host id introduced in 1.64.0 still carried author-hardware flavor
   ("GPU rig") and drifted from the example inventory, whose machine ids are the

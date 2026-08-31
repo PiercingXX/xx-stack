@@ -140,6 +140,7 @@ The runner creates state under `.xx-stack/loops/<todo-name>/` by default:
 - `logs/iteration-XXX-prompt.md` — exact prompt per iteration
 - `logs/iteration-XXX-stdout.log` and `logs/iteration-XXX-stderr.log` — raw agent output
 - `logs/preflight-stdout.log` and `logs/preflight-stderr.log` — runner health probe logs when preflight is enabled
+- `generations/gen_N/generation_boundary.json` — written when a generation closes (`--generation-size` or `<loop-state>GENERATION_CLOSE</loop-state>`). Canonical findings live in the MCP finding store; this file is the loop's commit acknowledgement so resume cannot rewrite that generation.
 
 ## Exit Conditions
 
@@ -148,6 +149,7 @@ The runner creates state under `.xx-stack/loops/<todo-name>/` by default:
 - blocked: the agent emits `<loop-state>BLOCKED</loop-state>`
 - stalled: no durable progress is detected for the configured stalled threshold
 - exhausted: max iterations is reached
+- generation close: the agent emits `<loop-state>GENERATION_CLOSE</loop-state>`, or `--generation-size N` elapses — the loop writes a boundary and continues. This is not a terminal loop status.
 
 ## Reliability Notes
 

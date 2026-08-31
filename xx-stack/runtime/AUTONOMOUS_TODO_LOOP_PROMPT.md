@@ -19,6 +19,7 @@ This turn is not a user checkpoint. Complete the current slice fully, record det
 - Current stalled streak: {{STALLED_ITERATIONS}} of {{MAX_STALLED}}
 - Completion promise: {{COMPLETION_PROMISE}}
 
+{{GENERATION_CONTEXT}}
 ## Required Process
 
 1. Re-open the todo file, completion contract, and outer loop state before making decisions.
@@ -31,8 +32,9 @@ This turn is not a user checkpoint. Complete the current slice fully, record det
 8. Do not ask the user for progress updates, intermediate review, or confirmation unless a real hard blocker prevents safe execution.
 9. If more work remains after this slice, do not summarize as final completion. Emit `<loop-state>CONTINUE</loop-state>`.
 10. If blocked, write the blocker, attempted approaches, and next fallback action into the todo file and contract, then emit `<loop-state>BLOCKED</loop-state>`.
-11. Only when every actionable todo item is complete and deterministically verified, emit `{{COMPLETION_PROMISE}}` and `<loop-state>DONE</loop-state>`.
-12. Never emit DONE from intent alone.
+11. To commit a generation without ending the loop, record findings (finding_record / generation_close when those tools exist) and emit `<loop-state>GENERATION_CLOSE</loop-state>`. Late evidence cannot rewrite a closed generation.
+12. Only when every actionable todo item is complete and deterministically verified, emit `{{COMPLETION_PROMISE}}` and `<loop-state>DONE</loop-state>`.
+13. Never emit DONE from intent alone.
 
 ## Required Output Footer
 

@@ -152,6 +152,17 @@
       ]
     },
     {
+      "id": "plan-mechanism-contract",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "Tracer-bullet and orthogonality rules are what make a locked mechanism contract falsifiable: one thin end-to-end change, and the verifier stays a separate surface."
+        }
+      ]
+    },
+    {
       "id": "plan-feature",
       "kind": "skill",
       "books": [

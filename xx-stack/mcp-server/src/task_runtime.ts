@@ -61,11 +61,48 @@ export const NULL_RESULT_VALID_CLAUSE =
   "a null result is a valid completion — do not manufacture a change to look productive; " +
   "finding nothing worth changing is a real answer when the evidence shows you looked";
 
+export const METRIC_DIRECTION_VALUES = ["maximize", "minimize", "unknown"] as const;
+export type MetricDirection = (typeof METRIC_DIRECTION_VALUES)[number];
+
+export const BASELINE_PROVENANCE_VALUES = ["measured", "placeholder", "unknown"] as const;
+export type BaselineProvenance = (typeof BASELINE_PROVENANCE_VALUES)[number];
+
+export const MATURITY_VALUES = ["smoke", "full"] as const;
+export type Maturity = (typeof MATURITY_VALUES)[number];
+
 /**
- * Five-part goal contract for supervised autonomous tasks.
- * Optional metadata on task registration; when present, the supervisor
- * completion path cites the stop condition and — if validationCmd is set —
- * expects a verify_edit result for that exact command as completion evidence.
+ * What a task measures. Direction `unknown` is a real answer — it is never
+ * filled in as maximize, and a missing value is never stored as 0.
+ */
+export const METRIC_REF_SCHEMA = z.object({
+  name: z.string().min(1).max(120).describe("Metric name (e.g. test-pass-rate, p95-latency)"),
+  direction: z
+    .enum(METRIC_DIRECTION_VALUES)
+    .describe("Optimization direction; unknown stays unknown and blocks confirmed promotion"),
+});
+export type MetricRef = z.infer<typeof METRIC_REF_SCHEMA>;
+
+/**
+ * Where the unchanged tree currently sits. `placeholder` is an explicit
+ * unmeasured stand-in, not a measured 0. Provenance `unknown` means nobody
+ * has said which of those it is.
+ */
+export const BASELINE_REF_SCHEMA = z.object({
+  value: z
+    .union([z.number().finite(), z.literal("unknown")])
+    .describe("Measured baseline, or the literal unknown — never a silent zero"),
+  provenance: z.enum(BASELINE_PROVENANCE_VALUES),
+  note: z.string().min(1).max(500).optional(),
+});
+export type BaselineRef = z.infer<typeof BASELINE_REF_SCHEMA>;
+
+/**
+ * Five-part goal contract for supervised autonomous tasks, plus optional
+ * metric/baseline/canary fields. Optional metadata on task registration;
+ * when present, the supervisor completion path cites the stop condition
+ * and — if validationCmd is set — expects a verify_edit result for that
+ * exact command as completion evidence. The extra fields are additive:
+ * a five-part contract still round-trips byte-identically.
  */
 export const GOAL_CONTRACT_SCHEMA = z.object({
   objective: z.string().min(1).max(500).describe("One-sentence objective of the task"),
@@ -91,8 +128,48 @@ export const GOAL_CONTRACT_SCHEMA = z.object({
     .max(1000)
     .optional()
     .describe("Docs commitment: what documentation must be updated when the goal is met"),
+  metric: METRIC_REF_SCHEMA.optional().describe(
+    "Optional metric the task is optimizing. Direction unknown blocks confirmed-lane promotion."
+  ),
+  baseline: BASELINE_REF_SCHEMA.optional().describe(
+    "Optional baseline for the metric. Placeholder provenance cannot parent a confirmed finding."
+  ),
+  maturity: z
+    .enum(MATURITY_VALUES)
+    .optional()
+    .describe("smoke = canary-grade; full = parent-eligible complete protocol"),
+  parentEligible: z
+    .boolean()
+    .optional()
+    .describe(
+      "Caller intent that a successful result may become a durable parent; the finding store still enforces lane policy"
+    ),
+  canaryCmd: z
+    .string()
+    .min(1)
+    .max(1000)
+    .optional()
+    .describe(
+      "Command to run on the unchanged tree before fan-out. Defaults to validationCmd when omitted."
+    ),
 });
 export type GoalContract = z.infer<typeof GOAL_CONTRACT_SCHEMA>;
+
+function sanitizeMetric(metric: MetricRef | undefined): MetricRef | undefined {
+  if (!metric) return undefined;
+  const name = metric.name.trim();
+  if (!name) return undefined;
+  return { name, direction: metric.direction };
+}
+
+function sanitizeBaseline(baseline: BaselineRef | undefined): BaselineRef | undefined {
+  if (!baseline) return undefined;
+  return {
+    value: baseline.value,
+    provenance: baseline.provenance,
+    ...(trimOptional(baseline.note) ? { note: trimOptional(baseline.note) } : {}),
+  };
+}
 
 export function sanitizeGoalContract(contract: GoalContract | undefined): GoalContract | undefined {
   if (!contract) return undefined;
@@ -102,13 +179,27 @@ export function sanitizeGoalContract(contract: GoalContract | undefined): GoalCo
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
   if (!objective || !stopCondition || constraints.length === 0) return undefined;
-  return {
+  const metric = sanitizeMetric(contract.metric);
+  const baseline = sanitizeBaseline(contract.baseline);
+  const canaryCmd = trimOptional(contract.canaryCmd);
+  const sanitized: GoalContract = {
     objective,
     constraints,
     validationCmd: trimOptional(contract.validationCmd),
     stopCondition,
     docsNote: trimOptional(contract.docsNote),
   };
+  if (metric) sanitized.metric = metric;
+  if (baseline) sanitized.baseline = baseline;
+  if (contract.maturity) sanitized.maturity = contract.maturity;
+  if (contract.parentEligible !== undefined) sanitized.parentEligible = contract.parentEligible;
+  if (canaryCmd) sanitized.canaryCmd = canaryCmd;
+  return sanitized;
+}
+
+/** The command a canary must run: canaryCmd if set, otherwise validationCmd. */
+export function canaryCommandFor(contract: GoalContract): string | undefined {
+  return contract.canaryCmd ?? contract.validationCmd;
 }
 
 /**
@@ -443,9 +534,33 @@ export function renderGoalContractLines(
   if (contract.validationCmd) {
     lines.push(`${indent}- validation-cmd (run via verify_edit): ${contract.validationCmd}`);
   }
+  if (contract.canaryCmd) {
+    lines.push(
+      `${indent}- canary-cmd (run on the unchanged tree before fan-out): ${contract.canaryCmd}`
+    );
+  }
   lines.push(`${indent}- stop-condition: ${contract.stopCondition}`);
   if (contract.docsNote) {
     lines.push(`${indent}- docs-note: ${contract.docsNote}`);
+  }
+  if (contract.metric) {
+    lines.push(
+      `${indent}- metric: ${contract.metric.name} (${contract.metric.direction}; unknown stays unknown)`
+    );
+  }
+  if (contract.baseline) {
+    const value =
+      contract.baseline.value === "unknown" ? "unknown" : String(contract.baseline.value);
+    lines.push(`${indent}- baseline: ${value} (provenance ${contract.baseline.provenance})`);
+    if (contract.baseline.note) {
+      lines.push(`${indent}  - note: ${contract.baseline.note}`);
+    }
+  }
+  if (contract.maturity) {
+    lines.push(`${indent}- maturity: ${contract.maturity}`);
+  }
+  if (contract.parentEligible !== undefined) {
+    lines.push(`${indent}- parent-eligible: ${contract.parentEligible ? "yes" : "no"}`);
   }
   if (options.includeClauses !== false) {
     lines.push(...renderGoalContractClauseLines(indent));

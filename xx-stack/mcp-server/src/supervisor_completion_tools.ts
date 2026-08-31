@@ -19,6 +19,7 @@ import {
   type GoalContract,
 } from "./task_runtime.js";
 
+import { persistForceSynthesisFindings } from "./finding_runtime.js";
 import { jsonContent } from "./agent_tool_helpers.js";
 import { toolAnnotations } from "./observability_tools.js";
 
@@ -1541,6 +1542,15 @@ export function registerSupervisorCompletionTools(
             recordedFacts
           );
 
+          // Incubator, never confirmed. A finding-store failure must not drop
+          // the salvage prompt — capture first, label uncertainty.
+          const findingRecord = await persistForceSynthesisFindings({
+            sessionId,
+            taskIds: linkedTasksMarked,
+            trigger: trigger.reasonCode,
+            nowIso,
+          });
+
           return jsonContent({
             status: "force_synthesized",
             reasonCode: "force_synthesis_emitted",
@@ -1549,6 +1559,7 @@ export function registerSupervisorCompletionTools(
             continuationCount: state.continuationCount,
             linkedTasksMarked,
             recordedFacts,
+            findingRecord,
             prompt,
           });
         })
