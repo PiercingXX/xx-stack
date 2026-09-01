@@ -76,7 +76,7 @@ Each round: pick **one** action, execute it, update the gap queue and ledger.
   Extract findings into the ledger with citations. For URLs, prefer a local
   reader service when the inventory declares one enabled (a machine's
   `services` entry with `kind: "reader"` — see
-  `xx-stack/runtime/READER-SERVICE-RUNBOOK.md`): it returns LLM-friendly
+  `runtime/READER-SERVICE-RUNBOOK.md`): it returns LLM-friendly
   markdown.
   When none is declared, disabled, or unreachable, fall back to plain fetch —
   absence degrades, it never escalates to a cloud reader.

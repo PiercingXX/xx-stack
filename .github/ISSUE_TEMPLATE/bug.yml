@@ -1,0 +1,23 @@
+name: Bug
+description: Something is broken or a gate is lying
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed vs expected. Include the command that failed.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Smallest steps, plus `node -v` / `python3 -V` if relevant.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: xx-stack version
+      placeholder: "1.66.0 / git sha"

@@ -11,7 +11,7 @@ ship together.
 
 Please include, as far as you can establish them:
 
-- the component (`xx-stack/mcp-server`, `hermes-orchestration`, `opencode-orchestration`, or the packs);
+- the component (`mcp-server`, `hermes-orchestration`, `opencode-orchestration`, or the packs);
 - what an attacker gets, not only what the code does;
 - a reproduction — a tool call, an `inventory.json` fragment, or a config that triggers it;
 - the commit or version you tested.
@@ -51,7 +51,7 @@ the build. The runtime dependency surface is deliberately small — the MCP
 server ships two direct dependencies, `@modelcontextprotocol/sdk` and `zod`.
 
 Dev dependencies are updated by Dependabot but are **not** a build gate, for the
-reason given under "out of scope". Dev-only linting uses ESLint 9. High/critical advisories against shipped
+reason given under "out of scope". Dev-only linting uses ESLint 10. High/critical advisories against shipped
 dependencies still fail CI.
 
 ## Threat model in one paragraph

@@ -9,18 +9,20 @@ export default [
   {
     ignores: [
       "dist/",
+      "dist-test/",
       "node_modules/",
       "coverage/",
       "**/dist/**",
+      "**/dist-test/**",
       "**/node_modules/**",
       "opencode-orchestration/mcp-server/**",
       "opencode-orchestration/scripts/**",
       "opencode-orchestration/packs/**",
-      "xx-stack/packs/**",
+      "packs/**",
     ],
   },
   {
-    files: ["xx-stack/mcp-server/src/**/*.ts"],
+    files: ["mcp-server/src/**/*.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -43,7 +45,7 @@ export default [
     },
   },
   {
-    files: ["xx-stack/mcp-server/src/**/*.test.ts"],
+    files: ["mcp-server/src/**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": "off",
@@ -52,17 +54,17 @@ export default [
   },
   {
     files: [
-      "xx-stack/mcp-server/src/monitor-memory.ts",
-      "xx-stack/mcp-server/src/parallel-preflight.ts",
-      "xx-stack/mcp-server/src/parallel-smoke.ts",
-      "xx-stack/mcp-server/src/trace-provider-proxy.ts",
+      "mcp-server/src/monitor-memory.ts",
+      "mcp-server/src/parallel-preflight.ts",
+      "mcp-server/src/parallel-smoke.ts",
+      "mcp-server/src/trace-provider-proxy.ts",
     ],
     rules: {
       "no-console": "off",
     },
   },
   {
-    files: ["xx-stack/scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
@@ -76,7 +78,7 @@ export default [
     },
   },
   {
-    files: ["xx-stack/scripts/**/*.js"],
+    files: ["scripts/**/*.js"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "commonjs",

@@ -63,7 +63,7 @@ git config core.hooksPath .githooks
 ```
 
 The pre-commit hook runs `npm run drift:check` to verify the OpenCode copies
-have not drifted from `xx-stack/runtime/`.
+have not drifted from `runtime/`.
 
 ## Repository Structure
 
@@ -74,9 +74,9 @@ each one is.
 for `mcp-server/`, `scripts/`, and `packs/` rather than keeping its own copies:
 
 ```
-opencode-orchestration/mcp-server  ->  ../xx-stack/mcp-server
-opencode-orchestration/scripts     ->  ../xx-stack/scripts
-opencode-orchestration/packs       ->  ../xx-stack/packs
+opencode-orchestration/mcp-server  ->  ../mcp-server
+opencode-orchestration/scripts     ->  ../scripts
+opencode-orchestration/packs       ->  ../packs
 ```
 
 Editing a file "in" `opencode-orchestration/` through one of those symlinks
@@ -92,7 +92,7 @@ dependency on the TypeScript stack.
 
 - ESLint and Prettier are enforced on TypeScript sources:
   `npm run lint` and `npm run format:check`
-- Prettier is deliberately **not** applied to `xx-stack/packs/` — that content is
+- Prettier is deliberately **not** applied to `packs/` — that content is
   largely vendored and reformatting it obscures real diffs. See `.prettierignore`.
 - Follow existing patterns; keep functions focused on a single responsibility.
 
@@ -105,11 +105,11 @@ rather than globbed, so a new file does not silently inherit the exemption — i
 you add a CLI entrypoint, add it to that list explicitly.
 
 `npm run lint` covers `.ts`, `.mjs`, and `.js`. The scripts under
-`xx-stack/scripts/` are a deliberate mix of ESM (`.mjs`) and CommonJS (`.js`) —
+`scripts/` are a deliberate mix of ESM (`.mjs`) and CommonJS (`.js`) —
 see the `//type` note in the root `package.json` — so `eslint.config.mjs` gives
 them their own overrides: the default parser (they are not in `tsconfig.json`'s
 program), `sourceType` split by extension. The vendored design pack
-(`xx-stack/packs/**`) is ignored alongside the OpenCode pack copy; it is
+(`packs/**`) is ignored alongside the OpenCode pack copy; it is
 upstream content, not ours to restyle.
 
 Lint must be **clean of errors**. Warnings are allowed but should not grow.
@@ -117,7 +117,7 @@ Lint must be **clean of errors**. Warnings are allowed but should not grow.
 
 ### Dependencies and Portability
 
-- **Dependency budget.** A new runtime dependency in `xx-stack/mcp-server`
+- **Dependency budget.** A new runtime dependency in `mcp-server`
   needs justification in the PR — what it does that a `node:` built-in cannot,
   and why vendoring or writing it is worse. Prefer built-ins (the repo already
   uses `node:test` over jest and `node:util` `parseArgs` over an argument
@@ -144,20 +144,20 @@ Full procedure in MANUAL §4 and §12. Two rules a PR is rejected for missing:
 
 ### Agent Development
 
-Canonical agent contracts live in `xx-stack/runtime/agents/`. The
+Canonical agent contracts live in `runtime/agents/`. The
 OpenCode-specialized copies live in `opencode-orchestration/opencode/agents/`
 and are gated by `npm run drift:check`.
 
 1. Update the canonical agent `<name>.md`
-2. Register the agent in `xx-stack/runtime/config.json`
+2. Register the agent in `runtime/config.json`
 3. Mirror it into `opencode-orchestration/opencode/agents/` and register it
    there too
 4. `npm run drift:check` then `npm run nano:check` if you touched a nano tier
 
 ### Skill Development
 
-1. Create `xx-stack/runtime/skills/<name>/SKILL.md`
-2. Register it in `xx-stack/runtime/SKILLS.md`
+1. Create `runtime/skills/<name>/SKILL.md`
+2. Register it in `runtime/SKILLS.md`
 3. Mirror it into `opencode-orchestration/opencode/skills/<name>/SKILL.md`
 4. Add a `packs/rules/coverage.json` entry
 
@@ -169,9 +169,9 @@ only the deliberate deltas (`compatibility:`, `model:` pins and the pinned-lane
 
 Anything else that differs is drift, and canonical wins: resync the mirror.
 Only if a divergence is genuinely deliberate, add it to `KNOWN_DELTAS` in
-`xx-stack/scripts/check-stack-source-drift.mjs` **with a reason** — the entry
+`scripts/check-stack-source-drift.mjs` **with a reason** — the entry
 must match the exact lines, so it cannot silently swallow the next change. Run
-`node xx-stack/scripts/check-stack-source-drift.mjs --names-only` or
+`node scripts/check-stack-source-drift.mjs --names-only` or
 `--content-only` to isolate one half while debugging.
 
 ### Hardware and Endpoint Config — generated, do not hand-edit
@@ -180,7 +180,7 @@ must match the exact lines, so it cannot silently swallow the next change. Run
 installed runtimes. These three are **generated from it** and carry a
 `_generated` banner:
 
-- `xx-stack/runtime/platforms.json` (built from `inventory.example.json`, so the
+- `runtime/platforms.json` (built from `inventory.example.json`, so the
   core stays host-agnostic and no clone ships the maintainer's hardware)
 - `opencode-orchestration/opencode/platforms.json`
 - `hermes-orchestration/config/orchestration.json` — the `lanes` block and the
@@ -191,7 +191,7 @@ of `npm run verify` and runs in CI, so drift fails the build rather than
 silently diverging.
 
 Adding support for a new inference server means adding one entry to the
-`RUNTIMES` table in `xx-stack/scripts/generate-registries.mjs` and one value to
+`RUNTIMES` table in `scripts/generate-registries.mjs` and one value to
 the `kind` enum in `inventory.schema.json`. Note that `endpointFamily` (how the
 TypeScript registry inspects models) and `hermesEndpointType` (how Hermes dials
 it) are deliberately separate — Ollama is its own family to the TS side but
@@ -200,7 +200,7 @@ plain `openai_compatible` to Hermes.
 ### Routing and Cloud Escalation
 
 Cloud routing is gated by `cloudRoutingAllowed()` in
-`xx-stack/mcp-server/src/routing_selection_runtime.ts`, which is fail-safe: an
+`mcp-server/src/routing_selection_runtime.ts`, which is fail-safe: an
 absent or `false` `selectionPolicy.cloudEscalation.optIn` disables cloud
 entirely. **Do not add a code path that reaches a cloud provider without passing
 through that gate**, and do not change its default.

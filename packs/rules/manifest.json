@@ -1,0 +1,391 @@
+{
+  "$comment": "Vendored from ciembor/agent-rules-books (MIT, commit 9c87636). Paths are relative to packs/rules/. tokensEstimated = file size in bytes / 4, rounded to the nearest integer. compat edges transcribed from upstream docs/COMPATIBILITY.md, restricted to vendored books; domain-driven-design, implementing-domain-driven-design (overlap with domain-driven-design-distilled: pick one variant) and patterns-of-enterprise-application-architecture (upstream's only conflict edges) were deliberately not vendored.",
+  "source": {
+    "repo": "https://github.com/ciembor/agent-rules-books",
+    "commit": "9c8763613514e4047d75c089533e09bc4b493c28",
+    "license": "MIT"
+  },
+  "tokenEstimateMethod": "bytes/4 rounded",
+  "books": [
+    {
+      "id": "a-philosophy-of-software-design",
+      "title": "A Philosophy of Software Design (John Ousterhout)",
+      "tiers": {
+        "full": {
+          "path": "a-philosophy-of-software-design/a-philosophy-of-software-design.md",
+          "tokensEstimated": 3390
+        },
+        "mini": {
+          "path": "a-philosophy-of-software-design/a-philosophy-of-software-design.mini.md",
+          "tokensEstimated": 1444
+        },
+        "nano": {
+          "path": "a-philosophy-of-software-design/a-philosophy-of-software-design.nano.md",
+          "tokensEstimated": 565
+        }
+      },
+      "compat": {
+        "complementary": [
+          "clean-architecture",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "clean-code"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "clean-architecture",
+      "title": "Clean Architecture (Robert C. Martin)",
+      "tiers": {
+        "full": {
+          "path": "clean-architecture/clean-architecture.md",
+          "tokensEstimated": 4446
+        },
+        "mini": {
+          "path": "clean-architecture/clean-architecture.mini.md",
+          "tokensEstimated": 1372
+        },
+        "nano": {
+          "path": "clean-architecture/clean-architecture.nano.md",
+          "tokensEstimated": 564
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "clean-code",
+      "title": "Clean Code (Robert C. Martin)",
+      "tiers": {
+        "full": {
+          "path": "clean-code/clean-code.md",
+          "tokensEstimated": 3463
+        },
+        "mini": {
+          "path": "clean-code/clean-code.mini.md",
+          "tokensEstimated": 951
+        },
+        "nano": {
+          "path": "clean-code/clean-code.nano.md",
+          "tokensEstimated": 309
+        }
+      },
+      "compat": {
+        "complementary": [
+          "clean-architecture",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "a-philosophy-of-software-design",
+          "code-complete",
+          "the-pragmatic-programmer"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "code-complete",
+      "title": "Code Complete (Steve McConnell)",
+      "tiers": {
+        "full": {
+          "path": "code-complete/code-complete.md",
+          "tokensEstimated": 3102
+        },
+        "mini": {
+          "path": "code-complete/code-complete.mini.md",
+          "tokensEstimated": 1679
+        },
+        "nano": {
+          "path": "code-complete/code-complete.nano.md",
+          "tokensEstimated": 636
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "clean-code",
+          "the-pragmatic-programmer"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "designing-data-intensive-applications",
+      "title": "Designing Data-Intensive Applications (Martin Kleppmann)",
+      "tiers": {
+        "full": {
+          "path": "designing-data-intensive-applications/designing-data-intensive-applications.md",
+          "tokensEstimated": 4021
+        },
+        "mini": {
+          "path": "designing-data-intensive-applications/designing-data-intensive-applications.mini.md",
+          "tokensEstimated": 1737
+        },
+        "nano": {
+          "path": "designing-data-intensive-applications/designing-data-intensive-applications.nano.md",
+          "tokensEstimated": 644
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "domain-driven-design-distilled",
+      "title": "Domain-Driven Design Distilled (Vaughn Vernon)",
+      "tiers": {
+        "full": {
+          "path": "domain-driven-design-distilled/domain-driven-design-distilled.md",
+          "tokensEstimated": 2838
+        },
+        "mini": {
+          "path": "domain-driven-design-distilled/domain-driven-design-distilled.mini.md",
+          "tokensEstimated": 1610
+        },
+        "nano": {
+          "path": "domain-driven-design-distilled/domain-driven-design-distilled.nano.md",
+          "tokensEstimated": 634
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "refactoring",
+      "title": "Refactoring (Martin Fowler)",
+      "tiers": {
+        "full": {
+          "path": "refactoring/refactoring.md",
+          "tokensEstimated": 4467
+        },
+        "mini": {
+          "path": "refactoring/refactoring.mini.md",
+          "tokensEstimated": 1292
+        },
+        "nano": {
+          "path": "refactoring/refactoring.nano.md",
+          "tokensEstimated": 497
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "refactoring-guru"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "refactoring-guru",
+      "title": "Refactoring.Guru (catalog)",
+      "tiers": {
+        "full": {
+          "path": "refactoring-guru/refactoring-guru.md",
+          "tokensEstimated": 15640
+        },
+        "mini": {
+          "path": "refactoring-guru/refactoring-guru.mini.md",
+          "tokensEstimated": 1572
+        },
+        "nano": {
+          "path": "refactoring-guru/refactoring-guru.nano.md",
+          "tokensEstimated": 648
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "release-it",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "refactoring"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "release-it",
+      "title": "Release It! (Michael T. Nygard)",
+      "tiers": {
+        "full": {
+          "path": "release-it/release-it.md",
+          "tokensEstimated": 3386
+        },
+        "mini": {
+          "path": "release-it/release-it.mini.md",
+          "tokensEstimated": 1593
+        },
+        "nano": {
+          "path": "release-it/release-it.nano.md",
+          "tokensEstimated": 551
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "the-pragmatic-programmer",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "the-pragmatic-programmer",
+      "title": "The Pragmatic Programmer (Hunt & Thomas)",
+      "tiers": {
+        "full": {
+          "path": "the-pragmatic-programmer/the-pragmatic-programmer.md",
+          "tokensEstimated": 3350
+        },
+        "mini": {
+          "path": "the-pragmatic-programmer/the-pragmatic-programmer.mini.md",
+          "tokensEstimated": 1791
+        },
+        "nano": {
+          "path": "the-pragmatic-programmer/the-pragmatic-programmer.nano.md",
+          "tokensEstimated": 566
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "working-effectively-with-legacy-code"
+        ],
+        "overlapping": [
+          "clean-code",
+          "code-complete"
+        ],
+        "conflicting": []
+      }
+    },
+    {
+      "id": "working-effectively-with-legacy-code",
+      "title": "Working Effectively with Legacy Code (Michael Feathers)",
+      "tiers": {
+        "full": {
+          "path": "working-effectively-with-legacy-code/working-effectively-with-legacy-code.md",
+          "tokensEstimated": 3454
+        },
+        "mini": {
+          "path": "working-effectively-with-legacy-code/working-effectively-with-legacy-code.mini.md",
+          "tokensEstimated": 1427
+        },
+        "nano": {
+          "path": "working-effectively-with-legacy-code/working-effectively-with-legacy-code.nano.md",
+          "tokensEstimated": 448
+        }
+      },
+      "compat": {
+        "complementary": [
+          "a-philosophy-of-software-design",
+          "clean-architecture",
+          "clean-code",
+          "code-complete",
+          "designing-data-intensive-applications",
+          "domain-driven-design-distilled",
+          "refactoring",
+          "refactoring-guru",
+          "release-it",
+          "the-pragmatic-programmer"
+        ],
+        "overlapping": [],
+        "conflicting": []
+      }
+    }
+  ]
+}

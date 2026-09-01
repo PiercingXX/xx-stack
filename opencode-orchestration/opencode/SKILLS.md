@@ -39,7 +39,7 @@ Critical-surface guidance ships in two sizes, matching the rules pack's tier con
 
 The five critical surfaces carry nanos: `execution-orchestrator` and `fast-build` (agents), `review-code`, `debug-investigate`, `deploy-ship` (skills).
 
-Pick the tier from the lane's context window, the same budget convention as the rules pack's `defaultTier`: full when the lane holds the whole file plus the task and code; nano for tight-context lanes that would otherwise get truncation or nothing. Nanos here are exact copies of the xx-stack canonical nanos — they carry no OpenCode-specific content, and `npm run nano:check` (xx-stack/scripts/check-nano-tiers.mjs) enforces byte parity and fails when a canonical edit lands without a nano review.
+Pick the tier from the lane's context window, the same budget convention as the rules pack's `defaultTier`: full when the lane holds the whole file plus the task and code; nano for tight-context lanes that would otherwise get truncation or nothing. Nanos here are exact copies of the xx-stack canonical nanos — they carry no OpenCode-specific content, and `npm run nano:check` (scripts/check-nano-tiers.mjs) enforces byte parity and fails when a canonical edit lands without a nano review.
 
 The weakest-model acceptance test from the Skill Authoring Contract above is the acceptance test for every nano — tight-context local lanes are exactly who it serves.
 
@@ -140,7 +140,7 @@ Additional routing pattern:
 20. design-prototype
 - Ships HTML design artifacts — web prototypes, mobile screens, decks, dashboards, office docs — by reading the design content pack (`packs/design/design-systems/`, `packs/design/design-skills/`, `packs/design/workflow-skills/`) rather than inventing visual language
 
-## Utility Workflows (8)
+## Utility Workflows (9)
 
 21. diagnose-stack
 - Stack health check: verifies MCP server, agent definitions, skill structure, environment variables, and config wiring
@@ -167,6 +167,9 @@ Additional routing pattern:
 - Ask at least three models the same question in parallel — across machines, or
   three local models when nothing can be delegated — then merge the answers and
   report where they disagreed
+
+29. compose-supervisor-prompts
+- Compose continuation, failover-handoff, review-to-continuation, and memory-compaction prompts from supervisor and memory state
 
 ## Recommended Feature Path
 

@@ -1,0 +1,52 @@
+{
+  "name": "@xx-stack/mcp-server",
+  "version": "1.66.0",
+  "description": "MCP server for xx-stack platform routing — multi-provider inventory, health checks, task routing, and supervision",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && rm -f dist/*.test.js dist/*.test.d.ts",
+    "start": "node dist/index.js",
+    "test": "npm run build && rm -rf dist-test && tsc -p tsconfig.test.json && node --test dist-test/*.test.js",
+    "reliability:harness": "npm run build && node dist/reliability-harness.js",
+    "harness:ci": "npm run build && node dist/reliability-harness.js && node dist/check-regression.js",
+    "harness:watch": "node ../scripts/harness-watch.mjs",
+    "harness:fork-governance": "npm run build && node dist/fork-governance.js check-drift",
+    "artifact:record": "npm run build && node dist/fork-governance.js log-artifact",
+    "logs:tail": "sh -c 'd=\"$HOME/.config/xx-stack/logs\"; [ -d \"$d\" ] || d=\"$HOME/.config/opencode/xx-stack-logs\"; tail -f \"$d/mcp-server.jsonl\" | jq .'",
+    "tune": "npm run build && node dist/tune-reliability.js",
+    "monitor:memory": "npm run build && node dist/monitor-memory.js",
+    "monitor:memory:json": "npm run build && node dist/monitor-memory.js --json",
+    "preflight:parallel": "npm run build && node dist/parallel-preflight.js",
+    "smoke:parallel": "npm run build && node dist/parallel-smoke.js",
+    "trace:provider": "npm run build && node dist/trace-provider-proxy.js"
+  },
+  "keywords": [
+    "mcp",
+    "routing",
+    "ollama",
+    "llama-cpp",
+    "openai-compatible",
+    "localai"
+  ],
+  "author": "PiercingXX",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PiercingXX/xx-stack.git",
+    "directory": "mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/PiercingXX/xx-stack/issues"
+  },
+  "homepage": "https://github.com/PiercingXX/xx-stack#readme",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.5",
+    "typescript": "^6.0.3"
+  }
+}

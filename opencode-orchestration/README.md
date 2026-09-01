@@ -11,7 +11,7 @@
 > `../xx-stack/`**, not copies. Edit files at their real path under `xx-stack/`.
 
 This component takes the host-agnostic stack in [`../xx-stack/`](../xx-stack/)
-and installs it into a working OpenCode (and VS Code / Copilot) environment:
+and installs it into a working OpenCode environment:
 agent definitions, skills, MCP server registration, and a live platform registry.
 
 The goal is to replace cloud AI usage with self-hosted inference — your
@@ -59,9 +59,9 @@ Current preferred self-hosted lane:
 These are the maintained source surfaces in this repo:
 
 - `opencode/` — OpenCode-specialized copies of agents and skills. Canonical
-  source is `../xx-stack/runtime/`; `npm run drift:check` is the gate.
-- `mcp-server/` — symlink to `../xx-stack/mcp-server`
-- `scripts/` — symlink to `../xx-stack/scripts`
+  source is `../runtime/`; `npm run drift:check` is the gate.
+- `mcp-server/` — symlink to `../mcp-server`
+- `scripts/` — symlink to `../scripts`
 - `setup.sh`
 - `setup-opencode.sh`
 - `README.md`

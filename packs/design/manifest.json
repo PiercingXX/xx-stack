@@ -1,0 +1,897 @@
+{
+  "$comment": "Provenance record for the design content pack. Method: every file in the pack was byte-compared (md5) against the candidate upstream repositories named in runtime/agents/design-engineer.md, fetched from GitHub raw at the shas recorded under `sources`. Licenses were read from the upstream LICENSE files themselves (copied verbatim into packs/design/licenses/), not inferred from a README or from memory. HONESTY RULE: `provenance` is `verified` only when a byte-level or field-level comparison against a named upstream succeeded during this audit; `asserted` when the origin is documented in-repo but was not independently confirmed; `unknown` when neither holds. A license is never recorded unless it was read from an upstream LICENSE file or declared in the vendored file's own frontmatter. Where the audit could not establish something — most importantly the commit each subtree was originally vendored at — the field is null with a `nullReason`, rather than guessed. Paths are relative to packs/design/.",
+  "pack": "design",
+  "audit": {
+    "date": "2026-08-03",
+    "method": "md5 byte-comparison of every pack file against upstream raw.githubusercontent.com content, plus frontmatter field survey",
+    "tooling": "curl + md5sum; GitHub trees API for upstream layout",
+    "auditedFileCount": 482,
+    "limitation": "Comparison is against each upstream's current default branch, not against the tree as it stood when this pack was vendored. Files recorded as `modified` may differ because of local edits, upstream drift since vendoring, or both; where the audit inspected the diff, the cause is stated.",
+    "limitationScope": "As of 2026-09-01 every vendored subtree is pinned. design-systems/ at e1c277c, craft/ at dceac12, design-skills/ at f631a09, workflow-skills/ at e1c277c. Local edits remain recorded per-subtree; the pin is the upstream commit to diff against, not a claim of byte-identity."
+  },
+  "sources": [
+    {
+      "id": "open-design",
+      "repo": "https://github.com/nexu-io/open-design",
+      "license": "Apache-2.0",
+      "licenseCopyright": "Copyright 2026 Open Design contributors",
+      "licenseFile": "licenses/nexu-io-open-design-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, fetched 2026-08-03 and copied verbatim to licenses/nexu-io-open-design-Apache-2.0.txt",
+      "headAtAudit": "e1c277c59361bfde1ac681e7bd8d9d4d370ada94",
+      "headAtAuditDate": "2026-08-03T10:16:10Z",
+      "headAtAuditPrevious": "dceac12f70df2b9eb0fae9c90aff1fe75da309c0 (2026-08-03T03:12:16Z) — the head this manifest recorded before the design-systems/ re-vendor. craft/ was verified UNCHANGED between dceac12 and e1c277c5, so every craft/ figure recorded against the older head still holds.",
+      "vendoredAtCommit": null,
+      "nullReason": "There is no single per-source vendoring commit, because the three subtrees taken from this upstream were vendored at three different times and only two are pinned. design-systems/ is pinned at e1c277c59361bfde1ac681e7bd8d9d4d370ada94 (see subtrees[design-systems/].detail.vendoring). craft/ is pinned at dceac12f70df2b9eb0fae9c90aff1fe75da309c0. workflow-skills/ is still only bracketed by the vendoringWindow at the foot of this file and is NOT pinned. Recording a single sha here would flatten three different states into one and is deliberately not done.",
+      "notice": "Apache-2.0 section 4(b) requires modified files to carry a notice of modification. This manifest is that notice: see the `apacheSection4bModifiedSet` lists below for the exact set."
+    },
+    {
+      "id": "awesome-design-skills",
+      "repo": "https://github.com/bergside/awesome-design-skills",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 Bergside",
+      "licenseFile": "licenses/bergside-awesome-design-skills-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "Two independent confirmations: LICENSE at repo root (fetched 2026-08-03, copied verbatim), and `license: MIT` declared in the frontmatter of all 57 vendored SKILL.md files.",
+      "headAtAudit": "f631a09b4fcc0166f2e2c1a8c81906ef680c57e8",
+      "headAtAuditDate": "2026-06-28T10:05:21Z",
+      "vendoredAtCommit": null,
+      "nullReason": "Not recorded at vendoring time. The snapshot is datable only relatively: it contains 57 of the 67 skills upstream now publishes, including 7 slugs upstream has since dropped or renamed."
+    },
+    {
+      "id": "awesome-design-md",
+      "repo": "https://github.com/VoltAgent/awesome-design-md",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 VoltAgent",
+      "licenseFile": "licenses/voltagent-awesome-design-md-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, fetched 2026-08-03 and copied verbatim to licenses/voltagent-awesome-design-md-MIT.txt",
+      "headAtAudit": null,
+      "nullReason": "Only one file in this pack traces to this upstream, so the repo head was not pinned.",
+      "scopeNote": "runtime/agents/design-engineer.md names this repo as a source for the whole design pack. The audit found exactly one file that actually comes from it (design-systems/bmw-m/DESIGN.md). The agent frontmatter overstates this upstream's contribution."
+    },
+    {
+      "id": "stitch-skills",
+      "repo": "https://github.com/google-labs-code/stitch-skills",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/google-labs-code-stitch-skills-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a filtered clone on 2026-08-03 and copied verbatim (blob b31ddffd7a087dcdf4d780019f9b6b8c6db7f7b1, byte-identical). Shipped as a separate file from licenses/nexu-io-open-design-Apache-2.0.txt even though both are Apache-2.0: the two renderings differ in line-wrapping, in the §4 and §9 heading wording, and in the appendix copyright line, so neither was assumed to stand in for the other.",
+      "headAtAudit": "535b0889a46868c9b08f8a7f7084db3c1958a2b6",
+      "headAtAuditDate": "2026-07-30T10:07:48-07:00",
+      "vendoredAtCommit": null,
+      "nullReason": "No file from this upstream is redistributed here. It contributes rule VALUES only, to craft/anti-ai-slop-rules.json, from plugins/stitch-utilities/skills/taste-design/SKILL.md.",
+      "supplies": "Seven of the 18 rules in craft/anti-ai-slop-rules.json, each tagged `source: stitch-skills`, plus three extra invented-metric phrasings folded into open-design's rule (the 18th, tagged `open-design + stitch-skills`). Eight further rules of its own were explicitly refused; see that file's `notAdopted` list, which records the reason for each.",
+      "selfContainedNote": "The skill's design guidance needs no hosted service. It lists Google Stitch and an optional Stitch MCP server under Prerequisites for its own generate-a-DESIGN.md workflow; none of the rules taken depend on either, and that workflow was not taken.",
+      "conflictNote": "This upstream and open-design disagree on one point and the disagreement is recorded rather than smoothed over: stitch-skills recommends picsum.photos as a placeholder image host, open-design bans it. open-design's position holds here, because this pack's artifacts are self-contained single files and any runtime host fetch is what the gate exists to catch."
+    },
+    {
+      "id": "design-md",
+      "repo": "https://github.com/google-labs-code/design.md",
+      "license": "Apache-2.0",
+      "licenseFile": "licenses/google-labs-code-design-md-Apache-2.0.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a --filter=blob:none clone on 2026-08-03 and copied verbatim (blob 15e431c225cf463f87a61f4e2a76dfb09e2bf849, byte-identical). Shipped as its own file rather than reusing either Apache-2.0 text already under licenses/: this rendering was diffed against BOTH and differs from each. Against nexu-io/open-design's it differs in §1 ('submitted to the Licensor' vs 'submitted to Licensor'), in §6, and in §9; against google-labs-code/stitch-skills' it differs additionally in the §4(a)/(b) indentation and line-wrapping. Neither was assumed to stand in for the other — same rule the stitch-skills entry records.",
+      "headAtAudit": "9bf8eae67128b6cc55ad9bf86665767deb4c11cd",
+      "headAtAuditDate": "2026-07-27T16:09:10-04:00",
+      "readAtCommit": "9bf8eae67128b6cc55ad9bf86665767deb4c11cd",
+      "readPath": "PHILOSOPHY.md (blob b81f5226f64468db4ac0a7bf2380516194bf5273)",
+      "vendoredAtCommit": null,
+      "nullReason": "Nothing from this upstream is vendored. No file is redistributed and no code is ported, so there is no vendoring commit — only a commit the prose was READ at, recorded above as readAtCommit.",
+      "supplies": "prose doctrine only; no file redistributed, no code ported",
+      "suppliesDetail": "Three arguments from PHILOSOPHY.md, restated in our own words in craft/design-intent.md: (1) the prose is the specification and token values are context, not rendering instructions; (2) a specific reference carries more than a list of adjectives, because adjectives name a REGION of design space and a model outputs the centre of it; (3) negative constraints arrive for free when the reference is specific, so a long rambling don't-list is evidence the description was too vague to carry them. Paraphrased rather than quoted. Both projects are Apache-2.0, so a verbatim lift would have been permissible with attribution; paraphrase was chosen to avoid adding §4(b) modification-notice bookkeeping to craft/, a subtree that already carries an open licensing question (see openQuestions apache-notice-placement) and whose whole value rests on every other file being byte-identical to a different upstream.",
+      "dissentNote": "THIS UPSTREAM ARGUES AGAINST WORK THIS REPO HAS QUEUED, and the disagreement is recorded here rather than left in a craft file nobody re-reads — the same treatment given the picsum.photos conflict between open-design and stitch-skills. PHILOSOPHY.md states that token values serve as context and are NOT rendering instructions, and that token requirements in a specification are neither accepted nor recommended. the repository history task 33 proposes vendoring per-brand tokens.css for all 137 brands precisely so a brand stops being prose-only and becomes a checkable :root contract. That premise is what this upstream rejects.",
+      "dissentDisposition": "OPEN — recorded, not adjudicated, and task 33 is NOT blocked by it. The two positions are compatible for as long as a vendored :root contract is treated as a VERIFICATION SURFACE for gates and not as the brand's definition; they stop being compatible the moment an agent is pointed at tokens.css instead of DESIGN.md. Whoever actions task 33 should read craft/design-intent.md §1 first and record which of those two readings they are building. Note the objection comes from a THIRD PARTY: task 33 would vendor from nexu-io/open-design, not from this repo, so this is an outside argument against a design decision rather than two sources of the same bytes disagreeing — which is why it is filed as a dissent rather than a conflict.",
+      "alsoEvaluated": "This same repo's linter was evaluated and REJECTED as a dependency for scripts/lint-design-systems.mjs: it requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for one systematic lineage difference. Two of its rules (contrast on declared pairs, canonical section order) were reimplemented against the shape our files actually have; no code was transliterated. See that script's header comment and the repository history."
+    },
+    {
+      "id": "refero_skill",
+      "repo": "https://github.com/referodesign/refero_skill",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 Refero",
+      "licenseFile": "licenses/referodesign-refero_skill-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a filtered clone on 2026-08-03 and copied verbatim to licenses/referodesign-refero_skill-MIT.txt (blob 2c7d699d6123a4dc9ea5ec7dfbc2939963e6ef01, byte-identical). NOTE: nexu-io/open-design attributes craft/ to '© Refero Design'; the LICENSE file itself says 'Copyright (c) 2026 Refero'. The shorter form is what the license text actually holds and is what is recorded here.",
+      "headAtAudit": "f78b4ec (2026-06-10T15:17:40+02:00)",
+      "vendoredAtCommit": null,
+      "nullReason": "Nothing in this pack is vendored from refero_skill directly. It reaches us only as the second hop of a chain: nexu-io/open-design authored craft/ as an adaptation of refero_skill's references/, and we vendor open-design's files. No refero_skill file is redistributed here.",
+      "reachesUsVia": "open-design",
+      "relationshipEvidence": "Verified, not taken on trust. (1) craft/README.md § Attribution states the adaptation and names the repo and license. (2) Three craft files — typography.md, color.md, anti-ai-slop.md — carry an inline '> Adapted from [refero_skill] (MIT)' blockquote. (3) refero_skill ships references/{typography,color,anti-ai-slop,motion,icons,copywriting,craft-details}.md, the same subject axis, at the same paths-by-topic. (4) Diffing refero's references/{anti-ai-slop,color,typography}.md against open-design's craft/ counterparts shows a heavy rewrite and condensation (378, 649, 827 diff lines respectively), not a copy — open-design's own copyright in the derived text is substantial. The chain is real; the bytes we hold are open-design's.",
+      "scopeNote": "The other eight craft rulebooks (typography-hierarchy, typography-hierarchy-editorial, state-coverage, animation-discipline, accessibility-baseline, rtl-and-bidi, form-validation, laws-of-ux) carry NO refero attribution, inline or in the README's file table, and postdate the three that do. They read as open-design's own work under Apache-2.0. The README's blanket 'craft content is adapted from refero_skill' is broader than the per-file evidence supports; both licenses are shipped, so the conservative reading costs nothing."
+    },
+    {
+      "id": "guizang",
+      "repo": null,
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2026 op7418 (歸藏)",
+      "licenseFile": "workflow-skills/guizang-ppt/LICENSE",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE file shipped inside the skill directory, matching the file upstream ships at nexu-io/open-design design-templates/guizang-ppt/LICENSE. Preserved here byte-for-byte; do not edit or delete it.",
+      "nullReason": "No standalone upstream repository was identified for this author's template; it reaches us through nexu-io/open-design, which redistributes it under the author's own MIT terms rather than the repo-wide Apache-2.0."
+    },
+    {
+      "id": "material-ui",
+      "repo": "https://github.com/mui/material-ui",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2014 Call-Em-All",
+      "licenseFile": "licenses/mui-material-ui-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read from a --filter=blob:none clone on 2026-08-14 and copied verbatim (blob eba5d9e7bf7686fc77dadc6d4d347bf49afd934e, byte-identical).",
+      "headAtAudit": "48c6663a66b7eacbd9c7c411863ab5d18dbeea88",
+      "headAtAuditDate": "2026-08-14T22:49:27+05:30",
+      "readAtCommit": "48c6663a66b7eacbd9c7c411863ab5d18dbeea88",
+      "readPaths": "packages/mui-material/src/styles/{createPalette.js,createTypography.js,createTransitions.js,shadows.js,zIndex.js}, packages/mui-material/src/colors/{blue,purple,red,green,lightBlue,grey}.js, packages/mui-system/src/createBreakpoints/createBreakpoints.ts, packages/mui-system/src/createTheme/{shape.ts,createSpacing.ts}, packages/mui-system/src/colorManipulator/colorManipulator.js",
+      "vendoredAtCommit": null,
+      "nullReason": "Nothing from this upstream is vendored. No file is redistributed and no code is ported, so there is no vendoring commit - only a commit the source was READ at, recorded above as readAtCommit. Same posture as source `design-md`.",
+      "supplies": "Factual token VALUES only, to two files: (1) design-systems/material/DESIGN.md, whose palette, typography, spacing, breakpoint and motion tokens were corrected against MUI's shipped defaults - see resolvedContentDefects id `material-design-system-misstates-its-own-brand`; (2) craft/layering.md, which cites MUI's zIndex ladder and its three elevation shadow alphas as reference values, the way animation-discipline.md cites Material 3 and Carbon motion tokens.",
+      "whyValuesNotBytes": "MUI is a React component library and this repository ships no React, so there is nothing here to vendor. What transfers is the numeric content of a design system that packs/design already names a brand file after. Values are facts about Material and are recorded with the file and symbol each was read from, so any of them can be re-checked at the pinned sha.",
+      "m2NotM3Note": "MUI implements Material 2, not Material 3, and its own source says so - createTransitions.js cites m2.material.io for both its easing and its duration tables, and createTypography.js cites m2.material.io for the type scale. Every value taken is therefore an M2 value. This is stated rather than smoothed over because craft/animation-discipline.md explicitly lints shipping the M2 easing curve under the name M3, and design-systems/material/DESIGN.md now carries that same warning inline. An M3 re-grounding of that file would be a separate piece of work against a different source.",
+      "checkedAndRejected": "colorManipulator.js getLuminance/getContrastRatio were compared against scripts/lint-design-systems.mjs and deliberately NOT adopted. Both implement the same WCAG 2.x relative-luminance formula, but MUI truncates luminance with `.toFixed(3)` before taking the ratio, which can move a borderline pair across the 4.5:1 threshold. Our implementation does not truncate and is the more accurate of the two. Recorded so the comparison is not re-run as if it were an open question."
+    },
+    {
+      "id": "dataviz-skill",
+      "repo": null,
+ "nullReason": "Not a public repository. It is the `dataviz` skill bundled with a bundled coding-agent (Anthropic), read from the local bundle at version 2.1.232. There is no upstream URL this manifest can pin and no commit to record.",
+      "license": null,
+      "licenseProvenance": "unknown",
+      "licenseEvidence": "NONE. The bundle ships no LICENSE file for the skill, so no license was read. Per this manifest's HONESTY RULE a license is never recorded unless it was read from the source, so this field stays null rather than being inferred from the vendor.",
+      "vendoredAtCommit": null,
+      "supplies": "METHOD ONLY, to craft/data-visualization.md: the six-check validation procedure, the OKLab dE thresholds (adjacent-pair CVD >= 8, normal-vision >= 15), the eight-slot categorical ceiling, and the three-slot cap for all-pairs chart forms. Restated in our own words, in the same posture as source `design-md`.",
+      "deliberatelyNotTaken": "The skill's reference palette. Its 8 light + 8 dark hex values were run through its own validator while craft/data-visualization.md was authored and they pass in both modes (worst adjacent CVD dE 9.1 light / 8.4 dark; worst adjacent normal-vision dE 19.6 light / 19.3 dark; first three slots clear the all-pairs floors in both modes). They are still not reproduced here, for two reasons. (1) Provenance: with no readable LICENSE, copying ~16 hex values would put unlicensed content into a pack whose entire value rests on every value being traceable to a license someone actually read. (2) Shape: craft/ states what holds regardless of brand and design-systems/*/DESIGN.md supplies values, so a fixed palette in a craft file is the wrong layer. The craft file carries the thresholds and the --series-N token contract instead, and a brand declares and validates its own palette against them.",
+      "verificationNote": "The threshold figures quoted in craft/data-visualization.md were re-derived by running the skill's own validator during authoring rather than copied from its prose, on the same principle the rest of this manifest applies: a number is recorded only when it was measured here."
+    }
+  ],
+  "subtrees": [
+    {
+      "path": "design-systems/",
+      "contents": "151 directories, one DESIGN.md each",
+      "provenance": "verified",
+      "nature": "vendored at a PINNED upstream commit, with local modifications to 13 files (zero files now differ by upstream drift)",
+      "primarySource": "open-design",
+      "license": "Apache-2.0",
+      "detail": {
+        "vendoring": {
+          "pinnedCommit": "e1c277c59361bfde1ac681e7bd8d9d4d370ada94",
+          "pinnedCommitDate": "2026-08-03T10:16:10Z",
+          "pinnedCommitSubject": "fix(packaged): recover od:// after web sidecar exits (#6364)",
+          "designSystemsTree": "049e1fa9b97cf67b39ead7d1b02239cd27905e9c",
+          "vendoredOn": "2026-08-03",
+          "whyThisSha": "Upstream HEAD at the time of vendoring, and NOT mid-refactor with respect to this subtree. The last commit to touch design-systems/ was ad5a7d6ba (2026-07-27), itself a full Revert of 340cbb9b9 'feat(web): add guided inspiration and deliverable workflow'; the revert restored the tree to exactly 049e1fa9b, byte-identical to its state at 6b90486c9 (2026-07-18). So design-systems/ has been unchanged for a week, the one recent churn is resolved rather than in flight, and 049e1fa9b is a settled state rather than a snapshot mid-series. HEAD was preferred over pinning ad5a7d6ba directly because the two carry the identical subtree and HEAD is the sha a re-vendor would naturally be checked against.",
+          "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), then sha256 of every DESIGN.md against the pinned tree's counterpart.",
+          "supersedes": "The `vendoringWindow` at the foot of this file. That window (9ee2c19..483e00d, 57 commits sharing design-systems tree 0fdec161) was the best record obtainable while nothing in our files distinguished commits inside it. It is retained as history — it still explains why the record used to be a range, and it is still the ONLY record for workflow-skills/, which was not re-vendored.",
+          "scope": "design-systems/ only. workflow-skills/ and design-skills/ were untouched by this operation."
+        },
+        "fromOpenDesign": 150,
+        "fromAwesomeDesignMd": 1,
+        "byteIdenticalToOpenDesignHead": 137,
+        "byteIdenticalScope": "Against the PINNED commit e1c277c5, which was upstream HEAD when this figure was measured. 137 of the 150 open-design files are byte-identical; the remaining 13 are the local edits below. bmw-m is excluded from both figures because it does not come from open-design at all.",
+        "modifiedOrDrifted": 13,
+        "modificationCause": "TWO causes now, down from three. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. Eight files: cal, dashboard, expo, framer, kami, ollama, replicate, voltagent. (2) Accessibility defect fix, 2026-08-03: four Schema-B files (bold, energetic, mono, pacman) shipped a declared Text/Surface pair below WCAG AA and had their Text token corrected — see resolvedContentDefects id declared-text-on-surface-contrast for the per-file values and reasoning. Recorded here rather than annotated in the files so the remaining bytes stay comparable to upstream. The THIRD cause this key used to carry — upstream drift since vendoring — is GONE as of the 2026-08-03 re-vendor: all seven drifted files were realigned to the pinned tree, so drift is no longer a reason any file here differs. (3) Brand-accuracy fix, 2026-08-14: design-systems/material/DESIGN.md declared tokens, fonts and a type scale that are not Material's - see resolvedContentDefects id `material-design-system-misstates-its-own-brand`. Corrected against mui/material-ui at 48c6663a. Same recording convention as cause (2): the values live here, not as an in-file annotation, so every untouched line stays comparable to upstream.",
+        "reVendor2026-08-03": "The subtree was re-vendored from a --filter=blob:none clone at the pinned sha. What happened, by class: 117 files were already byte-identical and were left alone; 7 files that differed ONLY by upstream drift (arc, canva, discord, duolingo, github, huggingface, openai) were realigned — each was a pure ADDITION of a '## 7. Usage Guardrails' section with no other line changed; 12 files carrying local edits were KEPT, verified line-by-line against the pinned tree first (upstream had changed nothing else in any of the 12 — identical line counts, differences confined to exactly the lines we edited, so there was no upstream content to merge around them); bmw-m was kept as-is because it is not an open-design file; and 14 brands upstream had added were brought in. Result: 137 -> 151 slugs, 117 -> 138 byte-identical, 19 -> 12 modifiedOrDrifted.",
+        "exceptions": [
+          {
+            "slug": "bmw-m",
+            "source": "awesome-design-md",
+            "license": "MIT",
+            "provenance": "verified",
+            "note": "Byte-identical to VoltAgent/awesome-design-md design-md/bmw-m/DESIGN.md except for one line: upstream `name: BMW-M-design-analysis` was changed to `name: BMW M`. This is the only file in design-systems/ with YAML frontmatter, and the only one that does not come from open-design; open-design ships its own, different bmw-m.",
+            "reVendorDecision": "KEPT as VoltAgent's at the 2026-08-03 re-vendor, deliberately, and this is the one place the three-way classification needed a human call. Mechanically, bmw-m falls into 'differs from the pinned open-design tree and is not in modifiedByUs', which is the bucket that otherwise means realign. It must NOT be realigned: the two files are different works, not two versions of one (ours 503 lines with YAML frontmatter, open-design's 246 lines in the standard prose schema; 589 diff lines). Overwriting ours with open-design's would swap the file's licence from MIT to Apache-2.0, void the `exceptions` record above, and discard the only YAML-frontmatter file in the subtree. Anyone re-running the classification should expect bmw-m in that bucket and exclude it before concluding the separation is wrong."
+          }
+        ],
+        "modifiedByUs": [
+          "bold",
+          "cal",
+          "dashboard",
+          "energetic",
+          "expo",
+          "framer",
+          "kami",
+          "material",
+          "mono",
+          "ollama",
+          "pacman",
+          "replicate",
+          "voltagent"
+        ],
+        "differsOnlyByUpstreamDrift": [],
+        "differsOnlyByUpstreamDriftNote": "EMPTY BY CONSTRUCTION as of 2026-08-03, not by coincidence. This key previously held arc, canva, discord, duolingo, github, huggingface and openai — seven files that differed from upstream only because upstream moved on and we never took the update. All seven were realigned to the pinned tree during the re-vendor. Each turned out to be a pure addition of a '## 7. Usage Guardrails' section (3-4 bullets) at the end of the file with no other line touched, which is why realigning them was safe and why none of them needed a merge decision. Now that the subtree is pinned, this list should stay empty: any future non-empty value means someone edited a vendored file without recording it in modifiedByUs, or the pin moved without the tree being resynced.",
+        "apacheSection4bModifiedSet": [
+          "bold",
+          "cal",
+          "dashboard",
+          "energetic",
+          "expo",
+          "framer",
+          "kami",
+          "material",
+          "mono",
+          "ollama",
+          "pacman",
+          "replicate",
+          "voltagent"
+        ],
+        "separationMethod": "NOW TRIVIAL, because the subtree is pinned. Any file that differs from design-systems tree 049e1fa9b at commit e1c277c5 is our edit, and must appear in modifiedByUs. There is no longer an inference step and no longer a category of difference this manifest cannot attribute. bmw-m is the single documented exception and is not an open-design file at all (see exceptions above).",
+        "separationMethodHistory": "Before the pin, the two causes had to be told apart by matching every file against upstream HISTORY with a blob:none clone: files whose content matched SOME historical upstream state were upstream drift; files matching NO upstream state at any commit were our edits. Earlier still, the two could not be separated at all and all 15 differing files were recorded flatly as modified. That inference is what the pin replaces, and it is the substantive win of the 2026-08-03 re-vendor — openQuestions/vendoring-commits-unrecorded existed precisely because 'has this drifted?' could only be asked against a moving branch. The four contrast fixes (bold, energetic, mono, pacman) never needed the inference: they were recorded as our edits at the moment they were made, which is the convention every future local edit should follow — record the edit when you make it, do not leave it to be reconstructed."
+      },
+      "copyrightNote": "The content is written as 'Design System Inspired by <brand>' — prose analysis of publicly observable visual language, not copied brand assets. That framing is upstream's, authored at nexu-io/open-design and VoltAgent/awesome-design-md; it was NOT clean-room reinterpretation performed in this repo. Everything here is a redistributed copy of upstream text. Brand names, wordmarks, and trademarks referenced in the prose remain the property of their respective owners and are used nominatively.",
+      "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 138 of 151 files are byte-identical to upstream (117 of 137 when this note was first written). The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m).",
+      "newBrands2026-08-03": {
+        "count": 14,
+        "slugs": [
+          "atelier-zero",
+          "cisco",
+          "hud",
+          "loom",
+          "mission-control",
+          "perplexity",
+          "slack",
+          "tom-modern",
+          "totality-festival",
+          "trading-terminal",
+          "urdu",
+          "webex",
+          "wechat"
+        ],
+        "vendoredFrom": "nexu-io/open-design at e1c277c5, DESIGN.md only",
+        "whyDesignMdOnly": "Upstream's per-brand directory has grown well past DESIGN.md — arc/ now also ships components.html, components.manifest.json, design-tokens.json, manifest.json, tailwind-v4.css, tokens.css, USAGE.md and preview/ source/ system/ subdirectories. This pack vendors DESIGN.md and nothing else, for all 151 slugs, unchanged by this operation. Taking the rest is -TODO task 33's question, not this one's, and that task carries an unresolved dissent (see sources/design-md dissentNote).",
+ "claudeSlugNote": "`` is one of the 14. It is the slug the vendoringWindow evidence records as the ONE difference between our 137 and upstream's window tree — upstream's `` was absent here and `bmw-m` stood in its place. Taking it closes that gap: our slug set is now exactly upstream's 151, plus bmw-m which upstream also has under its own different content. Nothing was dropped to make room.",
+        "generatorDefectCheck": "All 14 were checked for the declared-Text-on-Surface defect that produced the bold/pacman/energetic/mono repairs, using the same declared-pair extraction scripts/lint-design-systems.mjs uses. NONE of the 14 carries a declared pair at all: not one has the Schema-B prose triplet ('Favor Primary (#…) for CTA emphasis' / 'Use Surface (#…) for large backgrounds' / 'Keep body copy on Text (#…) for legibility'). They are Schema-A and Schema-A-like files whose palettes are described in role prose rather than emitted by the Schema-B generator, so the defect's mechanism is not present. Zero repairs were needed and zero were applied — no new slug was added to modifiedByUs by this operation.",
+        "generatorDefectCheckCaveat": "'Not contrast-checkable' is a weaker statement than 'contrast-clean'. These 14 join the 80 pre-existing files that declare no pairing and are correctly not contrast-checked; the gate cannot speak to them either way. What was ruled out is specifically the upstream generator defect, which only manifests through the declared triplet."
+      }
+    },
+    {
+      "path": "design-skills/",
+      "contents": "57 directories, SKILL.md + DESIGN.md each",
+      "provenance": "verified",
+      "nature": "vendored verbatim (directory renamed from upstream `skills/` to `design-skills/`)",
+      "primarySource": "awesome-design-skills",
+      "license": "MIT",
+      "detail": {
+        "vendoredAtCommit": "f631a09b4fcc0166f2e2c1a8c81906ef680c57e8",
+        "vendoring": "Pinned 2026-09-01 to the audit head already recorded on sources/awesome-design-skills. This pack vendors 57 of the 67 skills upstream published at that commit; 7 slugs present here are absent from that head (dropped or renamed upstream after our snapshot). Do not re-vendor without preserving those 7 and the enterprise older-text divergence.",
+        "byteIdenticalToUpstreamHead": {
+          "SKILL.md": 49,
+          "DESIGN.md": 49
+        },
+        "divergent": [
+          {
+            "slug": "enterprise",
+            "reason": "Upstream rewrote this skill after our snapshot (different description, palette, and typography). Ours is the older upstream text, not a local edit."
+          }
+        ],
+        "absentFromUpstreamHead": {
+          "slugs": [
+            "application",
+            "dashboard",
+            "elegant",
+            "energetic",
+            "luxury",
+            "publication",
+            "simple"
+          ],
+          "reason": "Present in this snapshot and in the snapshot-era upstream index, absent from bergside/awesome-design-skills at f631a09. Upstream appears to have dropped or renamed them. Their SKILL.md frontmatter carries the same `license: MIT` / `metadata.author: typeui.sh` declaration as the other 50, so the license is still established per-file even though the upstream path no longer resolves.",
+          "provenance": "verified"
+        },
+        "inFileAttribution": "All 57 SKILL.md files declare `license: MIT` and `metadata.author: typeui.sh` in frontmatter, and wrap their body in `<!-- TYPEUI_SH_MANAGED_START -->` markers. typeui.sh is the CLI that publishes the registry; Bergside is the copyright holder named in the upstream LICENSE.",
+        "upstreamSize": "67 skills at f631a09; this pack vendors 57 of them."
+      },
+      "removedFiles": [
+        {
+          "file": "design-skills/index.json",
+          "removedOn": "2026-08-03",
+          "wasUpstream": "bergside/awesome-design-skills skills/index.json",
+          "reason": "All 114 of its paths were broken: every entry declared `skills/<slug>/SKILL.md` and `skills/<slug>/DESIGN.md`, but this pack renamed the directory to `design-skills/` and never applied the rename. Nothing read it — scripts/generate-design-catalog.mjs explicitly filtered it out. Verified before removal that it carried no information the directory tree does not: `slug` equals the directory name for all 57 entries, `name` equals the `name` field in the corresponding DESIGN.md frontmatter for all 57 entries (zero mismatches), and both paths are derivable from the slug. Fixing the paths would have made it correct but still unread, and would have broken byte-comparison against upstream — the one thing the file was actually good for. Its snapshot value is preserved above under `absentFromUpstreamHead` and `upstreamSize`.",
+          "regenerate": "node -e \"const fs=require('fs'),p='design-skills';const o={};for(const s of fs.readdirSync(p).filter(n=>fs.statSync(p+'/'+n).isDirectory()).sort()){const m=fs.readFileSync(p+'/'+s+'/DESIGN.md','utf8').match(/^---\\n([\\s\\S]*?)\\n---/);o[s]={slug:s,name:m[1].match(/^name:\\s*(.+)$/m)[1].trim(),skillPath:p+'/'+s+'/SKILL.md',designPath:p+'/'+s+'/DESIGN.md'};}console.log(JSON.stringify(o,null,2))\""
+        }
+      ]
+    },
+    {
+      "path": "workflow-skills/",
+      "contents": "31 skill directories plus quality-gates.json",
+      "provenance": "verified",
+      "nature": "part vendored, part authored here. 88 of 167 files are vendored SKILL.md/example.html from upstream (11 with local edits: 7 SKILL.md and 4 replit-deck example decks); the other 79 have no upstream counterpart at any path or commit and were written here.",
+      "primarySource": "open-design",
+      "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
+      "detail": {
+        "vendoredAtCommit": "e1c277c59361bfde1ac681e7bd8d9d4d370ada94",
+        "vendoring": "Pinned 2026-09-01 to the same open-design commit as design-systems/. Local edits are recorded in skillMdModifiedByUs and must not be reverted by a naive re-vendor.",
+        "upstreamPath": "nexu-io/open-design design-templates/<slug>/",
+        "allSlugsPresentUpstream": true,
+        "byteIdenticalToUpstreamHead": [
+          "eng-runbook",
+          "invoice",
+          "meeting-notes",
+          "pm-spec",
+          "team-okrs",
+          "wireframe-sketch"
+        ],
+        "modifiedOrDrifted": 25,
+        "modificationCause": "Sampled diffs are small and of two kinds: local pruning of upstream fields not used here (e.g. simple-deck drops upstream's `en_name`/`zh_name` bilingual frontmatter; blog-post drops upstream's `craft.requires` list and adds `featured: 11`), and upstream drift since vendoring. No skill was substantially rewritten. A third cause was added 2026-08-03: four replit-deck example decks were edited to satisfy this pack's own animate-layout-property rule. A fourth cause was added 2026-08-03: simple-deck and replit-deck SKILL.md each gained a 'Content vs production controls' section and one Hard rule bullet. The rule keeps build instructions from the brief — 'make slide 4 a bar chart' — out of rendered slide text. replit-deck was already in the modified set; simple-deck is new to it.",
+        "inFileAttribution": "All 31 SKILL.md files retain upstream's `od:` frontmatter block — open-design's own metadata namespace — which is what identifies the subtree's origin from inside the files.",
+        "documentedInRepo": "workflow-skills/replit-deck/SKILL.md § 'Scope & provenance' names nexu-io/open-design as the issue tracker for this content and records its own snapshot date (2026-04-29, colors sampled from replit.com/slides with ImageMagick).",
+        "skillMdModifiedByUs": [
+          "critique",
+          "guizang-ppt",
+          "motion-frames",
+          "replit-deck",
+          "saas-landing",
+          "simple-deck",
+          "tweaks"
+        ],
+        "authoredHereFiles": "every references/checklist.md (31), references/layouts.md (31), and assets/template.html (31), plus quality-gates.json — upstream ships only SKILL.md + example.html per template",
+        "authoredHereFileCount": 79,
+        "authoredHereEvidence": "No upstream counterpart exists at any path in any commit, and the checklists cite this repo's own design-prototype skill and its P0/P1/P2 severity vocabulary.",
+        "apacheSection4bModifiedSet": [
+          "critique",
+          "guizang-ppt",
+          "motion-frames",
+          "replit-deck",
+          "saas-landing",
+          "simple-deck",
+          "tweaks"
+        ],
+        "exampleHtmlModifiedByUs": [
+          "replit-deck/examples/example-atlas.html",
+          "replit-deck/examples/example-bluehouse.html",
+          "replit-deck/examples/example-helix.html",
+          "replit-deck/examples/example-holm.html"
+        ],
+        "exampleHtmlModificationReason": "2026-08-03. craft/anti-ai-slop-rules.json rule `animate-layout-property` was promoted P1 -> P0; these four decks animated `.deck-progress` with `transition: width`, forcing layout every frame. Each received the identical prescribed change: width:0 -> width:100% plus transform:scaleX(0) and transform-origin:left; transition:width -> transition:transform; and the one JS line setting style.width now sets style.transform. Nine lines per file. The two files with the same construct — replit-deck/assets/template.html and simple-deck/assets/template.html — are authored here and need no section 4(b) record.",
+        "apacheSection4bNote": "Slug-granular. replit-deck was already listed for its SKILL.md; as of 2026-08-03 it also covers exampleHtmlModifiedByUs. No new slug — simple-deck's edited file is authored here. As of 2026-08-03 simple-deck joins the set for its SKILL.md. Its checklist.md, and those of replit-deck and weekly-update, took the same rule as P0 items but are authored here.",
+        "authoredHereCountNote": "79 is the count of files with no upstream counterpart. An earlier value of 93 counted every checklist.md + layouts.md + template.html (31 each) plus quality-gates.json without subtracting the skills whose template.html does exist upstream. 79 is the measured figure and the one `nature` states.",
+        "authoredHereFilesCaveat": "The blanket claim that every references/checklist.md is authored here overreaches for guizang-ppt: its five references/*.md and assets/example-slides.html are named in upstream's own SKILL.md resource map and came from op7418 with the rest of the slug. This does not change the authoredHereFileCount derivation but the sentence should not be read as universal."
+      },
+      "exceptions": [
+        {
+          "slug": "guizang-ppt",
+          "source": "guizang",
+          "license": "MIT",
+          "licenseFile": "workflow-skills/guizang-ppt/LICENSE",
+          "provenance": "verified",
+          "note": "Upstream open-design also ships a per-directory LICENSE for this template, confirming it is carved out of the repo-wide Apache-2.0. Our copy is preserved byte-for-byte. This is the only LICENSE file that existed anywhere in the design pack before this audit."
+        }
+      ],
+      "locallyAuthored": [
+        {
+          "file": "workflow-skills/quality-gates.json",
+          "provenance": "asserted",
+          "reason": "References xx-stack-relative paths (packs/design/workflow-skills/...) and this repo's gate vocabulary; no counterpart at the upstream path. Authored here, covered by the repo root MIT LICENSE."
+        }
+      ]
+    },
+    {
+      "path": "craft/",
+      "contents": "11 brand-agnostic craft rulebooks + upstream's README.md and FUTURE_SECTIONS.md, vendored byte-for-byte; plus eight files authored here (XX-STACK-NOTES.md, anti-ai-slop-rules.json, design-intent.md, layering.md, data-visualization.md, responsive.md, theming.md, iconography.md)",
+      "provenance": "verified",
+      "nature": "vendored verbatim, zero local edits to any vendored file. The eight authored-here files are additions, not modifications: no vendored byte changes, so the Apache-2.0 §4(b) set for this subtree stays empty.",
+      "primarySource": "open-design",
+      "license": "Apache-2.0 (nexu-io/open-design). Three of the 11 rulebooks additionally sit over a two-hop chain from referodesign/refero_skill (MIT); the other eight do not.",
+      "axis": "A fourth content axis for this pack, and the one genuinely new KIND of content. design-systems/ says what a brand looks like; design-skills/ supplies aesthetic direction; workflow-skills/ says how to build one artifact type; craft/ supplies the universal rules that hold regardless of brand (ALL CAPS needs >=0.06em tracking; cap visible accent uses at ~2 per screen; every stateful surface needs empty/loading/error/partial states).",
+      "detail": {
+        "upstreamPath": "nexu-io/open-design craft/",
+        "vendoredAtCommit": "dceac12f70df2b9eb0fae9c90aff1fe75da309c0",
+        "vendoredAtCommitDate": "2026-08-03T03:12:16Z",
+        "vendoredOn": "2026-08-03",
+        "method": "--filter=blob:none clone, `git archive HEAD craft`, then `git hash-object` on every landed file compared against `git rev-parse HEAD:craft/<file>`. All 13 vendored files verified byte-identical.",
+        "byteIdenticalToUpstreamHead": 13,
+        "locallyModified": 0,
+        "apacheSection4bModifiedSet": [],
+        "totalBytes": 108643,
+        "totalBytesScope": "The 13 VENDORED files only. The eight authored-here files (XX-STACK-NOTES.md, anti-ai-slop-rules.json, design-intent.md, layering.md, data-visualization.md, responsive.md, theming.md, iconography.md) are listed in `files` but excluded from this figure, which exists to be comparable against upstream.",
+        "shippedSectionCount": 17,
+        "shippedSectionCountNote": "11 vendored rulebooks + six sections authored here (design-intent, layering, data-visualization, responsive, theming, iconography). `byteIdenticalToUpstreamHead: 13` and the '11 rulebooks' phrasing elsewhere both still refer to the vendored set and are not contradicted by this number.",
+        "tokenEstimateMethod": "bytes/4 rounded, same convention as packs/rules/manifest.json",
+        "files": [
+          {
+            "file": "typography.md",
+            "slug": "typography",
+            "bytes": 3067,
+            "tokensEstimated": 767,
+            "vendored": true,
+            "referoAttributedInline": true
+          },
+          {
+            "file": "typography-hierarchy.md",
+            "slug": "typography-hierarchy",
+            "bytes": 7414,
+            "tokensEstimated": 1854,
+            "vendored": true
+          },
+          {
+            "file": "typography-hierarchy-editorial.md",
+            "slug": "typography-hierarchy-editorial",
+            "bytes": 8748,
+            "tokensEstimated": 2187,
+            "vendored": true
+          },
+          {
+            "file": "color.md",
+            "slug": "color",
+            "bytes": 3118,
+            "tokensEstimated": 780,
+            "vendored": true,
+            "referoAttributedInline": true
+          },
+          {
+            "file": "anti-ai-slop.md",
+            "slug": "anti-ai-slop",
+            "bytes": 3919,
+            "tokensEstimated": 980,
+            "vendored": true,
+            "referoAttributedInline": true
+          },
+          {
+            "file": "state-coverage.md",
+            "slug": "state-coverage",
+            "bytes": 7084,
+            "tokensEstimated": 1771,
+            "vendored": true
+          },
+          {
+            "file": "animation-discipline.md",
+            "slug": "animation-discipline",
+            "bytes": 9114,
+            "tokensEstimated": 2279,
+            "vendored": true
+          },
+          {
+            "file": "accessibility-baseline.md",
+            "slug": "accessibility-baseline",
+            "bytes": 12894,
+            "tokensEstimated": 3224,
+            "vendored": true
+          },
+          {
+            "file": "rtl-and-bidi.md",
+            "slug": "rtl-and-bidi",
+            "bytes": 12159,
+            "tokensEstimated": 3040,
+            "vendored": true
+          },
+          {
+            "file": "form-validation.md",
+            "slug": "form-validation",
+            "bytes": 17186,
+            "tokensEstimated": 4297,
+            "vendored": true
+          },
+          {
+            "file": "laws-of-ux.md",
+            "slug": "laws-of-ux",
+            "bytes": 17339,
+            "tokensEstimated": 4335,
+            "vendored": true
+          },
+          {
+            "file": "README.md",
+            "slug": null,
+            "bytes": 6310,
+            "tokensEstimated": 1578,
+            "vendored": true
+          },
+          {
+            "file": "FUTURE_SECTIONS.md",
+            "slug": null,
+            "bytes": 291,
+            "tokensEstimated": 73,
+            "vendored": true
+          },
+          {
+            "file": "XX-STACK-NOTES.md",
+            "slug": null,
+            "bytes": 9190,
+            "tokensEstimated": 2298,
+            "vendored": false,
+            "license": "MIT (repo root LICENSE)"
+          },
+          {
+            "file": "anti-ai-slop-rules.json",
+            "slug": null,
+            "bytes": 22695,
+            "tokensEstimated": 5674,
+            "vendored": false,
+            "license": "MIT structure; rule VALUES from two Apache-2.0 upstreams (nexu-io/open-design and google-labs-code/stitch-skills) — see its own `attribution` block, and every rule's `source` field"
+          },
+          {
+            "file": "design-intent.md",
+            "slug": "design-intent",
+            "bytes": 5162,
+            "tokensEstimated": 1291,
+            "vendored": false,
+            "nature": "authored-here-from-attributed-ideas",
+            "ideasFrom": "design-md",
+            "license": "MIT (repo root LICENSE) for the text as written here. The IDEAS are attributed to google-labs-code/design.md PHILOSOPHY.md (Apache-2.0, read at 9bf8eae) and restated in our own words; that upstream's license text ships at licenses/google-labs-code-design-md-Apache-2.0.txt regardless, because attribution is owed even where redistribution is not.",
+            "distinctFromVendored": "This is a THIRD kind of file in craft/, and the distinction is the point of this entry. The 13 vendored rulebooks are byte-identical to nexu-io/open-design and their value depends on staying that way. XX-STACK-NOTES.md and anti-ai-slop-rules.json are ours, written against upstream material we hold. design-intent.md is ours too, but written from prose we deliberately did NOT take: not one sentence of PHILOSOPHY.md is reproduced, so there is nothing here to byte-compare and nothing to keep in sync. Do not treat it as vendored, do not diff it against upstream, and do not 'restore' it from any upstream file.",
+            "isDoctrineNotRulebook": "It ships no checkable rule and no P0/P1/P2 finding; no gate reads it. It is filed under craft/ because it states the THEORY behind anti-ai-slop-rules.json's 18 rules, which that file has never carried.",
+            "requirability": "It resolves as an od.craft.requires slug (`design-intent`) — check-craft-references.mjs counts any craft/<slug>.md that is not README/FUTURE_SECTIONS/XX-STACK-NOTES as a shipped section, so a skill CAN require it. Deliberately bound to zero skills: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged, and upstream has no binding for a file it does not have. Inventing one would break `bindingProvenance`. The check reports it under 'shipped but required by no skill', which is a NOTE, not a failure."
+          },
+          {
+            "file": "layering.md",
+            "slug": "layering",
+            "bytes": 8305,
+            "tokensEstimated": 2076,
+            "vendored": false,
+            "nature": "authored-here-filling-an-upstream-gap",
+            "valuesFrom": "material-ui",
+            "license": "MIT (repo root LICENSE) for the text as written here. Two tables cite VALUES read from mui/material-ui at 48c6663a (MIT, licenses/mui-material-ui-MIT.txt): the nine-rung zIndex ladder from zIndex.js, and the three elevation shadow alphas from shadows.js. No MUI file is redistributed and no MUI code is ported.",
+            "whyItExists": "open-design ships no craft section on stacking contexts or z-index, and neither did this pack - a grep for z-index, zIndex or 'stacking context' across all of craft/ returned nothing before this file. The gap was found while reviewing mui/material-ui, whose zIndex.js carries the rationale in a source comment: layering values 'work like global values in the browser', so they have to be centralised. That is a craft rule, not a MUI implementation detail.",
+            "scopeSplit": "The CSS material - what creates a stacking context, why z-index is inert on position: static, the top layer via dialog.showModal() and the Popover API - is standard specified behaviour and is not taken from any project. Only the two value tables are MUI's.",
+            "requirability": "Resolves as an od.craft.requires slug (`layering`) and is deliberately bound to zero skills, on the same grounds as design-intent.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged, and upstream has no binding for a file it does not have. check-craft-references.mjs reports it under 'shipped but required by no skill', which is a NOTE, not a failure."
+          },
+          {
+            "file": "data-visualization.md",
+            "slug": "data-visualization",
+            "bytes": 11303,
+            "tokensEstimated": 2826,
+            "vendored": false,
+            "nature": "authored-here-filling-a-measured-gap",
+            "methodFrom": "dataviz-skill",
+ "license": "MIT (repo root LICENSE) for the text as written here. The six-check procedure, the dE thresholds, the eight-slot ceiling and the three-slot all-pairs cap are the method used by the `dataviz` skill bundled with a bundled coding-agent (Anthropic) at bundle version 2.1.232, restated rather than copied. That skill ships no readable LICENSE, so source `dataviz-skill` records license null and its reference palette is deliberately NOT reproduced — see that entry's `deliberatelyNotTaken`.",
+            "whyItExists": "Eight workflow skills name a chart type explicitly (dashboard, finance-report, weekly-update, critique, simple-deck, replit-deck, wireframe-sketch, dating-web) and ten example.html files contain plotted geometry, while craft/ carried exactly one sentence about charts — an alt-text line in accessibility-baseline.md.",
+            "note": "It resolves a CONTRADICTION, not only a gap, and that is the part worth preserving. color.md caps visible --accent uses at 2 per screen; anti-ai-slop-rules.json fires `accent-overuse` at 6 uses of var(--accent) and `raw-hex` at 12 hexes outside :root; and a grep for --chart-N / --series-N / --cat-N across all 151 design-systems, 57 design-skills, 31 workflow-skills and craft/ returned ZERO hits. A six-series chart therefore had no legal route: reusing the accent tripped one rule, inventing hexes tripped another. The ruling is that series colour is an IDENTITY role and accent colour an ATTENTION role, so the accent cap counts accent uses and never applied to --series-N. color.md is neither edited nor contradicted; the fault was in what the pack failed to say.",
+            "requirability": "Resolves as an od.craft.requires slug and is deliberately bound to zero skills, on the same grounds as design-intent.md and layering.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged. check-craft-references.mjs reports it under 'shipped but required by no skill', a NOTE rather than a failure."
+          },
+          {
+            "file": "responsive.md",
+            "slug": "responsive",
+            "bytes": 8339,
+            "tokensEstimated": 2085,
+            "vendored": false,
+            "nature": "authored-here-filling-a-measured-gap",
+            "license": "MIT (repo root LICENSE). Authored here from specified web-platform behaviour (CSS Containment L3 container queries, CSS Values 4 clamp(), dvh/svh/lvh) and WCAG 2.2 SC 1.4.10 / 1.4.4. No project supplied it.",
+            "whyItExists": "scripts/quality-gate-html.mjs line 181 warns 'No @media query found; verify responsive behavior' and NO craft file stood behind that warning — the only hit for responsive|breakpoint|viewport across craft/ was a string inside anti-ai-slop-rules.json. The gate named a defect and nothing said what correct looked like. It was not even listed in FUTURE_SECTIONS.md.",
+            "requirability": "Resolves as an od.craft.requires slug and is deliberately bound to zero skills, on the same grounds as design-intent.md and layering.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged. check-craft-references.mjs reports it under 'shipped but required by no skill', a NOTE rather than a failure."
+          },
+          {
+            "file": "theming.md",
+            "slug": "theming",
+            "bytes": 7669,
+            "tokensEstimated": 1917,
+            "vendored": false,
+            "nature": "authored-here-filling-a-measured-gap",
+            "license": "MIT (repo root LICENSE). Authored here from CSS Color Adjust L1 (color-scheme), CSS MQ L5 (prefers-color-scheme, prefers-contrast) and the cascade rules. No project supplied it.",
+            "whyItExists": "color.md covers dark THEME VALUES in twelve lines (avoid pure black/white; semi-transparent white borders on dark) and nothing in the pack covered the MECHANISM: prefers-color-scheme, the color-scheme property, or the three-state explicit-light / explicit-dark / system-default problem whose default case is the one that gets missed.",
+            "note": "Shipped as a COMPANION rather than as an edit to color.md, because color.md is one of the 13 vendored files and this subtree's zero-local-edits property is what keeps the Apache-2.0 4(b) modified set empty. The two files are explicitly scoped against each other in theming.md's opening section: color.md is which colours, theming.md is how a theme is switched.",
+            "requirability": "Resolves as an od.craft.requires slug and is deliberately bound to zero skills, on the same grounds as design-intent.md and layering.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged. check-craft-references.mjs reports it under 'shipped but required by no skill', a NOTE rather than a failure."
+          },
+          {
+            "file": "iconography.md",
+            "slug": "iconography",
+            "bytes": 7443,
+            "tokensEstimated": 1861,
+            "vendored": false,
+            "nature": "authored-here-filling-a-measured-gap",
+            "license": "MIT (repo root LICENSE). Authored here from SVG 2, CSS Values 4 (currentColor), WAI-ARIA 1.3 / the ARIA APG, WCAG 2.2 SC 1.1.1 and 1.4.11, and Unicode TR51. No project supplied it.",
+            "whyItExists": "anti-ai-slop.md bans emoji-as-icons at P0, enforced by two rules (emoji-icon, emoji-icon-class), and named no replacement. A grep for iconograph|icon system|stroke width across every craft file returned zero hits: the pack forbade the shortcut and said nothing about the correct path.",
+            "requirability": "Resolves as an od.craft.requires slug and is deliberately bound to zero skills, on the same grounds as design-intent.md and layering.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged. check-craft-references.mjs reports it under 'shipped but required by no skill', a NOTE rather than a failure."
+          }
+        ],
+        "whyReadmeWasNotRewritten": "Task 30 proposed rewriting upstream's README for our paths. It was vendored unmodified instead: byte-comparability against upstream is the reason packs/ is .prettierignore'd, and editing the one file that documents the axis would forfeit it for the file most likely to drift. The corrections a reader needs — `pnpm lint:craft` is `scripts/check-craft-references.mjs` here, there is no daemon prompt-composer, `data-od-id` is an upstream desktop-app concern — are in craft/XX-STACK-NOTES.md, which is clearly ours.",
+        "optIn": {
+          "mechanism": "od.craft.requires in each workflow skill's SKILL.md frontmatter — upstream's own convention, inside the `od:` namespace block our 31 SKILL.md files already carry.",
+          "conventionEvidence": "Not invented here. workflow-skills/saas-landing/SKILL.md already shipped `craft: requires: [typography, color, anti-ai-slop]` — the May-era upstream binding, carried in when the pack was vendored. This audit's earlier finding that blog-post 'drops upstream's craft.requires list' is the same signal from the other direction.",
+          "boundSkills": 12,
+          "unboundSkills": 19,
+          "bindings": {
+            "blog-post": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "dashboard": [
+              "state-coverage",
+              "accessibility-baseline",
+              "laws-of-ux"
+            ],
+            "digital-eguide": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "docs-page": [
+              "typography",
+              "typography-hierarchy",
+              "typography-hierarchy-editorial",
+              "rtl-and-bidi"
+            ],
+            "finance-report": [
+              "rtl-and-bidi"
+            ],
+            "gamified-app": [
+              "state-coverage",
+              "animation-discipline"
+            ],
+            "hr-onboarding": [
+              "accessibility-baseline"
+            ],
+            "kanban-board": [
+              "state-coverage",
+              "laws-of-ux"
+            ],
+            "mobile-app": [
+              "state-coverage",
+              "animation-discipline"
+            ],
+            "mobile-onboarding": [
+              "state-coverage",
+              "animation-discipline",
+              "accessibility-baseline",
+              "form-validation",
+              "laws-of-ux"
+            ],
+            "pricing-page": [
+              "laws-of-ux"
+            ],
+            "saas-landing": [
+              "typography",
+              "color",
+              "anti-ai-slop",
+              "laws-of-ux"
+            ]
+          },
+          "bindingProvenance": "Every binding above is upstream's at dceac12, for the same slug, transcribed unchanged. saas-landing's pre-existing list gained `laws-of-ux` to match. The 19 unbound skills have no upstream binding and were left unbound rather than guessed — absence is a decision here, the way packs/rules/coverage.json records explicit empty entries. Note these bindings are resolved against SKILL.md bodies roughly three months behind upstream; taking the binding line without the rest of the drift is deliberate.",
+          "resolution": "Selection is a budget decision against the target lane's context window, surfaced in the agent's reasoning. Nothing in the MCP server injects craft sections — the same position packs/rules takes with nano/mini/full.",
+          "check": "scripts/check-craft-references.mjs asserts every slug named by an od.craft.requires resolves to craft/<slug>.md or appears in craft/FUTURE_SECTIONS.md. Upstream's contract, reimplemented (their `pnpm lint:craft` assumes a pnpm monorepo). Wired as `npm run design:craft-refs` in `verify` and CI."
+        },
+        "shelfWare": "None among the 11 vendored rulebooks — all are required by at least one skill, including laws-of-ux (5 skills) and form-validation (1), which Task 30 flagged as candidates to skip if unrequired. One shipped section IS unrequired and that is deliberate: design-intent.md, authored here, is bound to no skill for the reason recorded in its `requirability` field. check-craft-references.mjs therefore reports `craft sections shipped: 12` with design-intent named in the not-required NOTE. That NOTE is the expected steady state, not drift.",
+        "staleUpstreamForwardReference": "FUTURE_SECTIONS.md lists `motion-discipline` as a planned forward reference, but the shipped equivalent is animation-discipline and upstream's own README says so. That slug will never resolve to a file and check-craft-references.mjs will accept it indefinitely. NOT removed: FUTURE_SECTIONS.md is one of the 13 vendored files, and deleting one line would open an Apache-2.0 4(b) modified set that is currently empty in order to fix a stale entry that costs nothing at runtime. Recorded here and in craft/XX-STACK-NOTES.md instead. The other two entries, pixel-discipline and typographic-rhythm, are genuinely unshipped and unaffected."
+      },
+      "honestyNote": "craft/ is not entirely new since we vendored. Three rulebooks (typography, color, anti-ai-slop) plus README.md landed upstream in 1edab99 on 2026-05-02T11:00+08:00 — about twelve hours BEFORE our vendoring window (9ee2c19 .. 483e00d) opened. They were available and we simply did not take them. The other eight landed 2026-05-05 through 2026-06-14, after the window closed, and are genuinely new: they are ~90% of the bytes. Recorded so the pack's record distinguishes what upstream added later from what we missed.",
+      "copyrightNote": "Brand-agnostic by construction — no brand names, no trademarks, no copied assets. The redistribution obligation is Apache-2.0's alone (license text shipped at licenses/nexu-io-open-design-Apache-2.0.txt); the MIT text for refero_skill is shipped as well because upstream declares the chain, even though no refero_skill file is redistributed here.",
+      "ruleTableNote": "craft/anti-ai-slop-rules.json is authored here and is the only file in this subtree that draws on a second upstream. It encodes 18 mechanically checkable rules — 10 from nexu-io/open-design, 7 from google-labs-code/stitch-skills, 1 (invented-metric) combining both — as data, with a P0/P1/P2 ladder. It carries NO upstream code: open-design's enforcement lives in apps/daemon/src/lint-artifact.ts (Apache-2.0) and porting it would have pulled Apache-2.0 code into an MIT script. Rules-as-data keeps the licence boundary exactly where the pack boundary already is, and the rule set reviewable without touching the gate. Its `notAdopted` list records 15 upstream rules that were deliberately refused, each with the reason and, where triage informed the call, the hit count over this pack's 67 HTML files.",
+      "usedBy": [
+        "scripts/quality-gate-html.mjs — reads craft/anti-ai-slop-rules.json",
+        "scripts/check-craft-references.mjs — resolves od.craft.requires slugs",
+        "scripts/test-anti-slop-rules.mjs — fixture coverage for the rule table"
+      ],
+      "referoScopeNote": "craft/README.md's Attribution section claims all craft content is adapted from refero_skill. Per-file evidence scopes that: exactly 3 of 11 rulebooks carry an inline 'Adapted from refero_skill' line — typography.md, color.md, anti-ai-slop.md — 10,104 of 102,042 rulebook bytes (~10%). Those three landed upstream in 1edab99 alongside that README; the other eight landed 2026-05-05 through 2026-06-14, after it was written, and carry no attribution. The README is vendored byte-for-byte and deliberately not edited, so the scoping is recorded here. Both license texts ship regardless, so the narrower reading costs nothing."
+    },
+    {
+      "path": "evals/",
+      "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures. evals/design-system-lint/ — 4 DESIGN.md fixtures for scripts/lint-design-systems.mjs.",
+      "provenance": "verified",
+      "nature": "authored in this repository",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE, Copyright (c) 2026 xx-stack contributors)",
+      "detail": {
+        "evidence": "tasks.json grades this repo's own agents by name (build, plan, execution-orchestrator, design-engineer, reviewer) against this repo's paths (runtime/skills/, packs/design/evals/golden-tasks/responses/) and encodes this repo's authoring conventions. No `evals` or `golden-tasks` tree exists in any of the three upstreams at their audited heads.",
+        "designSystemLintFixtures": {
+          "why": "Calibrated to this corpus, the structural check in lint-design-systems.mjs passes 137/137 on day one — the vacuous-pass shape MANUAL §11 BUILD-6 warns about. These four files are the only evidence the checks can fail at all, so the gate runs them on every invocation before it touches the corpus.",
+          "files": {
+            "clean/DESIGN.md": "valid Schema B, AA-passing declared pair — must produce zero findings, at least one colour token, and a declared pair",
+            "low-contrast/DESIGN.md": "Text #111827 on Surface #111111 (1.06:1) — reproduces the upstream generator defect the four real fixes removed, so the check that caught them cannot silently regress",
+            "malformed-order/DESIGN.md": "Components placed before Color — legal in neither shipped schema",
+            "no-color-section/DESIGN.md": "palette stated under a heading the colour-scope regex does not match — must be reported, not silently pass over zero tokens"
+          },
+          "warning": "These are DELIBERATELY BROKEN and are not design systems. Do not repair them, do not move them under design-systems/, and do not add them to DESIGN-CATALOG.md. Each carries a blockquote at the top saying so."
+        }
+      }
+    },
+    {
+      "path": "scripts/",
+      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs, lint-design-systems.mjs",
+      "provenance": "verified",
+      "nature": "authored in this repository",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE)",
+      "detail": {
+        "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream.",
+        "licenceBoundary": "quality-gate-html.mjs evaluates the anti-slop rules but holds none of their values — those live in craft/anti-ai-slop-rules.json, which is data derived from two Apache-2.0 upstreams. The engine's rule KINDS (gradientContainsAny, literalAny, emojiInElement, regexAny, countHexOutsideRoot, countLiteralOutsideStyle, …) were written here; no upstream code was transliterated. That is what keeps the script MIT.",
+        "wiredIntoVerify": "All five gates are now in `npm run verify`: design:golden, design:html-gate, design:systems-lint, design:craft-refs, design:anti-slop-test. This key previously said check-craft-references.mjs and test-anti-slop-rules.mjs were unwired; that stopped being true when they were added to the verify chain, and the note is corrected here rather than left to rot (MANUAL §11 CONTENT-12).",
+        "lintDesignSystemsChange2026-08-03": "The 2026-08-03 re-vendor required ONE change to lint-design-systems.mjs, recorded here because it was the only edit outside the vendored content and a reviewer should be able to judge it as gate-weakening or not. Three of the 14 incoming brands (totality-festival, urdu, wechat) failed the STRUCTURE check — never the contrast check — purely because they head equivalent sections with wording the synonym table did not know: 'Brand Identity', 'Spacing System', 'Component Styles', 'Motion & Animation', 'Brand Voice & Tone', 'Layout & Spacing', 'Spacing & Layout Grid', \"Do's & Don'ts\". Each was added to HEADING_ALIASES pointing at the slot the equivalent heading already used, and COLOR_H2 was widened to accept 'Color Palette' with an optional trailing parenthetical. NO schema was added, no threshold moved, and no contrast logic was touched. The alias table is the script's documented mechanism for exactly this — it already held 'component stylings', 'motion & interaction' and 'voice & brand' as synonyms of the same slots.",
+        "lintDesignSystemsChangeWhyNotAWeakening": "Two independent checks that it did not become a rubber stamp. (1) The three deliberately-malformed fixtures in evals/design-system-lint/ still fail: malformed-order still trips on Components-before-Color, and no-color-section still trips because 'Palette Notes' is deliberately still NOT matched by the widened COLOR_H2. The self-test runs on every invocation and reports 4 fixtures + 11 pattern cases, 0 problems. (2) No new SCHEMA was invented for a one-off file. totality-festival places Depth before Components, which looks like a third lineage but is not: bmw-m already ships that same order and already passed, because tokens absent from the schema being tried are treated as extras and it resolves against Schema B. Once 'Layout & Spacing' was aliased, totality-festival resolved the same way.",
+        "lintDesignSystemsPreexistingBugFixed": "Widening COLOR_H2 also fixed a latent inconsistency that predates this change: HEADING_ALIASES already mapped bare 'color palette' to the colour slot while COLOR_H2 did not match it, so a file using that heading would have been reported as having no colour section while its structure check passed. No file in the 137-slug corpus used that heading, so it never fired; two of the incoming 14 do.",
+        "lintDesignSystemsNote": "lint-design-systems.mjs is the only script in this pack that reads design-systems/ content and can fail on it. It is read-only by construction — every mutating fs entry point is replaced with a throwing stub before the first file is opened — because byte-comparability against upstream is what `separationMethod` depends on. It reimplements two rules from google-labs-code/design.md rather than taking that package as a dependency: that linter requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for a single systematic lineage difference. No upstream code was transliterated; the script is MIT like the rest of scripts/."
+      }
+    },
+    {
+      "path": "DESIGN-CATALOG.md",
+      "contents": "generated index of the three subtrees",
+      "provenance": "verified",
+      "nature": "generated here by scripts/generate-design-catalog.mjs",
+      "primarySource": null,
+      "license": "MIT (repo root LICENSE) for the generated structure; the descriptions it quotes are excerpted from the vendored files and carry those files' licenses.",
+      "detail": {
+        "regenerate": "npm run design:catalog"
+      }
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "vendoring-commits-unrecorded",
+      "severity": "documentary",
+      "status": "PARTIALLY RESOLVED 2026-08-03 — two of the four subtrees are now pinned.",
+      "question": "No subtree records the upstream commit it was vendored at. `packs/rules/manifest.json` pins ciembor/agent-rules-books at 9c87636; the design pack has no equivalent, so 'has this drifted?' can only be answered against upstream HEAD, which conflates local edits with upstream changes.",
+      "resolution": "design-systems/ is pinned at nexu-io/open-design e1c277c5 (re-vendored 2026-08-03) and craft/ at dceac12 (vendored 2026-08-03). For both, drift is now answerable by diffing against the pin, and local edits are separable from upstream changes without inference. STILL OPEN for workflow-skills/ (bracketed only by vendoringWindow) and design-skills/ (bergside/awesome-design-skills, no window either — datable only relatively, see that source's nullReason).",
+      "needsHuman": true
+    },
+    {
+      "id": "apache-notice-placement",
+      "severity": "documentary",
+      "status": "DECIDED 2026-08-03 — notices stay CENTRAL. Maintainer's call at the design-systems/ re-vendor.",
+      "question": "Apache-2.0 §4(b) requires modified files to carry a notice of modification. This manifest and packs/design/README.md record the modified set centrally rather than annotating each modified file in place. Central notice is the common practice and keeps the vendored files byte-comparable against upstream, but a reviewer may prefer per-file headers.",
+      "decision": "Central. No per-file headers were added at the re-vendor and none should be added without revisiting this entry. The reasoning that settles it is the same one that keeps packs/ out of Prettier: a per-file header would put a locally-authored line into every modified vendored file, and byte-comparability against the pinned tree is now the whole separation method (see subtrees[design-systems/].detail.separationMethod). Annotating the files would defeat the mechanism that identifies which files are annotated.",
+      "modifiedSetSize": 23,
+      "modifiedSetDerivation": "23 files across the pack carry a §4(b) obligation, all Apache-2.0 from nexu-io/open-design: 12 in design-systems/ (apacheSection4bModifiedSet), 7 workflow-skills SKILL.md (skillMdModifiedByUs), and 4 replit-deck example decks (exampleHtmlModifiedByUs). craft/ contributes zero — its §4(b) set is empty. design-skills/ is MIT and out of scope for §4(b) entirely. An earlier value of 40 in this entry was never derived and did not match any list in this file; 23 is the sum of the three lists it points at.",
+      "needsHuman": false
+    },
+    {
+      "id": "trademark-use",
+      "severity": "documentary",
+      "question": "design-systems/ names ~100 real brands (Apple, Stripe, BMW, Nike, Discord, ...) in headings and prose. Nominative use of a trademark to describe a design language is normally permissible, and the risk is inherited from upstream rather than created here, but nobody in this repo has made an explicit decision about it.",
+      "needsHuman": true
+    }
+  ],
+  "vendoringWindow": {
+    "status": "SUPERSEDED for design-systems/ as of 2026-08-03; STILL CURRENT for workflow-skills/.",
+    "supersededBy": "subtrees[design-systems/].detail.vendoring.pinnedCommit = e1c277c59361bfde1ac681e7bd8d9d4d370ada94. design-systems/ was re-vendored at that sha and no longer needs to be described by a range.",
+    "whyRetained": "Kept as history rather than deleted, for two reasons. (1) It is still the ONLY vendoring record for workflow-skills/, which was not re-vendored and remains bracketed by this window — deleting it would leave that subtree with no provenance at all. (2) It explains why this manifest's record USED to be a range: the honest answer at the time was that nothing in our files distinguished the 57 commits inside it, so a single sha would have been invention. That reasoning is worth preserving next to the pin that replaced it, so the pin does not read as something that was always available and merely overlooked.",
+    "note": "The exact vendoring commit is not recoverable, but the window is. All 57 commits in this range share one design-systems tree, and nothing in our pack distinguishes commits inside it — a single sha would be invention.",
+    "from": "9ee2c19 (2026-05-02T23:19+08:00)",
+    "to": "483e00d (2026-05-04T12:21+08:00)",
+    "sharedDesignSystemsTree": "0fdec1613e72c752e9c278a38d94c6081ab987c5",
+ "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: upstream's `` (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
+ "evidenceNowStale": "The ``/`bmw-m` swap described above no longer holds as a description of the CURRENT tree: `` was taken in the 2026-08-03 re-vendor and now ships alongside bmw-m. The sentence is preserved as the evidence that established the window, which is what it was for.",
+    "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), git hash-object over all 304 vendored files, match-counted against every historical state of upstream's design-systems/, skills/, and design-templates/ trees."
+  },
+  "knownContentDefects": [],
+  "resolvedContentDefects": [
+    {
+      "id": "declared-text-on-surface-contrast",
+      "severity": "real defect in shipped content",
+      "status": "fixed here 2026-08-03; still present upstream at the pinned sha e1c277c5 — RE-VERIFIED at the re-vendor, see reVendorRecheck below",
+      "affects": [
+        "design-systems/bold/",
+        "design-systems/energetic/",
+        "design-systems/mono/",
+        "design-systems/pacman/"
+      ],
+      "finding": "Each declares a Text token and a Surface token, and its own prose instructs pairing them — bold says 'Keep body copy on Text (#111827) for legibility' while 'Use Surface (#111111) for large backgrounds'. Measured WCAG AA contrast before the fix: bold 1.06:1, pacman 1.18:1, energetic 2.11:1, mono 3.82:1. AA requires 4.5:1 for body text, so an agent following the file produced unreadable output.",
+      "fourthFileFoundByTheGate": "mono was NOT in the original hand-measured set of three. It was found by scripts/lint-design-systems.mjs on its first run over the corpus — Text #78716B (stone-500) on Surface #E7E5E4 (stone-200) at 3.82:1, the same generator defect in a less obvious form. It is recorded separately because it is the first evidence this gate finds anything a careful manual pass missed.",
+      "cause": "Upstream generator defect, not ours. All four came in with the 57-file Schema-B batch from nexu-io/open-design: the dark themes (bold, pacman) kept the light-theme Text default #111827, energetic set Text to a near-copy of its own Primary (#EA580C against Primary #EA580B), and mono picked a mid-ramp grey against a light surface. Verified against our vendored bytes, so re-vendoring may or may not carry the fix.",
+      "detectedBy": "Originally, manual WCAG computation over the declared Text/Surface pair, prompted by the google-labs-code/design.md review. Now checked on every run by scripts/lint-design-systems.mjs, wired into `npm run design:systems-lint` and into `npm run verify` after design:html-gate.",
+      "fix": "Only the Text token changed, in two places per file (the token bullet and the 'Keep body copy on Text (#…)' prose line). No other byte was touched, so each file remains diffable against upstream at every other line.",
+      "fixValues": [
+        {
+          "slug": "bold",
+          "surface": "#111111",
+          "textWas": "#111827",
+          "textNow": "#FAFAFA",
+          "ratioWas": 1.06,
+          "ratioNow": 18.09,
+          "reasoning": "Dark surface. #FAFAFA is not an invention: it is the Text token this same generator emits for the other dark-surface systems in this batch (dashboard and dramatic both declare Text #FAFAFA on Surface #09090B). Using the batch's own correct dark-theme output is the smallest change that fixes the defect without introducing a value the pack does not already use. bold's stated identity is 'high-contrast colors', which 18.09:1 serves and 1.06:1 contradicted."
+        },
+        {
+          "slug": "pacman",
+          "surface": "#000000",
+          "textWas": "#111827",
+          "textNow": "#FAFAFA",
+          "ratioWas": 1.18,
+          "ratioNow": 20.12,
+          "reasoning": "Same dark-surface rule and same source value as bold. The in-file alternative was Secondary #F4B9B0 (12.41:1, and a genuine arcade colour), but promoting Secondary to body text collapses two roles into one and the file's own Anti-patterns section forbids flattening hierarchy. #FAFAFA leaves every other token's role intact."
+        },
+        {
+          "slug": "energetic",
+          "surface": "#FDBA74",
+          "textWas": "#EA580C",
+          "textNow": "#111827",
+          "ratioWas": 2.11,
+          "ratioNow": 10.52,
+          "reasoning": "Light surface. #111827 is the Text token 34 of the 57 Schema-B files already declare against light surfaces, so it is this batch's own light-theme default. Nothing in energetic's own vocabulary reaches AA against #FDBA74 — the darkest in-file candidate, Danger #DC2626, manages only 2.86:1 — so an in-file value was not available. A warm near-black (orange-950 #431407, 9.28:1) would have been more on-brand but is a value the pack uses nowhere, and inventing one to fix a defect is a design change, not a repair."
+        },
+        {
+          "slug": "mono",
+          "surface": "#E7E5E4",
+          "textWas": "#78716B",
+          "textNow": "#111827",
+          "ratioWas": 3.82,
+          "ratioNow": 14.13,
+          "reasoning": "Light surface, same rule and same value as energetic. #78716B and #E7E5E4 are stone-500 and stone-200 from one ramp, two steps apart — the file's high-contrast, 'matrix-inspired' stated intent is served by the batch default, not by a mid-ramp grey."
+        }
+      ],
+      "whyNotAllowlisted": "An allowlist would have kept four files shipping prose that promises legibility while producing 1.06:1. Editing vendored bytes does cost byte-comparability against upstream, which is why each file is now in modifiedByUs and apacheSection4bModifiedSet (Apache-2.0 §4(b)) and why the diff is confined to one token per file.",
+      "notFixedHere": "The cross-produced role-bucket contrast check was measured at 52.4% false positives (3114 pairs, 1633 below AA) and is deliberately NOT implemented; see the header comment in scripts/lint-design-systems.mjs. Accent-on-surface below 3:1 is reported as a NOTE on 14 files and deliberately does not fail the gate — those are brand primaries on non-text fills, an upstream design choice rather than a defect.",
+      "reportUpstream": "https://github.com/nexu-io/open-design",
+      "upstreamStillAffected": "Yes. The fix here is local; upstream's generator still emits these defaults. If this pack is re-vendored at a newer sha, re-check these four slugs before assuming the fix survived — the gate will catch it either way.",
+      "reVendorRecheck": {
+        "date": "2026-08-03",
+        "against": "nexu-io/open-design e1c277c59361bfde1ac681e7bd8d9d4d370ada94 (the pinned sha)",
+        "finding": "ALL FOUR DEFECTS ARE STILL PRESENT UPSTREAM, unchanged, three months after the batch that introduced them. Diffed at the pin: bold still declares Text #111827 on Surface #111111, pacman Text #111827 on #000000, energetic Text #EA580C on #FDBA74, mono Text #78716B on #E7E5E4 — the exact `textWas` values recorded in fixValues above. The prediction in `upstreamStillAffected` was correct and is now confirmed rather than assumed.",
+        "action": "All four files were KEPT at our values and not overwritten. This was the single highest-risk step of the re-vendor: a naive overwrite of the subtree would have silently reintroduced 1.06:1 body text into shipped content, and the four files are otherwise byte-identical to upstream so nothing else about them would have looked wrong.",
+        "alsoConfirmed": "Upstream changed NOTHING ELSE in any of the four files since our vendoring — identical line counts, and the only differing lines are the two per file that the fix touched. So keeping our version costs no upstream content, and the `fix` field's claim that the diff is confined to one token in two places per file still holds exactly against the pin.",
+        "newBrandsChecked": "The 14 brands added at this re-vendor were checked for the same defect before landing. None carries a declared Text/Surface pair, so none can carry this defect; see subtrees[design-systems/].newBrands2026-08-03.generatorDefectCheck. No new repair was needed and none was invented."
+      }
+    },
+    {
+      "id": "material-design-system-misstates-its-own-brand",
+      "severity": "real defect in shipped content",
+      "status": "fixed here 2026-08-14; still present upstream at the pinned sha e1c277c5",
+      "affects": [
+        "design-systems/material/"
+      ],
+      "finding": "The one file in this pack named after Material described a design system that is not Material. Primary was #6442D6 and Secondary #C8B3FD (Material's are #1976D2 and #9C27B0); the semantic trio was the Tailwind-adjacent #16A34A / #D97706 / #DC2626 rather than Material's #2E7D32 / #ED6C02 / #D32F2F; the body font was Inter while Material specifies Roboto throughout; and the type scale read 12/14/16/20/24/32, which is a six-step generic ramp rather than Material's thirteen named variants (96/60/48/34/24/20/16/14/12, each carrying its own line-height and letter-spacing). The spacing scale 4/8/12/16/24/32 likewise is not the single 8px base unit Material multiplies. An agent handed this file produced output that was not Material in any respect a reader would recognise, while being told it was.",
+      "whyThisIsADefectAndNotAStyleChoice": "Every other design-systems/ file is a descriptive analysis of a brand's publicly observable visual language, and the whole subtree's value rests on those descriptions being accurate. A brand file may legitimately simplify or abstract; it may not assert token values the brand does not use. The test applied was not `is this pretty` but `would a reader who knows Material recognise it`, and the answer was no.",
+      "cause": "Upstream generator defect, not ours, and NOT the same defect as the Schema-B batch's contrast bug. Two of the wrong values are unique to this file across all 151: #6442D6 appears nowhere else, and `primary=Inter, display=Roboto` appears nowhere else. The generator therefore had some brand-specific signal - it knew Material's display face is Roboto, and it picked a purple in the neighbourhood of Material 3's #6750A4 - but resolved it into a body font and a primary that match neither M2 nor M3. The type scale 12/14/16/20/24/32 is the opposite case: 22 of the 151 files carry it, so that line is a shared generator default that was never specialised for this brand.",
+      "detectedBy": "Manual review on 2026-08-14 against mui/material-ui, prompted by a general survey of that repository for material worth adopting. No gate in this pack would have caught it: design:systems-lint checks that a file's declared Text/Surface pair clears WCAG AA and that its sections are in a shipped order, both of which this file passed before and after the fix. Brand ACCURACY is unchecked by construction - there is no machine-readable ground truth for 150 of the 151 brands - and this entry is the record that the gap is known rather than overlooked.",
+      "fix": "Values corrected in place, in the five sections that carried them (Color, Typography, Spacing & Grid, Components, Motion & Interaction). Section headings, section order and the Schema-B declared-pair prose lines were preserved, so the file still lints as Schema B and every unchanged line stays diffable against upstream. Sections 1, 5, 8 and 9 were not touched.",
+      "fixValues": [
+        {
+          "field": "Primary",
+          "was": "#6442D6",
+          "now": "#1976D2",
+          "readFrom": "createPalette.js getDefaultPrimary(), light mode = blue[700]"
+        },
+        {
+          "field": "Secondary",
+          "was": "#C8B3FD",
+          "now": "#9C27B0",
+          "readFrom": "createPalette.js getDefaultSecondary(), light mode = purple[500]"
+        },
+        {
+          "field": "Success",
+          "was": "#16A34A",
+          "now": "#2E7D32",
+          "readFrom": "createPalette.js getDefaultSuccess(), light mode = green[800]"
+        },
+        {
+          "field": "Warning",
+          "was": "#D97706",
+          "now": "#ED6C02",
+          "readFrom": "createPalette.js getDefaultWarning(), light mode. Not a ramp value: MUI's own comment reads 'closest to orange[800] that pass 3:1', which is itself an accessibility fix worth preserving rather than rounding to orange[800]."
+        },
+        {
+          "field": "Danger",
+          "was": "#DC2626",
+          "now": "#D32F2F",
+          "readFrom": "createPalette.js getDefaultError(), light mode = red[700]"
+        },
+        {
+          "field": "Text",
+          "was": "#111827",
+          "now": "#212121",
+          "readFrom": "createPalette.js light.text.primary = rgba(0, 0, 0, 0.87). Composited over the declared Surface #FFFFFF that is 255 * 0.13 = 33.15 per channel, i.e. #212121, which is independently grey[900]. An opaque hex was required because the declared-pair contrast check in scripts/lint-design-systems.mjs parses hex only; the substitution is exact rather than approximate, and is recorded here because the file now states a value that does not appear literally in MUI's source.",
+          "ratioWas": 17.74,
+          "ratioNow": 16.1,
+          "ratioNote": "This fix LOWERS contrast, by 1.64, and is the first entry in this file where that is true - every fix under `declared-text-on-surface-contrast` raised it. Stated plainly rather than buried: the change was made for brand accuracy, not accessibility, and 16.1:1 against the 4.5:1 AA floor leaves the margin untouched in any practical sense. design:systems-lint was green before and after, and material appears in neither the failure list nor the accent NOTE list on either side of the change."
+        },
+        {
+          "field": "Surface",
+          "was": "#FFFFFF",
+          "now": "#FFFFFF",
+          "readFrom": "createPalette.js light.background.default/.paper = common.white. UNCHANGED - the one colour token the generator had right."
+        }
+      ],
+      "nonColourFixes": "Typography: scale, families, weights and the full thirteen-variant table (size / weight / line-height / letter-spacing) from createTypography.js, plus its two non-obvious behaviours - base fontSize is 14 against htmlFontSize 16, and MUI drops the letter-spacing entirely when fontFamily is overridden because Roboto's tracking degrades other faces. Spacing: the 8px base unit from createSpacing.ts, borderRadius 4 from shape.ts, and the xs/sm/md/lg/xl 0/600/900/1200/1536 breakpoints from createBreakpoints.ts. Motion: the five durations, the entering/leaving asymmetry, the four easing curves from createTransitions.js, and the light/dark interaction-state opacities from createPalette.js.",
+      "deliberatelyAddedWarnings": "Two cross-references were added to the file rather than left implicit, because both are mistakes this pack's own craft files already lint. (1) The motion tokens are M2 and are labelled as such, since craft/animation-discipline.md lints shipping cubic-bezier(0.4, 0, 0.2, 1) under the name M3. (2) Material's `button` variant is uppercase at 0.02857em tracking, which is below the 0.06em floor craft/typography.md sets for ALL CAPS; the file now says so, so that a brand value is not read as a licence to ignore a craft rule.",
+      "notFixed": "The file remains grounded in Material 2 by way of MUI, because that is the source that was actually read. It is not re-grounded on Material 3, whose baseline primary is a different purple again. Section 1's prose still says 'dynamic theming', which is an M3 concept sitting on an M2 token set - left as upstream wrote it rather than rewritten, since resolving it properly means grounding the whole file on M3 and that is separate work against a source this audit did not read."
+    }
+  ],
+  "settledDecisions": [
+    {
+      "id": "apache-4b-notice-placement",
+      "decidedOn": "2026-08-03",
+      "decision": "central record in this manifest, no per-file headers",
+      "rationale": "Per-file notices would destroy byte-comparability against upstream for exactly the files where knowing what we changed matters most. That comparability is how modifiedByUs was reconstructed at all (see separationMethod) and how a future re-vendor tells our edits from upstream drift. The manifest is the pack's documented provenance surface, which is a defensible reading of section 4(b)'s 'prominent notices'."
+    },
+    {
+      "id": "trademark-posture",
+      "decidedOn": "2026-08-03",
+      "decision": "no explicit statement added; exposure left as inherited from upstream",
+      "rationale": "Considered and declined, deliberately — this is not an oversight. The content is prose analysis of publicly observable visual language, not redistributed brand assets, and the risk profile is unchanged from upstream's. Recorded here so a future audit finds a decision rather than a silence."
+    },
+    {
+      "id": "accent-on-surface-below-3to1",
+      "decidedOn": "2026-08-03",
+      "decision": "reported as NOTE, never fails the gate",
+      "rationale": "A brand primary is normally a CTA fill, which is non-text, so 3:1 is advisory. Failing would red-line vendored brands for expressing their actual identity — the noisy-gate failure mode the defect register already records. Distinct from the four body-text defects, which were genuinely unreadable and were repaired."
+    },
+    {
+      "id": "revendor-scope",
+      "decidedOn": "2026-08-03",
+      "decision": "design-systems/ only, pinned; workflow-skills/ left at the window",
+      "rationale": "The cheaper and better half: it brought 14 new brands and realigned 7 upstream-drifted files, at one subtree, with the 12 local edits verified surviving. The workflow-skills half is mostly deck-skin variants and would have put all remaining local edits at risk in the same operation."
+    }
+  ]
+}
