@@ -59,13 +59,16 @@ consider cloud without being asked.
 ```json
 {
   "mcpServers": {
-    "xx-stack": { "command": "npx", "args": ["-y", "@xx-stack/mcp-server"] }
+    "xx-stack": {
+      "command": "node",
+      "args": ["/absolute/path/to/xx-stack/xx-stack/mcp-server/dist/index.js"]
+    }
   }
 }
 ```
 
 Works with any MCP-compatible host — OpenCode, VS Code, or your own client.
-Your agent gets 50 new tools for routing, health checks, supervision, and evidence lanes, plus 2
+Your agent gets routing, health checks, supervision, and evidence-lane tools, plus 2
 optional lifecycle hooks behind `XX_STACK_HOOK_TOOLS=1`. Every tool declares
 whether it only reads, whether it can destroy state, and whether it reaches the
 network — so a host can auto-approve the safe ones instead of prompting on all
@@ -158,9 +161,9 @@ that's powered off is never deleted.
 
 ```jsonc
 {
-  "id": "gpu-box",
-  "network": { "scope": "tailscale", "address": "gpu-box" },
-  "hardware": { "gpu": [{ "name": "NVIDIA RTX 5090", "count": 8, "vramGb": 32 }] },
+  "id": "example-gpu-box",
+  "network": { "scope": "tailscale", "address": "example-gpu-box" },
+  "hardware": { "gpu": [{ "name": "NVIDIA RTX 4090", "count": 2, "vramGb": 24 }] },
   "runtimes": [
     { "kind": "sglang", "port": 30000, "enabled": true  },
     { "kind": "ollama", "port": 11434, "enabled": false }

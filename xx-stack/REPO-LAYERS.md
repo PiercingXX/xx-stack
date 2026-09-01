@@ -11,7 +11,6 @@ Stack core is the reusable agent and skill runtime.
 It includes:
 
 - canonical agent and skill definitions
-- host/editor adapter surfaces
 - MCP tooling and routing infrastructure
 - eval harnesses for stack behavior
 - setup scripts, hooks, ignore rules, and runtime docs
@@ -19,12 +18,10 @@ It includes:
 Current root-level paths that belong to stack core:
 
 - `runtime/`
-- `adapters/`
 - `mcp-server/`
 - `evals/`
 - `scripts/`
 - `setup-opencode.sh`
-- `setup-vscode.sh`
 - `hooks/`
 - `.xxignore`
 - `README.md`

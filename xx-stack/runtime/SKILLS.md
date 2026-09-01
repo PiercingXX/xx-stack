@@ -55,25 +55,19 @@ Skill precedence for xx-stack is:
 
 1. active runtime override configured by the host
 2. repo `runtime/skills/<name>/SKILL.md`
-3. repo `adapters/skills/<name>.prompt.md`
+3. OpenCode-specialized copy at `opencode-orchestration/opencode/skills/<name>/SKILL.md` when that host is in use
 4. external or bundled host-level skill sources
 
 Shadowing rules:
 
 - same-name skills do not merge across sources
 - highest-precedence source wins
-- if a prompt in `adapters/skills/` is a *mirror* — it adapts a same-named canonical skill to a host surface — and that canonical skill is missing, treat it as broken wiring
 - diagnostics should report shadowed or missing canonical skills explicitly
 
-Adapter prompts are not all mirrors. A prompt may instead be a *native adapter
-surface*: a host-only entry point whose canonical source is content, not a
-same-named skill. Such a prompt must name its real source of truth in its own
-body. There is exactly one today —
-`adapters/skills/design-system-pick.prompt.md`, a narrow entry point into the
-design content pack (`packs/design/design-systems/<brand>/DESIGN.md` and
-`packs/design/design-skills/<style>/SKILL.md`). It has no
-`runtime/skills/design-system-pick/` and is not expected to grow one; the full
-workflow that consumes the same pack is the `design-prototype` skill.
+Brand picking for the design pack lives in `design-prototype` (and the pack
+paths `packs/design/design-systems/<brand>/DESIGN.md` and
+`packs/design/design-skills/<style>/SKILL.md`). There is no separate
+design-system-pick skill.
 
 ## Graceful Degradation
 

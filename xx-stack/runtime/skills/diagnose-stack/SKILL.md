@@ -31,7 +31,6 @@ Use the runtime-status model from `shared_instructions.md`: check the actual act
 - For each agent listed in config.json, does the corresponding agents/<name>.md file exist?
 - Does each agent .md have valid YAML frontmatter (name, description, model)?
 - Does shared_instructions.md exist at runtime/shared_instructions.md?
-- Are there any same-name mirror agents in adapters/agents that materially disagree with the canonical runtime definitions?
 - If aliases are referenced, do they resolve to documented canonical agents?
 ```
 
@@ -41,8 +40,7 @@ Use the runtime-status model from `shared_instructions.md`: check the actual act
 - For each folder under runtime/skills/, does a SKILL.md exist?
 - Does each SKILL.md have valid YAML frontmatter (name, description, compatibility)?
 - Are all skills listed in runtime/SKILLS.md actually present on disk?
-- Do any adapter skill mirrors exist without a canonical repo SKILL.md?
-- Are any same-name skill mirrors clearly drifted from the canonical skill contract?
+- If the OpenCode copy is present, does `npm run drift:check` pass?
 ```
 
 ### 4. Environment and configuration
@@ -56,13 +54,11 @@ Use the runtime-status model from `shared_instructions.md`: check the actual act
 - If `hooks/` exists, are documented hook scripts present and referenced consistently?
 ```
 
-### 5. Adapter wiring
+### 5. Install wiring
 
 ```
-- Does adapters/ directory exist?
-- Does setup-vscode.sh exist and is it executable?
-- Are any .instructions.md or .prompt.md files referencing missing skills or agents?
-- Are adapter mirrors consistent enough to act as adapters rather than divergent sources of truth?
+- Does setup-opencode.sh exist and is it executable?
+- Is the MCP server built (`mcp-server/dist/index.js`) and referenced from the host config?
 ```
 
 ### 6. Runtime status contract
@@ -85,7 +81,7 @@ Report each check as a table row:
 | Agent definitions | PASS | 10/10 files found |
 | Skill structure | WARN | ops-canary mirror drift detected |
 | Environment | FAIL | platforms.json not found |
-| Adapter wiring | PASS | Mirrors present and consistent |
+| Install wiring | PASS | setup-opencode.sh executable, MCP built |
 | Hook surface | WARN | Documented, but no live hook runtime found |
 | Ignore surface | PASS | Falling back to .gitignore |
 

@@ -186,32 +186,22 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     name: "check_health",
     category: "observability",
     description:
-      "Ping configured model endpoints and report reachability, latency, and — where the host can be asked — the models it currently has loaded and its VRAM pressure",
-    keywords: ["latency", "health", "ping", "availability", "resident", "loaded", "vram", "memory"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-  },
-  {
-    name: "list_models",
-    category: "observability",
-    description: "Fetch model catalogs from reachable model endpoints",
-    keywords: ["models", "catalog", "tags"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-  },
-  {
-    name: "probe_endpoint_compatibility",
-    category: "observability",
-    description: "Validate OpenAI-compatible behavior for models, chat completions, and JSON mode",
-    keywords: ["compatibility", "chat", "json", "probe"],
+      "Ping configured model endpoints and report reachability, latency, and — where the host can be asked — the models it currently has loaded and its VRAM pressure. Optional include flags also return live model catalogs, local hardware detection, and OpenAI-compat probes.",
+    keywords: [
+      "latency",
+      "health",
+      "ping",
+      "availability",
+      "resident",
+      "loaded",
+      "vram",
+      "memory",
+      "models",
+      "catalog",
+      "hardware",
+      "probe",
+      "compatibility",
+    ],
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -222,19 +212,28 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "route_task",
     category: "routing",
-    description: "Recommend best tier, host, and model for a single task",
-    keywords: ["route", "single", "placement"],
-    // Every routing tool reads a live registry and returns a recommendation;
-    // none of them dispatches, claims, or persists anything, so they are reads.
-    // The `void logEvent(...)` line each one ends with is a telemetry sink, not
-    // state — treating it as a write would make every read tool on this surface
-    // look like a mutator and defeat the point of the hint. The exception is
-    // route_task_with_watchdog, which probes live hosts: openWorldHint true.
+    description:
+      "Recommend best tier, host, and model. Optional mode: default, watchdog, architect-editor, competitive, review",
+    keywords: [
+      "route",
+      "single",
+      "placement",
+      "watchdog",
+      "failover",
+      "architect",
+      "editor",
+      "competitive",
+      "fanout",
+      "review",
+      "reviewer",
+      "diversity",
+    ],
+    // Reads a live registry. Watchdog mode also probes hosts, so this is open-world.
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
-      openWorldHint: false,
+      openWorldHint: true,
     },
   },
   {
@@ -247,18 +246,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
-    },
-  },
-  {
-    name: "route_task_with_watchdog",
-    category: "routing",
-    description: "Route task with liveness checks and failover candidates",
-    keywords: ["watchdog", "failover", "fallback", "liveness"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
     },
   },
   {
@@ -364,30 +351,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     },
   },
   {
-    name: "supervisor_run_self_test",
-    category: "supervisor",
-    description: "Run deterministic reliability self-checks",
-    keywords: ["self-test", "reliability", "validation"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "get_hardware",
-    category: "observability",
-    description: "Detect local CPU/RAM/GPU hardware for routing decisions",
-    keywords: ["hardware", "gpu", "vram", "ram"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "search_tools",
     category: "observability",
     description: "Search the MCP tool catalog by intent, name, and keywords",
@@ -474,8 +437,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "agent_list_profiles",
     category: "agents",
-    description: "List effective agent policies merged from repo and user config",
-    keywords: ["agent", "profile", "policy", "config"],
+    description:
+      "List effective agent policies merged from repo and user config, including validation findings",
+    keywords: ["agent", "profile", "policy", "config", "validate", "lint"],
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -486,32 +450,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "agent_preflight",
     category: "agents",
-    description: "Validate required MCP servers and tool policy for an agent",
-    keywords: ["agent", "mcp", "required", "preflight"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "agent_filter_tools",
-    category: "agents",
-    description: "Filter a candidate tool set through agent allow and deny rules",
-    keywords: ["agent", "tools", "allow", "deny"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "agent_validate_profiles",
-    category: "agents",
-    description: "Validate merged agent profiles and report policy/configuration issues",
-    keywords: ["agent", "validate", "lint", "config"],
+    description:
+      "Validate required MCP servers and tool policy for an agent; pass candidateTools to filter a tool set",
+    keywords: ["agent", "mcp", "required", "preflight", "tools", "allow", "deny"],
     annotations: {
       readOnlyHint: true,
       destructiveHint: false,
@@ -522,8 +463,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "agent_memory_get",
     category: "agents",
-    description: "Read persistent memory for an agent by scope",
-    keywords: ["agent", "memory", "scope", "read"],
+    description:
+      "Read persistent memory for an agent by scope, including snapshot sync status and drift",
+    keywords: ["agent", "memory", "scope", "read", "snapshot", "drift"],
     // Judgment call, shared with agent_memory_snapshot_status and
     // agent_memory_compaction_prompt: all three call ensureMemoryEntrypoint,
     // which creates an empty MEMORY.md when one is absent. That is scaffolding
@@ -551,18 +493,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     },
   },
   {
-    name: "agent_memory_snapshot_status",
-    category: "agents",
-    description: "Check memory snapshot sync status and drift for an agent scope",
-    keywords: ["agent", "memory", "snapshot", "drift"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "agent_memory_snapshot_sync",
     category: "agents",
     description: "Write or apply memory snapshots for an agent scope",
@@ -575,18 +505,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     },
   },
   {
-    name: "build_coordinator_contract",
-    category: "agents",
-    description: "Generate a hardened coordinator worker contract prompt",
-    keywords: ["coordinator", "contract", "worker", "prompt"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
     name: "record_telemetry",
     category: "observability",
     description: "Record a telemetry event with lane, tokensIn, tokensOut, and costUsd",
@@ -595,58 +513,6 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "route_architect_editor",
-    category: "routing",
-    description:
-      "Recommend two lanes for a task: an architect lane for deep reasoning and an editor lane for fast execution",
-    keywords: ["architect", "editor", "split", "deep", "fast", "pair"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "route_competitive_task",
-    category: "routing",
-    description:
-      "Produce up to N distinct host/model lanes for competitive fan-out, one git worktree per lane",
-    keywords: ["competitive", "fanout", "worktree", "lanes", "diversity"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "route_review",
-    category: "routing",
-    description:
-      "Recommend a review lane whose model differs from the model that authored the work (reviewer diversity)",
-    keywords: ["review", "reviewer", "diversity", "second-opinion"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-  },
-  {
-    name: "score_candidates",
-    category: "routing",
-    description:
-      "Score candidate task descriptions against the tier keyword matcher and return a deterministic ranking with rationale",
-    keywords: ["score", "rank", "candidates", "compare", "selection"],
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
       openWorldHint: false,
     },
   },
@@ -862,110 +728,88 @@ export function registerObservabilityTools(server: McpServer, deps: Observabilit
         "Check health and latency of all configured model endpoints in the platform registry. " +
         "Hosts that support resident-model inspection (Ollama runtimes in the current registry) " +
         "also report residentModels and memoryPressure; the absence of those fields means the " +
-        "host cannot be asked, not that it is idle.",
-      inputSchema: {},
+        "host cannot be asked, not that it is idle. Pass include to also fetch live model catalogs, " +
+        "local hardware, or an OpenAI-compat probe.",
+      inputSchema: {
+        include: z
+          .array(z.enum(["models", "hardware", "probe"]))
+          .optional()
+          .describe("Optional extra reports: live model catalogs, local hardware, compat probe"),
+        hostId: z.string().optional().describe("probe: host ID from the platform registry"),
+        endpoint: z.string().optional().describe("probe: endpoint override when hostId is omitted"),
+        provider: z.string().optional().describe("probe: provider label for an endpoint override"),
+        model: z.string().optional().describe("probe: model override for chat/json probes"),
+      },
       annotations: toolAnnotations("check_health"),
     },
-    // MCP-DUP-3: the same shaping `xx diagnose` renders, from one module.
-    async () => jsonContent(await diagnoseHosts(await deps.loadRegistry()))
-  );
-
-  server.registerTool(
-    "list_models",
-    {
-      description:
-        "List models available on all reachable model endpoints (provider-aware live query)",
-      inputSchema: {},
-      annotations: toolAnnotations("list_models"),
-    },
-    async () => {
+    async ({ include, hostId, endpoint, provider, model }) => {
       const registry = await deps.loadRegistry();
-      const allHosts = registry.tiers.flatMap((tier) =>
-        tier.hosts
-          .filter(
-            (host) =>
-              host.enabled !== false &&
-              (host.endpoint.startsWith("http://") || host.endpoint.startsWith("https://"))
-          )
-          .map((host) => ({ tier, host }))
-      );
-      const results = await Promise.all(
-        allHosts.map(async ({ tier, host }) => {
-          const models = await fetchHostModels(host);
-          return {
-            tier: tier.id,
-            host: host.id,
-            endpoint: host.endpoint,
-            provider: host.provider,
-            endpointFamily: endpointFamilyForHost(host),
-            models: models.length > 0 ? models : (host.models ?? []),
-            source: models.length > 0 ? "live" : "registry-cache",
-          };
-        })
-      );
-      return jsonContent(results);
-    }
-  );
+      const extras = new Set(include ?? []);
+      const payload: Record<string, unknown> = {
+        health: await diagnoseHosts(registry),
+      };
 
-  server.registerTool(
-    "probe_endpoint_compatibility",
-    {
-      description:
-        "Probe endpoint compatibility for /v1/models, /v1/chat/completions, and JSON mode semantics",
-      inputSchema: {
-        hostId: z.string().optional().describe("Host ID from the platform registry"),
-        endpoint: z
-          .string()
-          .optional()
-          .describe("Optional endpoint override when hostId is not provided"),
-        provider: z
-          .string()
-          .optional()
-          .describe("Provider label for endpoint override (default: openai-compatible)"),
-        model: z.string().optional().describe("Optional model override for chat/json probes"),
-      },
-      annotations: toolAnnotations("probe_endpoint_compatibility"),
-    },
-    async ({ hostId, endpoint, provider, model }) => {
-      const registry = await deps.loadRegistry();
-
-      let host: Host | null = null;
-      if (hostId) {
-        for (const tier of registry.tiers) {
-          const matched = tier.hosts.find((candidate) => candidate.id === hostId);
-          if (matched) {
-            host = matched;
-            break;
-          }
-        }
-        if (!host) {
-          return jsonContent({ error: `hostId not found: ${hostId}` });
-        }
-      } else if (endpoint) {
-        host = {
-          id: "manual-endpoint",
-          label: "Manual endpoint",
-          provider: provider ?? "openai-compatible",
-          endpoint,
-          models: model ? [{ name: model }] : [],
-        };
-      } else {
-        return jsonContent({ error: "provide hostId or endpoint" });
+      if (extras.has("models")) {
+        const allHosts = registry.tiers.flatMap((tier) =>
+          tier.hosts
+            .filter(
+              (host) =>
+                host.enabled !== false &&
+                (host.endpoint.startsWith("http://") || host.endpoint.startsWith("https://"))
+            )
+            .map((host) => ({ tier, host }))
+        );
+        payload.models = await Promise.all(
+          allHosts.map(async ({ tier, host }) => {
+            const models = await fetchHostModels(host);
+            return {
+              tier: tier.id,
+              host: host.id,
+              endpoint: host.endpoint,
+              provider: host.provider,
+              endpointFamily: endpointFamilyForHost(host),
+              models: models.length > 0 ? models : (host.models ?? []),
+              source: models.length > 0 ? "live" : "registry-cache",
+            };
+          })
+        );
       }
 
-      const result = await probeHostEndpointCompatibility(host, model ?? null);
-      return jsonContent(result);
-    }
-  );
+      if (extras.has("hardware")) {
+        payload.hardware = await deps.detectHardware();
+      }
 
-  server.registerTool(
-    "get_hardware",
-    {
-      description: "Detect local hardware (GPUs, VRAM, RAM) for routing decisions",
-      inputSchema: {},
-      annotations: toolAnnotations("get_hardware"),
-    },
-    async () => jsonContent(await deps.detectHardware())
+      if (extras.has("probe") || hostId || endpoint) {
+        let host: Host | null = null;
+        if (hostId) {
+          for (const tier of registry.tiers) {
+            const matched = tier.hosts.find((candidate) => candidate.id === hostId);
+            if (matched) {
+              host = matched;
+              break;
+            }
+          }
+          if (!host) {
+            payload.probe = { error: `hostId not found: ${hostId}` };
+          }
+        } else if (endpoint) {
+          host = {
+            id: "manual-endpoint",
+            label: "Manual endpoint",
+            provider: provider ?? "openai-compatible",
+            endpoint,
+            models: model ? [{ name: model }] : [],
+          };
+        } else if (extras.has("probe")) {
+          payload.probe = { error: "provide hostId or endpoint" };
+        }
+        if (host) {
+          payload.probe = await probeHostEndpointCompatibility(host, model ?? null);
+        }
+      }
+
+      return jsonContent(extras.size === 0 && !hostId && !endpoint ? payload.health : payload);
+    }
   );
 
   server.registerTool(

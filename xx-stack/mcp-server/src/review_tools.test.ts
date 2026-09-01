@@ -228,7 +228,7 @@ test("memory-sync drift is computed, not assumed absent", async () => {
   const drifting = harness({
     sessions: [makeSession({ completionMemorySync: guard })],
     driftDetected: true,
-    helperPrompt: "Run agent_memory_snapshot_status and resolve drift.",
+    helperPrompt: "Run agent_memory_get and resolve snapshot drift.",
   });
   const drifted = await callReview(drifting, {
     sessionId: "sx-review-001",

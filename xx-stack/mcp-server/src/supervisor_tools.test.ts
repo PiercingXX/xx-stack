@@ -443,54 +443,6 @@ test("a session tool on an unreadable store returns a structured error instead o
   });
 });
 
-// --- MCP-DEAD-2: the self test must be able to fail ------------------------
-
-test("supervisor_run_self_test passes on a healthy store", async () => {
-  await withTempHome(async () => {
-    const { handlers } = captureTools();
-    await seedSession(makeSession());
-
-    const result = await call(handlers.supervisor_run_self_test!, {});
-    assert.equal(result.status, "pass");
-    const readable = result.checks.find((c: any) => c.name === "store.sessions.readable");
-    assert.equal(readable.pass, true);
-    assert.equal(readable.value, 1);
-  });
-});
-
-test("supervisor_run_self_test fails when the store cannot be read", async () => {
-  await withTempHome(async (homeDir) => {
-    const { handlers } = captureTools();
-    await writeFile(join(homeDir, SUPERVISOR_FILE), "{ truncated", "utf-8");
-
-    const result = await call(handlers.supervisor_run_self_test!, {});
-    assert.equal(result.status, "fail", "an unreadable store is not a passing self test");
-    const readable = result.checks.find((c: any) => c.name === "store.sessions.readable");
-    assert.equal(readable.pass, false);
-  });
-});
-
-test("supervisor_run_self_test fails on a session record the supervisor cannot run on", async () => {
-  await withTempHome(async (homeDir) => {
-    const { handlers } = captureTools();
-    await writeFile(
-      join(homeDir, SUPERVISOR_FILE),
-      JSON.stringify({
-        version: 1,
-        sessions: { "sx-broken": { sessionId: "sx-other", status: "running" } },
-        hostModelFailures: {},
-      }),
-      "utf-8"
-    );
-
-    const result = await call(handlers.supervisor_run_self_test!, {});
-    assert.equal(result.status, "fail");
-    const wellFormed = result.checks.find((c: any) => c.name === "store.sessions.wellFormed");
-    assert.equal(wellFormed.pass, false);
-    assert.ok(String(wellFormed.value).includes("sx-broken"));
-  });
-});
-
 test("findMalformedSessions and pruningRemovedEntries report exactly what changed", () => {
   const store = emptySupervisorStore();
   store.sessions["sx-ok"] = makeSession({ sessionId: "sx-ok" });

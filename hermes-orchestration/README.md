@@ -48,8 +48,9 @@ sudo systemctl restart ollama
 
 Then update `lanes.ollama.model` in `config/orchestration.json` to a model that
 `ollama list` actually shows (currently assumed: `qwen3-coder:30b`), set
-`lanes.ollama.enabled` to `true`, and re-enable the matching `overflow` tier
-host in `../xx-stack/runtime/platforms.json`.
+`lanes.ollama.enabled` to `true`, and re-enable the matching
+`example-gpu-box-ollama` host in the `tailscale-ollama` tier of
+`../xx-stack/runtime/platforms.json` (generated from `inventory.example.json`).
 
 ## What is implemented
 

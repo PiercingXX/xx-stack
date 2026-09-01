@@ -166,7 +166,7 @@
           "supervisor_record_completion_check",
           "supervisor_status",
           "agent_memory_get",
-          "agent_memory_snapshot_status",
+
           "search_tools",
           "list_*",
           "route_*",

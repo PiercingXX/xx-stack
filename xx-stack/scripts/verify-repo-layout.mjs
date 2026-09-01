@@ -9,10 +9,7 @@ import { fileURLToPath } from "node:url";
 // to identify the caller. Walk up from an explicit argument, then the working
 // directory, looking for a component root (a directory holding a stack source
 // dir plus packs/).
-const LAYOUTS = [
-  { sourceDir: "runtime", mirrorDir: "adapters" },
-  { sourceDir: "opencode", mirrorDir: "vscode" },
-];
+const LAYOUTS = [{ sourceDir: "runtime" }, { sourceDir: "opencode" }];
 
 function detectLayout(dir) {
   return LAYOUTS.find(
@@ -102,16 +99,14 @@ function checkExecutable(relPath) {
   addCheck(`Executable ${relPath}`, ok, ok ? "executable bit set" : "not executable");
 }
 
-// Components differ in which directory holds the canonical stack source and
-// which holds the editor mirrors:
+// Components differ in which directory holds the canonical stack source:
 //
-//   xx-stack/                 runtime/  + adapters/
-//   opencode-orchestration/   opencode/ + vscode/
+//   xx-stack/                 runtime/
+//   opencode-orchestration/   opencode/
 //
-const { sourceDir, mirrorDir } = detectLayout(repoRoot);
+const { sourceDir } = detectLayout(repoRoot);
 
 checkDir(sourceDir);
-checkDir(mirrorDir);
 checkDir("mcp-server");
 checkDir("evals");
 checkDir("scripts");
@@ -171,24 +166,28 @@ for (const license of [
   checkFile(`packs/design/licenses/${license}.txt`);
 }
 
-// VS Code / Copilot wiring is only shipped by components that generate editor
-// mirrors from canonical agent contracts.
-if (existsAt("scripts/sync-vscode-agents.mjs")) {
-  checkFile(".github/copilot-instructions.md");
-  checkFile(".vscode/mcp.json");
-  checkFile("scripts/sync-vscode-agents.mjs");
-}
-
 checkSymlink("design-systems", "packs/design/design-systems");
 checkSymlink("design-skills", "packs/design/design-skills");
 checkSymlink("DESIGN-CATALOG.md", "packs/design/DESIGN-CATALOG.md");
 checkSymlink(`${sourceDir}/skills/design`, "packs/design/workflow-skills");
 checkSymlink("evals/golden-tasks", "packs/design/evals/golden-tasks");
 
-checkExecutable("setup-vscode.sh");
 checkExecutable("setup-opencode.sh");
 checkExecutable("hooks/examples/pre-tool-policy.sh");
 checkExecutable("hooks/examples/post-tool-verify.sh");
+
+function checkAbsent(relPath) {
+  const present = existsAt(relPath);
+  addCheck(
+    `Absent ${relPath}`,
+    !present,
+    present ? "must not exist (VS Code product surface was removed)" : "removed"
+  );
+}
+checkAbsent("adapters");
+checkAbsent("vscode");
+checkAbsent("setup-vscode.sh");
+checkAbsent(".vscode");
 
 // Check for dot-alias duplicates in design-systems (e.g. foo.bar alongside foo-bar)
 (function checkDesignSystemDuplicates() {
@@ -219,9 +218,7 @@ checkExecutable("hooks/examples/post-tool-verify.sh");
 const total = checks.length;
 const failed = checks.filter((c) => !c.ok);
 
-console.log(
-  `xx-stack layout verification — ${path.basename(repoRoot)}/ (${sourceDir}/ + ${mirrorDir}/)`
-);
+console.log(`xx-stack layout verification — ${path.basename(repoRoot)}/ (${sourceDir}/)`);
 console.log("");
 for (const c of checks) {
   const status = c.ok ? "PASS" : "FAIL";

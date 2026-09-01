@@ -245,11 +245,12 @@ test("route_review registered tool returns the ReviewRoute payload", async () =>
     ]);
 
     const handlers = captureRoutingTools(registry);
-    const handler = handlers.get("route_review");
-    assert.ok(handler, "route_review must be registered by registerRoutingTools");
+    const handler = handlers.get("route_task");
+    assert.ok(handler, "route_task must be registered by registerRoutingTools");
 
     const result = await handler!({
       description: "review the routing changes",
+      mode: "review",
       authoredByModel: "model-a",
       authoredByHost: "author-box",
     });

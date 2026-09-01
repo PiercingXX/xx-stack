@@ -29,7 +29,7 @@ import {
   effectiveParallelCapacity,
   endpointFamilyForProvider,
   routeArchitectEditor,
-  routeCompetitiveTask, // registers "route_competitive_task" MCP tool
+  routeCompetitiveTask,
   routeParallelTasks,
   routeTask,
   scoreCandidates,

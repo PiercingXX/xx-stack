@@ -337,9 +337,6 @@ repair_remote_provider_config "$OPENCODE_CONFIG_PATH" "$REMOTE_OLLAMA_URL" "$REM
 echo "Ensuring xx-stack MCP server is installed and registered..."
 ensure_xx_stack_mcp_server_registration "$OPENCODE_CONFIG_PATH" "$OPENCODE_TARGET_DIR"
 
-echo "Ensuring VS Code MCP workspace config includes xx-stack server..."
-ensure_vscode_workspace_mcp_config "$OPENCODE_TARGET_DIR" "$REPO_DIR" || note_optional_step_warning "ensure_vscode_workspace_mcp_config"
-
 echo "Validating merged agent profiles in global OpenCode config..."
 validate_merged_agent_profiles "$OPENCODE_CONFIG_PATH" "$STRICT_AGENT_VALIDATION"
 

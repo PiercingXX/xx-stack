@@ -2,14 +2,14 @@ name: xx-stack CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   layout:
-    name: Layout, Agent Sync & Lint
+    name: Layout, Drift & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -24,9 +24,6 @@ jobs:
 
       - name: Verify component layouts
         run: npm run layout:verify
-
-      - name: Verify VS Code agent mirrors are in sync
-        run: npm run agents:check
 
       # Names AND content: the mirrored skill/agent bodies must differ only by
       # the deliberate host deltas. Content drift used to reach main freely.

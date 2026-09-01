@@ -1,6 +1,6 @@
 {
   "name": "xx-stack",
-  "version": "1.64.0",
+  "version": "1.65.0",
   "description": "Local-first agent orchestration: routing MCP server, agent contracts, and self-hosted inference control plane",
   "private": true,
   "//type": "Intentionally NOT \"module\". Shared helpers under xx-stack/scripts/*.js are CommonJS; ESM entrypoints use the .mjs extension. xx-stack/mcp-server declares its own \"type\": \"module\".",
@@ -10,22 +10,20 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
-    "lint": "eslint . --ext .ts,.mjs,.js",
-    "lint:fix": "eslint . --ext .ts,.mjs,.js --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "typecheck": "npm --prefix xx-stack/mcp-server run build -- --noEmit",
     "format": "prettier --write \"{xx-stack/mcp-server/src,xx-stack/scripts}/**/*.{ts,js,mjs}\"",
     "format:check": "prettier --check \"{xx-stack/mcp-server/src,xx-stack/scripts}/**/*.{ts,js,mjs}\"",
     "layout:verify": "npm run layout:verify:core && npm run layout:verify:opencode",
     "layout:verify:core": "node xx-stack/scripts/verify-repo-layout.mjs xx-stack",
     "layout:verify:opencode": "node xx-stack/scripts/verify-repo-layout.mjs opencode-orchestration",
-    "agents:sync": "node xx-stack/scripts/sync-vscode-agents.mjs",
-    "agents:check": "node xx-stack/scripts/sync-vscode-agents.mjs --check",
     "design:catalog": "node xx-stack/scripts/generate-design-catalog.mjs",
     "design:golden": "node xx-stack/scripts/evaluate-golden-tasks.mjs",
     "design:html-gate": "node xx-stack/scripts/quality-gate-html.mjs",
     "design:systems-lint": "node xx-stack/packs/design/scripts/lint-design-systems.mjs",
     "hermes:test": "cd hermes-orchestration && python3 -m unittest discover -s tests",
-    "verify": "npm run layout:verify && npm run agents:check && npm run drift:check && npm run rules:check && npm run nano:check && npm run inventory:check && npm run guardrails:check && npm run ci:parity && npm run lint && npm run format:check && npm run design:golden && npm run design:html-gate && npm run design:systems-lint && npm run design:craft-refs && npm run design:anti-slop-test && npm test && npm run hermes:test",
+    "verify": "npm run layout:verify && npm run drift:check && npm run rules:check && npm run nano:check && npm run inventory:check && npm run guardrails:check && npm run ci:parity && npm run lint && npm run format:check && npm run design:golden && npm run design:html-gate && npm run design:systems-lint && npm run design:craft-refs && npm run design:anti-slop-test && npm test && npm run hermes:test",
     "drift:check": "node xx-stack/scripts/check-stack-source-drift.mjs",
     "rules:check": "node xx-stack/scripts/check-rules-coverage.mjs",
     "nano:check": "node xx-stack/scripts/check-nano-tiers.mjs",
@@ -54,11 +52,13 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^25.9.5",
     "@typescript-eslint/eslint-plugin": "^8.26.0",
     "@typescript-eslint/parser": "^8.26.0",
-    "eslint": "^8.57.1",
+    "eslint": "^9.35.0",
+    "globals": "^16.4.0",
     "prettier": "^3.5.3",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3"
   }
 }

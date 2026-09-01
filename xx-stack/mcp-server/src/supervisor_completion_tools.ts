@@ -353,7 +353,7 @@ export function buildContinuationPrompt(
         ? [
             "  7) Resolve memory drift before completion by following memory helper guidance",
             "- memory-sync helper:",
-            memorySyncStatus.helperPrompt ?? "Run agent_memory_snapshot_status and resolve drift.",
+            memorySyncStatus.helperPrompt ?? "Run agent_memory_get and resolve snapshot drift.",
           ]
         : []),
       "- remediation checklist:",

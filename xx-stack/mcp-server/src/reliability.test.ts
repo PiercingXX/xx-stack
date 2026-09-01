@@ -310,7 +310,7 @@ test("buildCompletionRepairChecklist for memory drift includes snapshot sync gui
     "completion_memory_drift_detected"
   );
 
-  assert.ok(checklist.some((item) => item.includes("agent_memory_snapshot_status")));
+  assert.ok(checklist.some((item) => item.includes("agent_memory_get")));
   assert.ok(checklist.some((item) => item.includes("agent_memory_snapshot_sync")));
   assert.ok(checklist.some((item) => item.includes("driftDetected=false")));
 });
@@ -721,7 +721,7 @@ test("routeParallelTasks prefers remote Tailscale hosts and preserves dispatch p
           {
             id: "test-bench-archlinux",
             label: "5090",
-            provider: PROVIDER_IDS.ollama5090,
+            provider: "ollama-5090",
             endpoint: "http://100.100.0.2:11434",
             enabled: true,
             reachable: true,
@@ -1002,7 +1002,7 @@ test("buildMemoryResyncHelperPrompt includes sync guidance and tool names", () =
   assert.match(prompt, /agent_memory_snapshot_sync/);
   assert.match(prompt, /direction='capture'/);
   assert.match(prompt, /direction='apply'/);
-  assert.match(prompt, /agent_memory_snapshot_status/);
+  assert.match(prompt, /agent_memory_get/);
 });
 
 test("readSnapshotMeta returns null for malformed metadata file", async () => {

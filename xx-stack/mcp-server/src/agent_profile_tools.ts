@@ -9,7 +9,7 @@ import {
   toStringArray,
   validateAgentProfiles,
 } from "./config_runtime.js";
-import { buildCoordinatorContract, jsonContent } from "./agent_tool_helpers.js";
+import { jsonContent } from "./agent_tool_helpers.js";
 import { toolAnnotations } from "./observability_tools.js";
 
 export function registerAgentProfileTools(server: McpServer): void {
@@ -44,10 +44,18 @@ export function registerAgentProfileTools(server: McpServer): void {
           },
         }));
 
+      const findings = validateAgentProfiles(runtime.agents, runtime.configuredMcpServers);
       return jsonContent({
         configuredMcpServers: runtime.configuredMcpServers,
         sources: runtime.sources,
         profiles,
+        validation: {
+          status: findings.errors.length === 0 ? "ok" : "fail",
+          errorCount: findings.errors.length,
+          warningCount: findings.warnings.length,
+          errors: findings.errors,
+          warnings: findings.warnings,
+        },
       });
     }
   );
@@ -66,7 +74,9 @@ export function registerAgentProfileTools(server: McpServer): void {
           .array(z.string())
           .max(256)
           .optional()
-          .describe("Optional tools requested for this run"),
+          .describe(
+            "Optional tools requested for this run; when set, the response includes the filtered allow/deny set"
+          ),
         isAsync: z
           .boolean()
           .optional()
@@ -120,91 +130,6 @@ export function registerAgentProfileTools(server: McpServer): void {
           strictWorkerContract: profile.coordinator?.strictWorkerContract === true,
           requireStructuredResults: profile.coordinator?.requireStructuredResults === true,
         },
-      });
-    }
-  );
-
-  server.registerTool(
-    "agent_filter_tools",
-    {
-      description: "Filter candidate tool names through the selected agent allow/deny policy",
-      inputSchema: {
-        agentId: z.string().min(1).describe("Agent identifier"),
-        candidateTools: z.array(z.string()).min(1).max(512).describe("Tool names to evaluate"),
-        isAsync: z
-          .boolean()
-          .optional()
-          .describe("Whether to apply background async safety restrictions"),
-      },
-      annotations: toolAnnotations("agent_filter_tools"),
-    },
-    async ({ agentId, candidateTools, isAsync }) => {
-      const runtime = await loadMergedAgentRuntimeConfig();
-      const profile = runtime.agents[agentId];
-      if (!profile) {
-        return jsonContent({ status: "missing_agent", agentId });
-      }
-
-      const basePolicy = applyToolPolicy(profile, candidateTools);
-      const filtered = isAsync === true ? applyAsyncToolSafety(basePolicy) : basePolicy;
-      return jsonContent({
-        status: "ok",
-        agentId,
-        isAsync: isAsync === true,
-        ...filtered,
-      });
-    }
-  );
-
-  server.registerTool(
-    "agent_validate_profiles",
-    {
-      description: "Validate merged agent profile configuration and report errors/warnings",
-      inputSchema: {},
-      annotations: toolAnnotations("agent_validate_profiles"),
-    },
-    async () => {
-      const runtime = await loadMergedAgentRuntimeConfig();
-      const findings = validateAgentProfiles(runtime.agents, runtime.configuredMcpServers);
-      return jsonContent({
-        status: findings.errors.length === 0 ? "ok" : "fail",
-        errorCount: findings.errors.length,
-        warningCount: findings.warnings.length,
-        errors: findings.errors,
-        warnings: findings.warnings,
-      });
-    }
-  );
-
-  server.registerTool(
-    "build_coordinator_contract",
-    {
-      description: "Generate a hardened coordinator worker contract prompt from agent policy",
-      inputSchema: {
-        agentId: z
-          .string()
-          .optional()
-          .describe("Agent identifier (defaults to execution-orchestrator)"),
-      },
-      annotations: toolAnnotations("build_coordinator_contract"),
-    },
-    async ({ agentId }) => {
-      const resolvedAgentId = agentId?.trim() || "execution-orchestrator";
-      const runtime = await loadMergedAgentRuntimeConfig();
-      const profile = runtime.agents[resolvedAgentId];
-      if (!profile) {
-        return jsonContent({ status: "missing_agent", agentId: resolvedAgentId });
-      }
-
-      const strict = profile.coordinator?.strictWorkerContract !== false;
-      const structured = profile.coordinator?.requireStructuredResults !== false;
-      const contract = buildCoordinatorContract(resolvedAgentId, strict, structured);
-      return jsonContent({
-        status: "ok",
-        agentId: resolvedAgentId,
-        strictWorkerContract: strict,
-        requireStructuredResults: structured,
-        contract,
       });
     }
   );
