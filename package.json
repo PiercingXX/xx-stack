@@ -53,12 +53,12 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^25.9.5",
-    "@typescript-eslint/eslint-plugin": "^8.26.0",
+    "@types/node": "^26.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.26.0",
     "eslint": "^10.9.1",
-    "globals": "^16.4.0",
+    "globals": "^17.11.0",
     "prettier": "^3.5.3",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   }
 }
