@@ -219,9 +219,9 @@ export function buildCompletionRepairChecklist(reasonCode: string): string[] {
       "Cite the contract's stopCondition in the evidence summary; do not delete, skip, weaken, or narrow tests to make the goal pass.",
     ],
     completion_memory_drift_detected: [
-      "Run agent_memory_snapshot_status for the guarded agent/scope and inspect helperPrompt.",
+      "Run agent_memory_get for the guarded agent/scope and inspect snapshot.helperPrompt.",
       "Resolve drift with agent_memory_snapshot_sync (direction='capture' or direction='apply').",
-      "Re-run agent_memory_snapshot_status and confirm driftDetected=false before retrying completion.",
+      "Re-run agent_memory_get and confirm snapshot.driftDetected=false before retrying completion.",
     ],
   };
 

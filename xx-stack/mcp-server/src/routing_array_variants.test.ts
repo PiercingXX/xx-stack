@@ -178,8 +178,9 @@ test("route_architect_editor keeps the singleton shape and adds an aligned array
   const registry = twoLaneRegistry();
   const handlers = captureRoutingTools(registry);
 
-  const single = await invoke(handlers, "route_architect_editor", {
+  const single = await invoke(handlers, "route_task", {
     description: "implement a new caching layer",
+    mode: "architect-editor",
   });
   assert.deepEqual(
     single,
@@ -187,7 +188,10 @@ test("route_architect_editor keeps the singleton shape and adds an aligned array
   );
 
   const descriptions = ["implement a new caching layer", "fix a small CSS bug"];
-  const batch = await invoke(handlers, "route_architect_editor", { description: descriptions });
+  const batch = await invoke(handlers, "route_task", {
+    description: descriptions,
+    mode: "architect-editor",
+  });
   assert.ok(Array.isArray(batch.results));
   assert.equal(batch.results.length, 2);
   for (let i = 0; i < descriptions.length; i++) {
@@ -201,15 +205,17 @@ test("route_competitive_task keeps the singleton shape and adds an aligned array
   const registry = twoLaneRegistry();
   const handlers = captureRoutingTools(registry);
 
-  const single = await invoke(handlers, "route_competitive_task", {
+  const single = await invoke(handlers, "route_task", {
     description: "implement a parser",
+    mode: "competitive",
     laneCount: 2,
   });
   assert.deepEqual(single, routeCompetitiveTask("implement a parser", registry as never, 2));
 
   const descriptions = ["implement a parser", "analyze log output"];
-  const batch = await invoke(handlers, "route_competitive_task", {
+  const batch = await invoke(handlers, "route_task", {
     description: descriptions,
+    mode: "competitive",
     laneCount: 2,
   });
   assert.ok(Array.isArray(batch.results));

@@ -67,19 +67,6 @@
         }
       }
     },
-    "planning": {
-      "description": "Compatibility alias for plan tasks that reference the legacy 'planning' agent type.",
-      "mode": "subagent",
-      "temperature": 0.1,
-      "steps": 12,
-      "permission": {
-        "edit": "deny",
-        "bash": "allow",
-        "skill": {
-          "*": "allow"
-        }
-      }
-    },
     "fast-build": {
       "description": "Primary fast lane for small, obvious implementation tasks. Uses the caller's current host model by default.",
       "mode": "primary",
@@ -145,7 +132,7 @@
           "supervisor_record_completion_check",
           "supervisor_status",
           "agent_memory_get",
-          "agent_memory_snapshot_status",
+
           "search_tools",
           "list_*",
           "route_*",
@@ -193,19 +180,6 @@
         "enabled": true,
         "scope": "local"
       },
-      "permission": {
-        "edit": "deny",
-        "bash": "allow",
-        "skill": {
-          "*": "allow"
-        }
-      }
-    },
-    "researcher": {
-      "description": "Compatibility alias for research tasks that reference the legacy 'researcher' agent type.",
-      "mode": "subagent",
-      "temperature": 0.1,
-      "steps": 12,
       "permission": {
         "edit": "deny",
         "bash": "allow",

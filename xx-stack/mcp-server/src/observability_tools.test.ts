@@ -353,8 +353,7 @@ test("MCP-13: search_tools can find the tools that used to be missing", async ()
   for (const name of [
     "build_repo_map",
     "verify_edit",
-    "score_candidates",
-    "route_review",
+    "route_task",
     "supervisor_force_synthesis",
     "agent_memory_compaction_prompt",
   ]) {

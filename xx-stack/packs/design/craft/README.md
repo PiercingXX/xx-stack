@@ -43,7 +43,7 @@ Allowed shipped values match the file names in this directory minus the `.md`
 extension. The runtime skips an absent file for compatibility, but repository
 authoring does not silently accept arbitrary values.
 
-Run `pnpm lint:craft` after adding or changing `od.craft.requires`. The
+Run `npm run design:craft-refs` after adding or changing `od.craft.requires`. The
 repository guard reports unresolved slugs with their manifest paths, so typos
 cannot silently drop a craft section from the runtime prompt. If a slug is an
 intentional forward reference, list it in `craft/FUTURE_SECTIONS.md` until the
@@ -55,8 +55,8 @@ The loader remains tolerant because externally installed or older bundles may
 reference a section that is unavailable in the current resource set. A missing
 optional paragraph must not make an otherwise usable runtime bundle fail.
 
-Checked-in content has a stronger contract: `pnpm lint:craft` and
-`pnpm guard` fail on malformed slugs and unresolved references. A deliberate
+Checked-in content has a stronger contract: `npm run design:craft-refs`
+fails on malformed slugs and unresolved references. A deliberate
 forward reference is valid only when it is listed in
 `craft/FUTURE_SECTIONS.md`; this makes planned work explicit while preserving
 the runtime compatibility behavior.

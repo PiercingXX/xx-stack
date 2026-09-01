@@ -20,7 +20,7 @@ Prevent drifted memory state from being treated as completion-safe.
    - `checkType: judge`
    - `verdict: pass|fail`
 6. If verdict is `fail`, repair and repeat from step 1.
-7. If memory sync guard is enabled, ensure `agent_memory_snapshot_status` reports `driftDetected=false`.
+7. If memory sync guard is enabled, ensure `agent_memory_get` reports `snapshot.driftDetected=false`.
 8. Only after evidence is fresh, judge verdict is `pass`, and memory drift is resolved, call `supervisor_complete_session` with `outcome: completed`.
 
 ## Goal Contract Gate

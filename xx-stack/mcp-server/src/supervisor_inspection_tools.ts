@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { findMalformedSessions, pruningRemovedEntries } from "./supervisor_runtime.js";
-import { guardStoreAccess, storeAccessErrorPayload } from "./supervisor_store_runtime.js";
+import { pruningRemovedEntries } from "./supervisor_runtime.js";
+import { guardStoreAccess } from "./supervisor_store_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 
 import { jsonContent } from "./agent_tool_helpers.js";
@@ -66,68 +66,5 @@ export function registerSupervisorInspectionTools(
           });
         })
       )
-  );
-
-  server.registerTool(
-    "supervisor_run_self_test",
-    {
-      description:
-        "Run deterministic self-tests for timeout, fallback selection, and session persistence behavior",
-      inputSchema: {},
-      annotations: toolAnnotations("supervisor_run_self_test"),
-    },
-    async () => {
-      const reliability = await deps.loadReliabilityConfig();
-
-      const checks: Array<Record<string, unknown>> = [];
-      checks.push({
-        name: "reliability.watchdogEnabled",
-        pass: reliability.watchdogEnabled === true,
-        value: reliability.watchdogEnabled,
-      });
-      checks.push({
-        name: "reliability.maxAttemptsPerSlice",
-        pass: reliability.maxAttemptsPerSlice >= 1,
-        value: reliability.maxAttemptsPerSlice,
-      });
-
-      // MCP-DEAD-2: the old assertion was `sessionCount >= 0`, which passes for
-      // every possible store — including one that could not be read at all.
-      // The persistence check now actually exercises the read and the shape of
-      // what came back, so it can fail.
-      try {
-        const store = deps.pruneSupervisorStore(await deps.readSupervisorStore(), reliability);
-        const malformed = findMalformedSessions(store);
-        checks.push({
-          name: "store.sessions.readable",
-          pass: true,
-          value: Object.keys(store.sessions).length,
-        });
-        checks.push({
-          name: "store.sessions.wellFormed",
-          pass: malformed.length === 0,
-          value: malformed.length === 0 ? "all session records usable" : malformed.join(", "),
-        });
-      } catch (error) {
-        const payload = storeAccessErrorPayload(error);
-        if (!payload) throw error;
-        checks.push({
-          name: "store.sessions.readable",
-          pass: false,
-          value: payload.detail,
-        });
-        checks.push({
-          name: "store.sessions.wellFormed",
-          pass: false,
-          value: "not evaluated: the store could not be read",
-        });
-      }
-
-      const allPass = checks.every((check) => check.pass === true);
-      return jsonContent({
-        status: allPass ? "pass" : "fail",
-        checks,
-      });
-    }
   );
 }

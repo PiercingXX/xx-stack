@@ -59,9 +59,6 @@ authority. To see what exists, list the directory.
 `setup-opencode.sh`
 - OpenCode host adapter setup
 
-`setup-vscode.sh`
-- VS Code adapter setup and MCP wiring
-
 ## Installed Runtime
 
 Discovery outside the repo reads from the OpenCode config directory, not from

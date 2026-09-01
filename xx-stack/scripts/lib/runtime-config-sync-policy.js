@@ -273,22 +273,19 @@ function buildSyncPolicy({
   const codingCandidates = [
     { providerId: PROVIDER_IDS.sglangRemote, model: turboRemoteCoding },
     { providerId: PROVIDER_IDS.llamaCppLocal, model: turboLocalPrimary },
-    { providerId: PROVIDER_IDS.ollama5090, model: remote5090Coding },
-    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteCoding },
+    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteCoding || remote5090Coding },
     { providerId: PROVIDER_IDS.ollamaLocal, model: localPrimary },
   ];
   const reasoningCandidates = [
     { providerId: PROVIDER_IDS.sglangRemote, model: turboRemoteReasoning },
     { providerId: PROVIDER_IDS.llamaCppLocal, model: turboLocalReasoning },
-    { providerId: PROVIDER_IDS.ollama5090, model: remote5090Reasoning },
-    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteReasoning },
+    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteReasoning || remote5090Reasoning },
     { providerId: PROVIDER_IDS.ollamaLocal, model: localReasoning },
   ];
   const reasoningCandidatesWithout5090Priority = [
     { providerId: PROVIDER_IDS.sglangRemote, model: turboRemoteReasoning },
     { providerId: PROVIDER_IDS.llamaCppLocal, model: turboLocalReasoning },
-    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteReasoning },
-    { providerId: PROVIDER_IDS.ollama5090, model: remote5090Reasoning },
+    { providerId: PROVIDER_IDS.ollamaRemote, model: remoteReasoning || remote5090Reasoning },
     { providerId: PROVIDER_IDS.ollamaLocal, model: localReasoning },
   ];
   const planningCandidates = [

@@ -59,7 +59,7 @@ Use this order when multiple agent definitions with the same name exist:
 
 1. active runtime override configured by the host (`opencode/` install, compatibility `.opencode/` shim, user prompt override, or equivalent)
 2. repo OpenCode definition in `opencode/agents/<name>.md`
-3. repo VS Code mirror in `vscode/agents/<name>.agent.md`
+3. OpenCode-specialized copy in `opencode/agents/<name>.md`
 4. compatibility alias mapping declared in repo docs/config
 
 Rules:
@@ -75,7 +75,7 @@ Use this order when multiple skill surfaces with the same name exist:
 
 1. active runtime override configured by the host
 2. repo OpenCode skill at `opencode/skills/<name>/SKILL.md`
-3. repo VS Code slash-command mirror at `vscode/skills/<name>.prompt.md`
+3. OpenCode-specialized copy at `opencode/skills/<name>/SKILL.md`
 4. bundled or user-level external skill source outside this repo
 
 Rules:

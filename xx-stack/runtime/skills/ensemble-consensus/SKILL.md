@@ -62,7 +62,7 @@ models is a valid panel.
 reachable, or nothing else is enabled. **Do not skip the ensemble.** Select
 three *different models* on the local host and run the panel there:
 
-- Call `list_models` for the local host and pick three genuinely distinct
+- Call `check_health` with `include: ["models"]` for the local host and pick three genuinely distinct
   models. Different families first (e.g. a qwen, a llama, a mistral); different
   parameter sizes of the same family second; different quantisations of the same
   weights **last**, and say so, because those are near-duplicates and will agree

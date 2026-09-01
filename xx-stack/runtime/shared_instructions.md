@@ -74,8 +74,7 @@ Use this order when multiple agent definitions with the same name exist:
 
 1. active runtime override configured by the host (`.xx-stack/` install, user prompt override, or equivalent)
 2. repo canonical definition in `runtime/agents/<name>.md`
-3. repo adapter mirror in `adapters/agents/<name>.agent.md`
-4. compatibility alias mapping declared in repo docs/config
+3. OpenCode-specialized copy in `opencode-orchestration/opencode/agents/<name>.md` when that host is in use
 
 Rules:
 
@@ -90,7 +89,7 @@ Use this order when multiple skill surfaces with the same name exist:
 
 1. active runtime override configured by the host
 2. repo canonical skill at `runtime/skills/<name>/SKILL.md`
-3. repo adapter mirror at `adapters/skills/<name>.prompt.md`
+3. OpenCode-specialized copy at `opencode-orchestration/opencode/skills/<name>/SKILL.md` when that host is in use
 4. bundled or user-level external skill source outside this repo
 
 Rules:

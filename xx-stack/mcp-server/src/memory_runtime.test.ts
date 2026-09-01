@@ -245,7 +245,7 @@ async function callTool(
   return JSON.parse(result.content[0].text) as Record<string, any>;
 }
 
-test("agent_memory_get without tokenBudget is byte-identical to the legacy payload", async () => {
+test("agent_memory_get without tokenBudget returns full content plus snapshot status", async () => {
   const dir = await mkdtemp(join(tmpdir(), "xx-stack-memory-tools-"));
   try {
     const handlers = captureMemoryTools();
@@ -263,16 +263,15 @@ test("agent_memory_get without tokenBudget is byte-identical to the legacy paylo
     const path = getAgentMemoryEntrypoint(agentId, "project", dir);
     const payload = JSON.parse(raw.content[0].text);
 
-    // Exact legacy shape: no recall metadata, no extra keys, full content.
-    const expected = {
-      status: "ok",
-      agentId,
-      scope: "project",
-      path,
-      content: payload.content,
-    };
-    assert.equal(raw.content[0].text, JSON.stringify(expected, null, 2));
+    assert.equal(payload.status, "ok");
+    assert.equal(payload.agentId, agentId);
+    assert.equal(payload.scope, "project");
+    assert.equal(payload.path, path);
+    assert.equal(payload.recall, undefined);
     assert.ok(payload.content.includes("routing lane selection prefers low latency hosts"));
+    assert.equal(typeof payload.snapshot, "object");
+    assert.equal(typeof payload.snapshot.driftDetected, "boolean");
+    assert.equal(payload.snapshot.memoryPath, path);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

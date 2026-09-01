@@ -7,7 +7,7 @@ root `README.md` explains *why* the project exists and gets you to a first
 routing decision in two minutes; this document explains *how everything works*
 and *where the bodies are buried*.
 
-**Status of this document.** Current as of 2026-08-03. §11 is a defect
+**Status of this document.** Current as of 2026-09-01. §11 is a defect
 register: every confirmed problem this codebase has had, what it actually
 broke, and its status. Everything there is **fixed** unless its row says
 otherwise; the handful of genuinely open items — all judgment calls rather
@@ -63,9 +63,10 @@ Three properties define the whole design, and every change should preserve them:
 - **Single source of truth.** `inventory.json` describes your hardware. Every
   other registry is generated from it and carries a `_generated` banner.
 
-It ships as an MCP server (52 tools), a prompt/content layer (28 skills, 21
-agents, 2 vendored packs), a standalone Python control plane for Hermes, and a
-CLI.
+It ships as an MCP server (routing, supervision, tasks, memory, evidence), a
+prompt/content layer (28 skills, agents, 2 vendored packs), a standalone Python
+control plane for Hermes, and a CLI. OpenCode is the install layer. There is no
+shipped VS Code product surface.
 
 ### Scale
 
@@ -94,17 +95,16 @@ Three top-level components:
 xx-stack/                  ← THE SOURCE OF TRUTH
   mcp-server/              MCP server (TypeScript, ESM)
   runtime/                 canonical skills, agents, runbooks, registries
-  adapters/                GENERATED mirrors of runtime/agents — never hand-edit
   scripts/                 build, check, and sync tooling
   packs/                   vendored content (design, rules)
   hooks/                   example lifecycle hooks
 
 opencode-orchestration/    OpenCode-specialized surface
   opencode/                COPIES of runtime/ content, specialized for OpenCode
-  vscode/                  VS Code prompt surfaces
   mcp-server -> ../xx-stack/mcp-server    (symlink)
   scripts    -> ../xx-stack/scripts       (symlink)
   packs      -> ../xx-stack/packs         (symlink)
+  hooks      -> ../xx-stack/hooks         (symlink)
 
 hermes-orchestration/      standalone Python control plane (stdlib only)
 ```
@@ -1044,15 +1044,16 @@ coupling is deliberate.
 `npm run inventory:sync`. This also fires if Prettier reformatted a generated
 registry — regenerate rather than hand-editing.
 
-**`drift:check` passes but the OpenCode surface behaves differently.** Expected:
-that gate compares names, not content. Diff the pair by hand, normalizing the
-four deliberate deltas.
+**`drift:check` passes but the OpenCode surface behaves differently.** Unexpected
+for bodies the content check covers. Diff the pair by hand, normalizing the
+deliberate deltas (`compatibility:`, `model:` pins, path rewrites, nested
+`skill:` syntax). Host-specific files listed in `NOT_CONTENT_GATED` are allowed
+to differ.
 
-**`agents:check` fails on an agent I just added.** Working as intended. The
-check derives its set from the directory, so a new agent must either be mirrored
-(`npm run agents:sync`) or added to the `NOT_MIRRORED` opt-out in
-`sync-vscode-agents.mjs` with a reason. Silence used to be the failure mode
-here; noise is the fix.
+**`drift:check` fails on an agent I just added.** Working as intended. Add the
+OpenCode copy under `opencode-orchestration/opencode/agents/` (and register it
+in that component's `config.json`) or, if it is canonical-only like `ping`,
+add it to `EXPECTED_ONLY` in `check-stack-source-drift.mjs` with a reason.
 
 **A tool is registered but `search_tools` can't find it.** Add it to
 `TOOL_CATALOG` in `observability_tools.ts`. The catalog is hand-written on

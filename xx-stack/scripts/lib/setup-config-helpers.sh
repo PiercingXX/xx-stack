@@ -348,32 +348,6 @@ ensure_xx_stack_mcp_server_registration() {
   TARGET_CONFIG="$target_config" MCP_ENTRYPOINT="$mcp_entrypoint" node "$helper_script"
 }
 
-ensure_vscode_workspace_mcp_config() {
-  local install_root="$1"
-  local workspace_dir="$2"
-  local helper_script="$REPO_DIR/scripts/ensure-vscode-workspace-mcp-config.js"
-
-  if ! command -v node >/dev/null 2>&1; then
-    echo "warning: node not found; skipping VS Code MCP workspace config update." >&2
-    return 1
-  fi
-
-  local installed_vscode_dir="$install_root/.vscode"
-  local installed_mcp_path="$installed_vscode_dir/mcp.json"
-  local workspace_vscode_dir="$workspace_dir/.vscode"
-  local workspace_mcp_path="$workspace_vscode_dir/mcp.json"
-
-  mkdir -p "$installed_vscode_dir"
-  mkdir -p "$workspace_vscode_dir"
-
-  if [ ! -f "$helper_script" ]; then
-    echo "warning: missing VS Code MCP config helper: $helper_script" >&2
-    return 1
-  fi
-
-  INSTALLED_MCP_PATH="$installed_mcp_path" WORKSPACE_MCP_PATH="$workspace_mcp_path" node "$helper_script"
-}
-
 self_test_xx_stack_mcp_server() {
   local target_config="$1"
 

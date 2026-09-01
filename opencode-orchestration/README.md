@@ -28,8 +28,7 @@ This component packages and installs `xx-stack` for use inside OpenCode.
 It provides:
 
 - agent definitions and skills under `opencode/`
-- VS Code mirror surfaces under `vscode/`
-- a routing MCP server under `mcp-server/`
+- a routing MCP server under `mcp-server/` (symlink)
 - setup scripts that install, sync, and register the stack
 - a platform registry that decides where work should run
 - supervisor and watchdog controls for long-running autonomous execution
@@ -51,29 +50,24 @@ Those names reflect the actual runtime surface more directly: local plus Tailsca
 Current preferred self-hosted lane:
 
 1. local llama.cpp or compatible OpenAI-style endpoint when available
-2. Tailscale-reachable OpenAI-compatible hosts (the GPU rig's sglang endpoint on :30000 is the current primary)
+2. Tailscale-reachable OpenAI-compatible hosts (`example-gpu-box` sglang on :30000 when you enable that machine)
 3. Tailscale-reachable Ollama hosts as compatibility fallback
 4. cloud only when explicitly opted in and a workflow truly needs it
-
-The GPU rig's sglang lane is the preferred remote self-hosted lane; TurboQuant on llama.cpp remains the preferred local lane.
-Ollama remains available where it materially improves compatibility or tool reliability.
 
 ## Canonical Repo Surfaces
 
 These are the maintained source surfaces in this repo:
 
-- `opencode/`
-- `vscode/`
-- `mcp-server/`
-- `scripts/`
+- `opencode/` — OpenCode-specialized copies of agents and skills. Canonical
+  source is `../xx-stack/runtime/`; `npm run drift:check` is the gate.
+- `mcp-server/` — symlink to `../xx-stack/mcp-server`
+- `scripts/` — symlink to `../xx-stack/scripts`
 - `setup.sh`
 - `setup-opencode.sh`
-- `setup-vscode.sh`
 - `README.md`
 - `REPO-LAYERS.md`
 - `MAINTAINER-RUNBOOK.md`
 
-`opencode/` is the single canonical in-repo stack source.
 `.opencode/` exists only as a compatibility shim for runtime discovery that still expects that path.
 
 For layer details and maintainer guidance, see [REPO-LAYERS.md](REPO-LAYERS.md).
@@ -89,7 +83,7 @@ For common runtime failures and recovery steps, see [MAINTAINER-RUNBOOK.md](MAIN
 For the baked-in canonical stack surfaces themselves:
 
 - `./setup-opencode.sh` installs or links the repo stack into OpenCode
-- `./setup-vscode.sh` installs or links the repo stack into VS Code and Copilot surfaces
+
 
 ## Requirements
 

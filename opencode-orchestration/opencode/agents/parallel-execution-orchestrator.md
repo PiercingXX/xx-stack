@@ -72,7 +72,7 @@ Fallback evidence is mandatory:
 2. Prefer healthy `tailscale-openai-compatible` tier hosts for independent slices, then the `tailscale-ollama` tier as fallback when it is enabled.
 3. Saturate all healthy hosts up to each host `capacity` before queueing additional work on a single host.
 4. Run same-wave slices concurrently unless there is a real dependency.
-5. Use `route_task_with_watchdog` for critical tasks that need failover.
+5. Use `route_task` with `mode: "watchdog"` for critical tasks that need failover.
 
 Before cutting the slice list you hand to `route_parallel_tasks`, read `packs/rules/the-pragmatic-programmer/the-pragmatic-programmer.nano.md` — ~570 tokens, the nano tier because this lane already carries the plan payload plus per-slice state. Its orthogonality rule is what decides whether two slices are genuinely independent or will collide inside the same wave.
 

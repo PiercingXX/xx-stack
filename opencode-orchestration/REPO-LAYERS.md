@@ -17,7 +17,6 @@ Stack core is the reusable runtime and orchestration layer.
 It includes:
 
 - canonical OpenCode agent and skill surfaces
-- VS Code mirror surfaces
 - MCP tooling and routing infrastructure
 - setup and registry sync automation
 - reliability, supervisor, and watchdog machinery
@@ -26,13 +25,11 @@ It includes:
 Current root-level paths that belong to stack core:
 
 - `opencode/`
-- `vscode/`
 - `mcp-server/`
 - `evals/`
 - `scripts/`
 - `setup.sh`
 - `setup-opencode.sh`
-- `setup-vscode.sh`
 - `hooks/`
 - `.xxignore`
 - `README.md`
@@ -93,12 +90,10 @@ Edit these when making real source changes.
 ### Stack core canonical sources
 
 - `opencode/`
-- `vscode/`
-- `mcp-server/src/`
-- `scripts/`
+- `mcp-server/src/` — actually `../xx-stack/mcp-server/src/` (symlink)
+- `scripts/` — actually `../xx-stack/scripts/` (symlink)
 - `setup.sh`
 - `setup-opencode.sh`
-- `setup-vscode.sh`
 - `README.md`
 - `REPO-LAYERS.md`
 - `MAINTAINER-RUNBOOK.md`
@@ -203,7 +198,7 @@ After meaningful stack-core changes, run at least:
 ```bash
 bash -n setup.sh
 bash -n setup-opencode.sh
-bash -n setup-vscode.sh
+
 bash -n scripts/lib/setup-config-helpers.sh
 bash -n scripts/lib/setup-endpoint-helpers.sh
 bash -n scripts/lib/setup-hardware-helpers.sh

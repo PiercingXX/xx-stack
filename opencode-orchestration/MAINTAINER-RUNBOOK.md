@@ -20,7 +20,7 @@ Run these before chasing deeper failure modes:
 ```bash
 bash -n setup.sh
 bash -n setup-opencode.sh
-bash -n setup-vscode.sh
+
 cd mcp-server && npm test
 cd mcp-server && npm run design-pack:verify-layout
 cd mcp-server && npm run harness:ci
@@ -127,6 +127,6 @@ When a fix touches routing or reliability behavior:
 3. Re-run the full validation baseline before calling the cleanup complete again.
 
 Agent metadata (model, temperature, steps, permissions, descriptions) is canonical in
-`opencode/config.json`. The `opencode/agents/*.md` and `vscode/agents/*.agent.md` files
+`opencode/config.json`. The `opencode/agents/*.md` files
 are mirrors for prompt content and discovery; when you change an agent's model or
 description, update `opencode/config.json` first and sync the mirrors to match.
