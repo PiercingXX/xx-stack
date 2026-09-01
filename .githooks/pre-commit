@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-DRIFT_SCRIPT="$REPO_ROOT/xx-stack/scripts/check-stack-source-drift.mjs"
+DRIFT_SCRIPT="$REPO_ROOT/scripts/check-stack-source-drift.mjs"
 
 if [ ! -f "$DRIFT_SCRIPT" ]; then
     echo "[xx-stack] pre-commit: drift script not found at $DRIFT_SCRIPT — skipping." >&2

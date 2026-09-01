@@ -1,1 +1,1 @@
-../../xx-stack/runtime/dangerous-patterns.txt
+../../runtime/dangerous-patterns.txt

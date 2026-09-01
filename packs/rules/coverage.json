@@ -1,0 +1,458 @@
+{
+  "$comment": "Coverage map: every entry in runtime/skills/ (each directory, including the design symlink) and runtime/agents/ (each .md file) appears exactly once. books: [] is an explicit decision that no vendored rule book changes that entry's decisions — absence is a decision, not an omission. defaultTier is the no-budget-info fallback (usually mini; nano for entries that run on tight/fast lanes). Hosts and routers may pick a different tier from the target lane's context window; treat defaultTier as a recommendation, consistent with the headless contract. Enforced by scripts/check-rules-coverage.mjs (npm run rules:check).",
+  "entries": [
+    {
+      "id": "audit-security",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "benchmark-performance",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "designing-data-intensive-applications",
+          "defaultTier": "mini",
+          "why": "Regression benchmarking decisions (what to measure, percentiles, load realism) are DDIA's core territory."
+        }
+      ]
+    },
+    {
+      "id": "compose-supervisor-prompts",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "debug-investigate",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "working-effectively-with-legacy-code",
+          "defaultTier": "mini",
+          "why": "Characterization-before-change and seam-finding discipline matches the skill's iron law of investigation before fixes."
+        }
+      ]
+    },
+    {
+      "id": "deploy-ship",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "mini",
+          "why": "Production release gates, stability patterns, and failure-mode thinking are Release It!'s subject."
+        }
+      ]
+    },
+    {
+      "id": "design",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "design-prototype",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "diagnose-stack",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "ensemble-consensus",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "ideate-product",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "Dig-for-real-requirements, tracer bullets, and prototype honesty rule on the decisions this interview actually makes: whether an answer is a durable need or a restated solution, and whether the wedge is one thin end-to-end slice or a pile of disconnected pieces. Replaces domain-driven-design-distilled, whose Core/Supporting/Generic subdomain split was the only one of its 16 decision rules with a decision point in a file that has no code and no model — the remaining 15 are aggregates, entities, value objects, domain events, context mapping, and integration styles."
+        }
+      ]
+    },
+    {
+      "id": "interrogate-plan",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "ops-canary",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "nano",
+          "why": "Rollback triggers and stability signals from Release It!; nano because the canary loop runs on a tight monitoring cadence with little context to spare."
+        }
+      ]
+    },
+    {
+      "id": "ops-deploy-land",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "mini",
+          "why": "Post-deploy verification, canary rollout, and failure response map directly to Release It!'s operations rules."
+        }
+      ]
+    },
+    {
+      "id": "orchestrate-platform-routing",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "designing-data-intensive-applications",
+          "defaultTier": "mini",
+          "why": "Delegating work across heterogeneous lanes is a distributed-systems trade-off problem; DDIA's rules about partitioning, latency, and failure domains apply."
+        }
+      ]
+    },
+    {
+      "id": "plan-architecture",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "a-philosophy-of-software-design",
+          "defaultTier": "mini",
+          "why": "Deep modules, information hiding, and complexity budgets are the vocabulary this skill's decision sections need."
+        },
+        {
+          "id": "clean-architecture",
+          "defaultTier": "mini",
+          "why": "Dependency direction and boundary placement complement APoSD at the system-structure level (complementary per upstream matrix)."
+        }
+      ]
+    },
+    {
+      "id": "plan-autoreview",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "The engineering review lens of the planning gauntlet needs broad engineering judgment, not the code-level smell catalog the seed suggested (Refactoring); this skill reviews plans, not code."
+        }
+      ]
+    },
+    {
+      "id": "plan-decision-map",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "plan-design",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "a-philosophy-of-software-design",
+          "defaultTier": "mini",
+          "why": "Narrow but real: applies at Step 3 (component library) and the audit's consistency check only, where a component's props and variants are a module interface and APoSD's deep-module, small-surface, and no-knobs rules decide whether a fifth variant is a distinction or a configuration knob. The rest of the skill — design tokens, WCAG 2.1 AA criteria, style-guide writing — is outside the book's subject, and the instruction in the skill says so, so a token- or accessibility-only lane can skip it knowingly. Kept rather than emptied because no vendored book covers visual design or accessibility, and clean-code (overlapping — pick one) is strictly worse on interface design."
+        }
+      ]
+    },
+    {
+      "id": "plan-mechanism-contract",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "Tracer-bullet and orthogonality rules are what make a locked mechanism contract falsifiable: one thin end-to-end change, and the verifier stays a separate surface."
+        }
+      ]
+    },
+    {
+      "id": "plan-feature",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "domain-driven-design-distilled",
+          "defaultTier": "mini",
+          "why": "Scoping a feature spec benefits from bounded-context and ubiquitous-language discipline; the distilled variant is the single DDD book vendored."
+        }
+      ]
+    },
+    {
+      "id": "reflect-retrospective",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "release-doc-sync",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "research-deep",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "review-code",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "refactoring",
+          "defaultTier": "mini",
+          "why": "Code-smell vocabulary and safe-change discipline back the review's defect hunting; chosen over refactoring-guru (overlapping — pick one) for its judgment rules rather than transform catalog."
+        }
+      ]
+    },
+    {
+      "id": "rewrite-rust-oneshot",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "working-effectively-with-legacy-code",
+          "defaultTier": "mini",
+          "why": "Behavior-preserving migration of an existing app is the legacy-code problem: characterization tests before change."
+        },
+        {
+          "id": "refactoring-guru",
+          "defaultTier": "nano",
+          "why": "Mechanical transform catalog for the long non-stop rewrite loop; nano keeps it cheap inside an already context-heavy run. Complementary with WELC per upstream matrix."
+        }
+      ]
+    },
+    {
+      "id": "safety-guardrails",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "setup-observability",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "mini",
+          "why": "Transparency and monitoring-as-a-feature rules define what an observability foundation must expose."
+        }
+      ]
+    },
+    {
+      "id": "test-qa",
+      "kind": "skill",
+      "books": [
+        {
+          "id": "code-complete",
+          "defaultTier": "mini",
+          "why": "Construction-quality and testing chapters cover journey validation and defect triage; chosen over clean-code (overlapping — pick one) for its broader testing coverage."
+        }
+      ]
+    },
+    {
+      "id": "train-model-knowledge-injection",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "write-docs",
+      "kind": "skill",
+      "books": []
+    },
+    {
+      "id": "architect",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "a-philosophy-of-software-design",
+          "defaultTier": "mini",
+          "why": "Failure-aware system design needs APoSD's complexity and deep-module rules."
+        },
+        {
+          "id": "clean-architecture",
+          "defaultTier": "mini",
+          "why": "Boundary and dependency-direction rules complement APoSD for system-level plans (complementary per upstream matrix)."
+        }
+      ]
+    },
+    {
+      "id": "build",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "clean-code",
+          "defaultTier": "mini",
+          "why": "Primary execution agent writing code benefits from naming/function/size rules; chosen over code-complete (overlapping — pick one) as the tighter code-writing rule set."
+        }
+      ]
+    },
+    {
+      "id": "completion-judge",
+      "kind": "agent",
+      "books": []
+    },
+    {
+      "id": "deep-thinker",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "a-philosophy-of-software-design",
+          "defaultTier": "mini",
+          "why": "Decision-grade architecture and risk plans lean on APoSD's strategic-vs-tactical programming and complexity rules."
+        }
+      ]
+    },
+    {
+      "id": "design-engineer",
+      "kind": "agent",
+      "books": []
+    },
+    {
+      "id": "execution-orchestrator",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "Broad execution judgment (tracer bullets, good-enough software, DRY) for the plan-exec wrapper, per seed mapping."
+        }
+      ]
+    },
+    {
+      "id": "fast-build",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "clean-code",
+          "defaultTier": "nano",
+          "why": "Fast lane for small obvious tasks; nano because this lane runs with minimal steps and tight context. Chosen over code-complete (overlapping — pick one)."
+        }
+      ]
+    },
+    {
+      "id": "incident-commander",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "mini",
+          "why": "Triage, containment, and rollback coordination is Release It!'s stability and recovery territory."
+        }
+      ]
+    },
+    {
+      "id": "model-trainer",
+      "kind": "agent",
+      "books": []
+    },
+    {
+      "id": "parallel-execution-orchestrator",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "nano",
+          "why": "Same broad execution judgment as execution-orchestrator; nano because the parallel wrapper already carries plan payload plus per-slice state in context."
+        }
+      ]
+    },
+    {
+      "id": "performance-engineer",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "designing-data-intensive-applications",
+          "defaultTier": "mini",
+          "why": "Regression detection and cost/perf trade-offs draw on DDIA's measurement and scalability rules."
+        }
+      ]
+    },
+    {
+      "id": "ping",
+      "kind": "agent",
+      "books": []
+    },
+    {
+      "id": "plan",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "mini",
+          "why": "Broad default for the primary planning agent, per seed mapping."
+        }
+      ]
+    },
+
+    {
+      "id": "qa-lead",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "code-complete",
+          "defaultTier": "mini",
+          "why": "Journey validation and regression-risk judgment backed by Code Complete's quality and testing rules; chosen over clean-code (overlapping — pick one)."
+        }
+      ]
+    },
+    {
+      "id": "reasoning-fast",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "the-pragmatic-programmer",
+          "defaultTier": "nano",
+          "why": "Lower-latency reasoning lane; nano fits the tight context budget this lane exists for."
+        }
+      ]
+    },
+    {
+      "id": "release-manager",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "release-it",
+          "defaultTier": "mini",
+          "why": "CI enforcement, deploy gates, and post-deploy verification are Release It!'s core rules."
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "working-effectively-with-legacy-code",
+          "defaultTier": "mini",
+          "why": "Blast-radius mapping is WELC's effect-tracing rule under another name — trace effects outward from the change point through values, calls, fields, outputs, collaborators, interception points, and pinch points — and its legacy-risk list gives read-only findings a vocabulary for which risks are worth reporting. Replaces the-pragmatic-programmer, whose own why admitted it was a broad seed default: this agent never writes code, and TPP's applicable content was two coupling rules plus a restatement of the agent's existing citation rule. Same book as debug-investigate, for the same investigate-before-change reason."
+        }
+      ]
+    },
+
+    {
+      "id": "reviewer",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "refactoring",
+          "defaultTier": "mini",
+          "why": "Code-smell vocabulary and safe-change judgment for pre-merge review; chosen over refactoring-guru (overlapping — pick one)."
+        }
+      ]
+    },
+    {
+      "id": "rust-rewrite",
+      "kind": "agent",
+      "books": [
+        {
+          "id": "working-effectively-with-legacy-code",
+          "defaultTier": "mini",
+          "why": "Full one-shot rewrites of existing apps are the legacy-code problem: characterize behavior before changing it."
+        },
+        {
+          "id": "refactoring-guru",
+          "defaultTier": "nano",
+          "why": "Transform catalog for the compile/test repair loop; nano keeps it cheap in a 40-step context-heavy run. Complementary with WELC per upstream matrix."
+        }
+      ]
+    }
+  ]
+}

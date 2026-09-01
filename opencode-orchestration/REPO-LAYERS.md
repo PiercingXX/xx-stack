@@ -44,7 +44,7 @@ If a change affects local-vs-remote routing, OpenCode install behavior, platform
 Content packs are domain payloads used by agents and skills, but they are not the runtime itself.
 
 The current repo has two content packs: design and rules. Both reach this
-component through the `packs/` symlink to `../xx-stack/packs`, so they are one
+component through the `packs/` symlink to `../packs`, so they are one
 copy shared with the core component, not a second set.
 
 The design pack includes:
@@ -90,8 +90,8 @@ Edit these when making real source changes.
 ### Stack core canonical sources
 
 - `opencode/`
-- `mcp-server/src/` — actually `../xx-stack/mcp-server/src/` (symlink)
-- `scripts/` — actually `../xx-stack/scripts/` (symlink)
+- `mcp-server/src/` — actually `../mcp-server/src/` (symlink)
+- `scripts/` — actually `../scripts/` (symlink)
 - `setup.sh`
 - `setup-opencode.sh`
 - `README.md`

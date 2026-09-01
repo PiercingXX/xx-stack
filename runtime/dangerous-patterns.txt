@@ -1,0 +1,62 @@
+# xx-stack fleet-wide catastrophic-command denylist
+#
+# One POSIX-ERE pattern per line. Lines starting with '#' and blank lines are
+# ignored. Patterns are searched (unanchored) against the full command line —
+# the command followed by its arguments, joined with single spaces.
+#
+# Patterns must stay valid in BOTH POSIX ERE (grep -E, for shell-side host
+# adapters) and JavaScript RegExp (execution_policy.ts). Stick to the shared
+# subset: no \s, \b, \d, [[:class:]], lookarounds, or (?:...) groups. Use
+# [ \t], [0-9], [A-Za-z] instead.
+#
+# Design rule: block ONLY irreversible/catastrophic operations. Destructive-
+# but-recoverable commands stay allowed, because over-blocking kills agent
+# usefulness. Examples that must stay ALLOWED: `git clean`, `rm -rf
+# node_modules`, `git reset --hard` (reflog-recoverable), `dd` to a file,
+# `mkfs` on an image file.
+#
+# HONEST LIMIT: this is a seatbelt against accidents, not a sandbox against a
+# malicious agent. Quoting, variable indirection, encoding, or a shell
+# one-liner can evade any regex list. Real containment requires OS-level
+# sandboxing; this list only stops the common catastrophic slips.
+#
+# Consumers:
+#   - mcp-server/src/execution_policy.ts — deny layer evaluated AHEAD
+#     of the exec allowlist. Fails open on parse errors (a broken list must
+#     never brick the server); broken lines are skipped and flagged.
+#   - Host adapters (opencode-orchestration/hooks, hooks/examples) — pre-exec
+#     check via `grep -E -f` against this file. See hooks/README.md.
+#
+# CI: any change to this file must be paired with an update to
+# scripts/check-dangerous-patterns.mjs (block/allow cases + pinned
+# content hash). `npm run guardrails:check` fails until both move together.
+
+# --- rm with a recursive flag targeting root, home, cwd dots, or everything -
+# ./ and ../ delete the working directory's contents while looking harmless,
+# so they are token-bounded alternatives like / and ~.
+rm[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*-[A-Za-z]*[rR][A-Za-z]*[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*(/\*?|\.\.?/?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
+rm[ \t]+(.*[ \t])?--recursive([ \t].*)?[ \t](/\*?|\.\.?/?|~(/\*?)?|\$(HOME|\{HOME\})(/\*?)?|/home(/[A-Za-z0-9._-]+)?/?|/root/?)([ \t]|$)
+
+# --- repo deletion: recursive rm of the git history --------------------------
+rm[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*-[A-Za-z]*[rR][A-Za-z]*[ \t]+(--?[A-Za-z0-9=_-]+[ \t]+)*(\./)?\.git/?([ \t]|$)
+
+# --- raw device destruction: dd/mkfs/wipefs/shred onto a block device --------
+# dd to a file (of=disk.img) and of=/dev/null stay allowed.
+(^|[ \t;&|(/])dd[ \t]+(.*[ \t])?of=/dev/(sd[a-z]|hd[a-z]|vd[a-z]|xvd[a-z]|nvme[0-9]|mmcblk[0-9]|md[0-9]|dm-[0-9]|disk[0-9]|loop[0-9])
+(^|[ \t;&|(/])mkfs(\.[A-Za-z0-9]+)?[ \t]+(.*[ \t])?/dev/
+(^|[ \t;&|(/])wipefs[ \t]+(.*[ \t])?(-[A-Za-z]*a[A-Za-z]*|--all)([ \t].*)?[ \t]/dev/
+(^|[ \t;&|(/])shred[ \t]+(.*[ \t])?/dev/
+
+# --- fork bomb (classic ":" form) --------------------------------------------
+:\(\)[ \t]*\{[ \t]*:[ \t]*\|[ \t]*:[ \t]*&[ \t]*\}[ \t]*;[ \t]*:
+
+# --- pipe-a-download-into-a-shell installers ---------------------------------
+(curl|wget)([ \t][^|]*)?\|[ \t]*(sudo[ \t]+)?(ba|da|z|k|fi)?sh([ \t]|$)
+
+# --- history rewrite on a shared remote --------------------------------------
+# --force-with-lease intentionally stays allowed (it is the safer variant).
+git[ \t]+push[ \t]+(.*[ \t])?--force([ \t]|$)
+git[ \t]+push[ \t]+(.*[ \t])?-[A-Za-z]*f[A-Za-z]*([ \t]|$)
+
+# --- remote repo deletion -----------------------------------------------------
+gh[ \t]+repo[ \t]+delete([ \t]|$)

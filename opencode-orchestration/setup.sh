@@ -243,7 +243,7 @@ export_skills_for_opencode "$OPENCODE_RUNTIME_SKILLS_DIR" "$OPENCODE_SKILLS_DIR"
 # Regenerate the registry from inventory.json first, so setup can never install
 # a stale topology. Required when inventory.json exists: installing the stale
 # committed registry over a newer inventory quietly forks the topology.
-XX_STACK_GENERATOR="$REPO_DIR/../xx-stack/scripts/generate-registries.mjs"
+XX_STACK_GENERATOR="$REPO_DIR/../scripts/generate-registries.mjs"
 if [ -f "$REPO_DIR/../inventory.json" ] && [ -f "$XX_STACK_GENERATOR" ]; then
   echo "Regenerating platform registry from inventory.json..."
   node "$XX_STACK_GENERATOR" || note_required_step_failure "generate_registries_from_inventory"

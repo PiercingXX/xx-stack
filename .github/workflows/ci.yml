@@ -35,7 +35,7 @@ jobs:
       # inventory answers — the template on CI — before checking them; without
       # this the check compares template output against machine-local files.
       - name: Render registries from the answering inventory
-        run: node xx-stack/scripts/generate-registries.mjs
+        run: node scripts/generate-registries.mjs
 
       - name: Verify generated registries match inventory.json
         run: npm run inventory:check
@@ -98,10 +98,10 @@ jobs:
       # answers, so render the registries from it first and the suite's strict
       # sync assertions compare like with like.
       - name: Render registries from the answering inventory
-        run: node xx-stack/scripts/generate-registries.mjs
+        run: node scripts/generate-registries.mjs
 
       - name: Build and test
-        run: npm --prefix xx-stack/mcp-server test
+        run: npm --prefix mcp-server test
 
   design-pack:
     name: Design Pack
@@ -121,7 +121,7 @@ jobs:
         run: npm run design:catalog
 
       - name: Fail if the catalog is stale
-        run: git diff --exit-code -- xx-stack/packs/design/DESIGN-CATALOG.md
+        run: git diff --exit-code -- packs/design/DESIGN-CATALOG.md
 
       - name: Run golden task checks
         run: npm run design:golden

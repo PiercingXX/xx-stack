@@ -47,7 +47,7 @@ authority. To see what exists, list the directory.
 - bridge that turns stdin prompts into a single `opencode run [message]` invocation
 
 `mcp-server/`
-- symlink to `xx-stack/mcp-server`: TypeScript MCP server source, tests, and
+- symlink to `mcp-server`: TypeScript MCP server source, tests, and
   package scripts. One copy shared with the core component.
 
 `hooks/`
@@ -73,7 +73,7 @@ runs.
 
 ## Content Packs
 
-`packs/` is a symlink to `xx-stack/packs` — one copy shared with the core
+`packs/` is a symlink to `packs` — one copy shared with the core
 component.
 
 Design pack:

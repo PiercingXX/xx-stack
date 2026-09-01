@@ -21,7 +21,7 @@ You don't need a GPU, a second machine, or Tailscale for this part.
 git clone https://github.com/piercingxx/xx-stack
 cd xx-stack
 npm install
-npm --prefix xx-stack/mcp-server run build
+npm --prefix mcp-server run build
 ```
 
 Ask it where a task should run:
@@ -33,7 +33,7 @@ printf '%s\n%s\n%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}' \
   '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"route_task","arguments":{"description":"implement a small bug fix and run tests"}}}' \
-  | node xx-stack/mcp-server/dist/index.js
+  | node mcp-server/dist/index.js
 ```
 
 It answers with a decision:
@@ -61,13 +61,13 @@ consider cloud without being asked.
   "mcpServers": {
     "xx-stack": {
       "command": "node",
-      "args": ["/absolute/path/to/xx-stack/xx-stack/mcp-server/dist/index.js"]
+      "args": ["/absolute/path/to/xx-stack/mcp-server/dist/index.js"]
     }
   }
 }
 ```
 
-Works with any MCP-compatible host — OpenCode, VS Code, or your own client.
+Works with any MCP-compatible host — OpenCode or your own client.
 Your agent gets routing, health checks, supervision, and evidence-lane tools, plus 2
 optional lifecycle hooks behind `XX_STACK_HOOK_TOOLS=1`. Every tool declares
 whether it only reads, whether it can destroy state, and whether it reaches the
@@ -199,7 +199,7 @@ export XX_STACK_ALLOW_CLOUD=1
 ## What you need
 
 - **Node.js 20+**
-- **An MCP-compatible host** — OpenCode, VS Code, or your own client
+- **An MCP-compatible host** — OpenCode or your own client
 - **At least one model** — Ollama on your own machine is enough to start
 - Python 3.11+ only if you use `hermes-orchestration/`
 
@@ -211,14 +211,14 @@ Most people only need the first one.
 
 | Folder | What it is |
 |---|---|
-| **[`xx-stack/`](xx-stack/)** | The core: the MCP server, agent contracts, skills, a design pack with 151 design systems, and a rules pack of context-tiered rule books. |
-| **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode / VS Code. Only needed if you use those. |
+| **git root** (`mcp-server/`, `runtime/`, `scripts/`, `packs/`, `hooks/`) | The core: the MCP server, agent contracts, skills, a design pack with 151 design systems, and a rules pack of context-tiered rule books. |
+| **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode. Only needed if you use OpenCode. |
 | **[`hermes-orchestration/`](hermes-orchestration/)** | Standalone Python service for routing raw inference across GPU boxes. Optional. |
 
-`xx-stack/` is the source of truth. The second folder symlinks into it for the
-shared machinery — `mcp-server/`, `scripts/`, and `packs/` are one copy, not two
-— but `opencode/agents/` and `opencode/skills/` are full copies, deliberately
-specialised for OpenCode and kept structurally in step by
+The git root is the source of truth. The OpenCode folder symlinks into it for
+the shared machinery — `mcp-server/`, `scripts/`, `packs/`, and `hooks/` are
+one copy, not two — but `opencode/agents/` and `opencode/skills/` are full
+copies, deliberately specialised for OpenCode and kept structurally in step by
 `npm run drift:check`. See [CONTRIBUTING.md](CONTRIBUTING.md) for how that works.
 
 ---
@@ -262,15 +262,15 @@ The two content packs are vendored third-party material and keep their own
 licenses. The tooling built over them (the design-system lint gate, the HTML
 quality gate, the rule engine) is ours and is MIT with everything else:
 
-- **`xx-stack/packs/rules`** — MIT, from
+- **`packs/rules`** — MIT, from
   [ciembor/agent-rules-books](https://github.com/ciembor/agent-rules-books).
   License text at
-  [`packs/rules/LICENSE`](xx-stack/packs/rules/LICENSE); provenance at
-  [`packs/rules/manifest.json`](xx-stack/packs/rules/manifest.json).
-- **`xx-stack/packs/design`** — Apache-2.0 and MIT, from three source projects.
+  [`packs/rules/LICENSE`](packs/rules/LICENSE); provenance at
+  [`packs/rules/manifest.json`](packs/rules/manifest.json).
+- **`packs/design`** — Apache-2.0 and MIT, from three source projects.
   License texts at
-  [`packs/design/licenses/`](xx-stack/packs/design/licenses) plus
-  [`packs/design/workflow-skills/guizang-ppt/LICENSE`](xx-stack/packs/design/workflow-skills/guizang-ppt/LICENSE);
+  [`packs/design/licenses/`](packs/design/licenses) plus
+  [`packs/design/workflow-skills/guizang-ppt/LICENSE`](packs/design/workflow-skills/guizang-ppt/LICENSE);
   per-subtree provenance, including what could not be established, at
-  [`packs/design/manifest.json`](xx-stack/packs/design/manifest.json) and
-  [`packs/design/README.md`](xx-stack/packs/design/README.md).
+  [`packs/design/manifest.json`](packs/design/manifest.json) and
+  [`packs/design/README.md`](packs/design/README.md).

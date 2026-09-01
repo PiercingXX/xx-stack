@@ -1,5 +1,5 @@
 {
-  "//": "Root config exists so eslint's type-aware rules have a project to resolve against. Actual builds run from xx-stack/mcp-server/tsconfig.json.",
+  "//": "Root config exists so eslint's type-aware rules have a project to resolve against. Actual builds run from mcp-server/tsconfig.json.",
   "compilerOptions": {
     "target": "ES2022",
     "module": "Node16",
@@ -12,6 +12,6 @@
     "noEmit": true,
     "allowJs": false
   },
-  "include": ["xx-stack/mcp-server/src"],
+  "include": ["mcp-server/src"],
   "exclude": ["**/node_modules", "**/dist"]
 }

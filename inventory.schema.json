@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/piercingxx/xx-stack/inventory.schema.json",
   "title": "xx-stack inventory",
-  "description": "Single source of truth for hardware, network reachability, and installed inference runtimes. Consumed by xx-stack/scripts/generate-registries.mjs, which fans it out to the TypeScript platform registries and the Hermes lane config.",
+  "description": "Single source of truth for hardware, network reachability, and installed inference runtimes. Consumed by scripts/generate-registries.mjs, which fans it out to the TypeScript platform registries and the Hermes lane config.",
   "type": "object",
   "required": ["version", "policy", "machines"],
   "additionalProperties": false,

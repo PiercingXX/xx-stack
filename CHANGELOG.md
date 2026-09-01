@@ -7,13 +7,36 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.66.0] — 2026-09-01
+
+- **Flattened the nested `xx-stack/` core** to the git root (`mcp-server/`,
+  `runtime/`, `scripts/`, `packs/`, `hooks/`). OpenCode still reaches them
+  through symlinks.
+
+- **Prompt MCP tools folded into the `compose-supervisor-prompts` skill.**
+  `supervisor_emit_continuation_prompt`, `supervisor_emit_handoff_prompt`,
+  `review_to_continuation`, and `agent_memory_compaction_prompt` are no longer
+  registered. The TypeScript formatters remain for tests. Opt into a five-tool
+  routing surface with `XX_STACK_TOOL_SURFACE=routing` (default remains `full`).
+
+- **Tests compile to `dist-test/`**, not `dist/`. Production `index.js` no
+  longer exports `__testExports`. Logs prefer `~/.config/xx-stack/logs` and
+  fall back to the pre-1.66 OpenCode path.
+
+- **Clone-only MCP package.** Dropped `bin` / `files` / `prepack`. Duplicate
+  `design-pack:*` / `stack:*` scripts removed from `mcp-server/package.json`.
+
+- **ESLint 10.** Hermes client switch is documented and scripted
+  (`hermes-orchestration/scripts/switch-hermes-to-proxy.sh`); dry-run unless
+  `--apply`. Defect register split to `MANUAL-DEFECTS.md`.
+
 ## [1.65.0] — 2026-09-01
 
 - **Removed the shipped VS Code product surface.** `adapters/`,
   `opencode-orchestration/vscode/`, both `setup-vscode.sh` scripts, component
   `.vscode/mcp.json` files, nested Copilot instruction files, and
   `sync-vscode-agents.mjs` are gone. OpenCode remains the install layer.
-  Canonical agent/skill source is still `xx-stack/runtime/`;
+  Canonical agent/skill source is still `runtime/`;
   `npm run drift:check` is the mirror gate. Pre-commit now runs that check.
 
 - **MCP tool surface folded.** Specialized routing
@@ -288,7 +311,7 @@ components and the routing server was made publishable.
   direct-execution guard compared paths lexically, so `main()` never ran and the
   process exited 0 — indistinguishable from a crash to callers.
 - **The registry was unreachable by its own server.** Lookup only searched
-  `.opencode/`, so `xx-stack/runtime/platforms.json` was never found.
+  `.opencode/`, so `runtime/platforms.json` was never found.
 - Two competing host-discovery paths, one silently overwriting the other;
   824 lines of superseded shell removed.
 - Invalid `endpointFamily: "catalog"` in the shipped registry.
@@ -305,6 +328,7 @@ components and the routing server was made publishable.
 - No private network addresses, tailnet names, or absolute home paths in the
   repository.
 
-[1.65.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.65.0
-[1.64.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.64.0
-[1.63.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.63.0
+[1.66.0]: https://github.com/PiercingXX/xx-stack/releases/tag/v1.66.0
+[1.65.0]: https://github.com/PiercingXX/xx-stack/releases/tag/v1.65.0
+[1.64.0]: https://github.com/PiercingXX/xx-stack/releases/tag/v1.64.0
+[1.63.0]: https://github.com/PiercingXX/xx-stack/releases/tag/v1.63.0

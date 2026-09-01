@@ -2,8 +2,9 @@
 
 > One of the three top-level components of this repo (see the [root README](../README.md)).
 > `hermes-orchestration/` is self-contained: a Python control plane with no
-> dependency on the TypeScript stack in `xx-stack/` or `opencode-orchestration/`.
-> Python 3.11+ and the standard library are the only requirements.
+> dependency on the TypeScript stack (`mcp-server/`, `runtime/`) or
+> `opencode-orchestration/`. Python 3.11+ and the standard library are the only
+> requirements.
 
 This directory is a runnable self-hosted-first orchestration control plane for
 inference over Tailscale, with cloud fallback only after self-hosted lanes are
@@ -50,7 +51,7 @@ Then update `lanes.ollama.model` in `config/orchestration.json` to a model that
 `ollama list` actually shows (currently assumed: `qwen3-coder:30b`), set
 `lanes.ollama.enabled` to `true`, and re-enable the matching
 `example-gpu-box-ollama` host in the `tailscale-ollama` tier of
-`../xx-stack/runtime/platforms.json` (generated from `inventory.example.json`).
+`../runtime/platforms.json` (generated from `inventory.example.json`).
 
 ## What is implemented
 
@@ -173,12 +174,32 @@ The proxy is what lets the rest of the repo use Hermes without knowing anything
 about your lanes. Both shipped platform registries already carry a
 `hermes-proxy` host in the `local` tier, **disabled by default**:
 
-- `../xx-stack/runtime/platforms.json`
+- `../runtime/platforms.json`
 - `../opencode-orchestration/opencode/platforms.json`
 
 Start the proxy (above), then set `enabled: true` on that host. xx-stack will
 route to `http://127.0.0.1:8180` and Hermes applies its own self-hosted-first
 lane policy behind it.
+
+### Pointing the Hermes *client* at the proxy
+
+Interactive Hermes is configured in `~/.hermes/config.yaml`, which is outside
+this repo and often already points at a custom OpenAI-compatible URL. Do not
+overwrite that file unattended.
+
+The proxy speaks `chat/completions` at `http://127.0.0.1:8180/v1`. A backup-
+then-switch helper lives at `scripts/switch-hermes-to-proxy.sh`:
+
+```bash
+# print the planned edit; writes nothing
+./scripts/switch-hermes-to-proxy.sh
+
+# timestamped backup, then set base_url to the proxy
+./scripts/switch-hermes-to-proxy.sh --apply
+```
+
+Start the proxy first (`python3 scripts/hermes_orchestrator.py serve`, or the
+systemd unit). Rollback is `cp ~/.hermes/config.yaml.bak.<timestamp> ~/.hermes/config.yaml`.
 
 The host advertises a single virtual model, `hermes-auto` — Hermes resolves the
 real backend per request, so xx-stack sees one stable lane rather than needing

@@ -268,7 +268,6 @@
           "task_create",
           "supervisor_start_session",
           "supervisor_tick",
-          "supervisor_emit_continuation_prompt",
           "supervisor_complete_session",
           "supervisor_abort_session"
         ]
@@ -295,7 +294,6 @@
           "task_create",
           "supervisor_start_session",
           "supervisor_tick",
-          "supervisor_emit_continuation_prompt",
           "supervisor_complete_session",
           "supervisor_abort_session"
         ]
