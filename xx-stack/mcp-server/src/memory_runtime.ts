@@ -189,7 +189,7 @@ export function buildMemoryResyncHelperPrompt(
     `Diff summary: added=${drift.added}, removed=${drift.removed}, changed=${drift.changed}.`,
     "If current MEMORY.md is authoritative, run agent_memory_snapshot_sync with direction='capture'.",
     "If SNAPSHOT.md is authoritative, run agent_memory_snapshot_sync with direction='apply'.",
-    "After syncing, run agent_memory_snapshot_status again to confirm driftDetected=false.",
+    "After syncing, run agent_memory_get again and confirm snapshot.driftDetected=false.",
   ].join(" ");
 }
 

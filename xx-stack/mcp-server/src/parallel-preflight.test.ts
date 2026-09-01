@@ -116,8 +116,8 @@ function registryDocument(endpoint: string): Record<string, unknown> {
         priority: 1,
         hosts: [
           {
-            id: "gpu-rig",
-            label: "GPU rig",
+            id: "example-gpu-box",
+            label: "Example GPU box",
             provider: "ollama",
             endpoint,
             executionPolicy: { maxParallelSlices: 2, maxConcurrentModels: 2 },

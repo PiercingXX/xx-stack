@@ -51,10 +51,8 @@ the build. The runtime dependency surface is deliberately small — the MCP
 server ships two direct dependencies, `@modelcontextprotocol/sdk` and `zod`.
 
 Dev dependencies are updated by Dependabot but are **not** a build gate, for the
-reason given under "out of scope". One known dev-only advisory is open: `eslint`
-is pinned at `8.57.1`, which is end-of-life and pulls a `js-yaml` with two high
-advisories. Clearing it means migrating to ESLint 9 flat config, which is
-tracked as ordinary maintenance work rather than as a vulnerability.
+reason given under "out of scope". Dev-only linting uses ESLint 9. High/critical advisories against shipped
+dependencies still fail CI.
 
 ## Threat model in one paragraph
 

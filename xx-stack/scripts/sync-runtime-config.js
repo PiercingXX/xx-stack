@@ -38,7 +38,8 @@ const source = JSON.parse(fs.readFileSync(sourceConfigPath, "utf8"));
 const config = JSON.parse(fs.readFileSync(targetConfigPath, "utf8"));
 const OLLAMA_LOCAL_PROVIDER = PROVIDER_IDS.ollamaLocal;
 const OLLAMA_REMOTE_PROVIDER = PROVIDER_IDS.ollamaRemote;
-const OLLAMA_5090_PROVIDER = PROVIDER_IDS.ollama5090;
+// Legacy provider id some user configs still carry. Not a shipped constant.
+const OLLAMA_5090_PROVIDER = "ollama-5090";
 const LLAMA_CPP_LOCAL_PROVIDER = PROVIDER_IDS.llamaCppLocal;
 const SGLANG_REMOTE_PROVIDER = PROVIDER_IDS.sglangRemote;
 const CLOUD_TIER = TIER_IDS.cloud;

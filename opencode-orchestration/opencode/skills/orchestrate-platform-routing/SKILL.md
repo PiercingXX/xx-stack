@@ -52,7 +52,8 @@ Do not use it for direct implementation, direct review, or deterministic repo in
 - Read `packs/rules/designing-data-intensive-applications/designing-data-intensive-applications.mini.md` before assigning slices and route against its rules. A delegation map is a distributed system: ~1,700 tokens on partitioning, latency and tail behavior, failure domains, and safety under retry and replay. It decides which slices survive a host vanishing mid-run and which must not be split across hosts at all.
 - Prefer `local` for edit-heavy coding, quick verification, offline work, and controller planning and orchestration — it is first in `selectionPolicy.defaultOrder`.
 - Prefer `tailscale-openai-compatible` for architecture, long-context synthesis, and heavier delegated reasoning, and for throughput-batched parallel slices.
-- Prefer `tailscale-ollama` for delegated subagent work and parallel overflow when the OpenAI-compatible lane is unavailable or the task needs resident-model inspection.
+- Prefer `tailscale-ollama` for delegated subagent work and parallel slices when the OpenAI-compatible lane is unavailable or the task needs resident-model inspection.
+- Specialized planners live on `route_task` as `mode`: `watchdog` (liveness + failover), `architect-editor` (reasoning + fast pair), `competitive` (N diverse lanes), `review` (reviewer-model diversity).
 - Prefer `cloud` only when it adds required capability, resilience, or quality that self-hosted tiers cannot supply, and only when `selectionPolicy.cloudEscalation.optIn` is true or `XX_STACK_ALLOW_CLOUD=1` is set. Cloud is never an implicit fallback.
 - If multiple slices target the same host with different models, schedule them sequentially unless the host is explicitly marked safe for concurrent multi-model use.
 

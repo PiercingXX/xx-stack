@@ -140,14 +140,39 @@ export function registerAgentMemoryTools(server: McpServer): void {
       await ensureMemoryEntrypoint(path);
       const content = await readMemoryEntrypoint(path);
 
+      const snapshotPath = getAgentMemorySnapshotPath(agentId, resolvedScope, resolvedCwd);
+      const metaPath = getAgentMemorySnapshotMetaPath(agentId, resolvedScope, resolvedCwd);
+      const snapshotContent = await readMemoryEntrypoint(snapshotPath);
+      const meta = await readSnapshotMeta(metaPath);
+      const memoryHash = hashMemoryContent(content);
+      const snapshotHash = hashMemoryContent(snapshotContent);
+      const diff = lineDiffSummary(snapshotContent, content);
+      const lastSyncedMemoryHash =
+        typeof meta?.lastSyncedMemoryHash === "string" ? meta.lastSyncedMemoryHash : null;
+      const driftDetected = memoryHash !== snapshotHash;
+      const snapshot = {
+        status: driftDetected ? "drifted" : "synced",
+        memoryPath: path,
+        snapshotPath,
+        metaPath,
+        memoryHash,
+        snapshotHash,
+        lastSyncedMemoryHash,
+        driftDetected,
+        diff,
+        helperPrompt: driftDetected
+          ? buildMemoryResyncHelperPrompt(agentId, resolvedScope, diff)
+          : null,
+      };
+
       if (tokenBudget === undefined) {
-        // Default path: byte-identical to the pre-tokenBudget behavior.
         return jsonContent({
           status: "ok",
           agentId,
           scope: resolvedScope,
           path,
           content,
+          snapshot,
         });
       }
 
@@ -158,6 +183,7 @@ export function registerAgentMemoryTools(server: McpServer): void {
         scope: resolvedScope,
         path,
         content: recall.content,
+        snapshot,
         recall: {
           tokenBudget: recall.tokenBudget,
           tokensEstimated: recall.tokensEstimated,
@@ -216,63 +242,6 @@ export function registerAgentMemoryTools(server: McpServer): void {
         scope: resolvedScope,
         path,
         appended: entry.trim(),
-      });
-    }
-  );
-
-  server.registerTool(
-    "agent_memory_snapshot_status",
-    {
-      description: "Check whether agent memory and snapshot are in sync and report drift",
-      inputSchema: {
-        agentId: z.string().min(1).describe("Agent identifier"),
-        scope: z.enum(["user", "project", "local"]).optional().describe("Memory scope override"),
-        cwd: z
-          .string()
-          .optional()
-          .describe(
-            "Optional project root for project/local scope; must lie under the server launch directory unless XX_STACK_ALLOW_ANY_CWD=1"
-          ),
-      },
-      annotations: toolAnnotations("agent_memory_snapshot_status"),
-    },
-    async ({ agentId, scope, cwd }) => {
-      const runtime = await loadMergedAgentRuntimeConfig();
-      const { resolvedScope, resolvedCwd } = resolveAgentContext(agentId, scope, cwd, runtime);
-      const blocked = cwdOutOfBoundsResult(agentId, resolvedScope, resolvedCwd);
-      if (blocked) return blocked;
-      const memoryPath = getAgentMemoryEntrypoint(agentId, resolvedScope, resolvedCwd);
-      const snapshotPath = getAgentMemorySnapshotPath(agentId, resolvedScope, resolvedCwd);
-      const metaPath = getAgentMemorySnapshotMetaPath(agentId, resolvedScope, resolvedCwd);
-
-      await ensureMemoryEntrypoint(memoryPath);
-      const memoryContent = await readMemoryEntrypoint(memoryPath);
-      const snapshotContent = await readMemoryEntrypoint(snapshotPath);
-      const meta = await readSnapshotMeta(metaPath);
-
-      const memoryHash = hashMemoryContent(memoryContent);
-      const snapshotHash = hashMemoryContent(snapshotContent);
-      const diff = lineDiffSummary(snapshotContent, memoryContent);
-      const lastSyncedMemoryHash =
-        typeof meta?.lastSyncedMemoryHash === "string" ? meta.lastSyncedMemoryHash : null;
-      const driftDetected = memoryHash !== snapshotHash;
-      const helperPrompt = driftDetected
-        ? buildMemoryResyncHelperPrompt(agentId, resolvedScope, diff)
-        : null;
-
-      return jsonContent({
-        status: driftDetected ? "drifted" : "synced",
-        agentId,
-        scope: resolvedScope,
-        memoryPath,
-        snapshotPath,
-        metaPath,
-        memoryHash,
-        snapshotHash,
-        lastSyncedMemoryHash,
-        driftDetected,
-        diff,
-        helperPrompt,
       });
     }
   );

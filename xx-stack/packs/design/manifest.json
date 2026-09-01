@@ -7,7 +7,7 @@
     "tooling": "curl + md5sum; GitHub trees API for upstream layout",
     "auditedFileCount": 482,
     "limitation": "Comparison is against each upstream's current default branch, not against the tree as it stood when this pack was vendored. Files recorded as `modified` may differ because of local edits, upstream drift since vendoring, or both; where the audit inspected the diff, the cause is stated.",
-    "limitationScope": "As of the 2026-08-03 re-vendor this limitation NO LONGER APPLIES to design-systems/ or craft/. Both are now pinned to a named upstream commit (see each subtree's `detail.vendoring` / `detail.vendoredAtCommit`), so 'has this drifted?' is answerable by diffing against the pin rather than against a moving branch. It still applies to workflow-skills/ and design-skills/, neither of which is pinned."
+    "limitationScope": "As of 2026-09-01 every vendored subtree is pinned. design-systems/ at e1c277c, craft/ at dceac12, design-skills/ at f631a09, workflow-skills/ at e1c277c. Local edits remain recorded per-subtree; the pin is the upstream commit to diff against, not a claim of byte-identity."
   },
   "sources": [
     {
@@ -248,6 +248,8 @@
       "primarySource": "awesome-design-skills",
       "license": "MIT",
       "detail": {
+        "vendoredAtCommit": "f631a09b4fcc0166f2e2c1a8c81906ef680c57e8",
+        "vendoring": "Pinned 2026-09-01 to the audit head already recorded on sources/awesome-design-skills. This pack vendors 57 of the 67 skills upstream published at that commit; 7 slugs present here are absent from that head (dropped or renamed upstream after our snapshot). Do not re-vendor without preserving those 7 and the enterprise older-text divergence.",
         "byteIdenticalToUpstreamHead": {
           "SKILL.md": 49,
           "DESIGN.md": 49
@@ -292,6 +294,8 @@
       "primarySource": "open-design",
       "license": "Apache-2.0, except workflow-skills/guizang-ppt/ which is MIT",
       "detail": {
+        "vendoredAtCommit": "e1c277c59361bfde1ac681e7bd8d9d4d370ada94",
+        "vendoring": "Pinned 2026-09-01 to the same open-design commit as design-systems/. Local edits are recorded in skillMdModifiedByUs and must not be reverted by a naive re-vendor.",
         "upstreamPath": "nexu-io/open-design design-templates/<slug>/",
         "allSlugsPresentUpstream": true,
         "byteIdenticalToUpstreamHead": [
@@ -630,7 +634,7 @@
           },
           "bindingProvenance": "Every binding above is upstream's at dceac12, for the same slug, transcribed unchanged. saas-landing's pre-existing list gained `laws-of-ux` to match. The 19 unbound skills have no upstream binding and were left unbound rather than guessed — absence is a decision here, the way packs/rules/coverage.json records explicit empty entries. Note these bindings are resolved against SKILL.md bodies roughly three months behind upstream; taking the binding line without the rest of the drift is deliberate.",
           "resolution": "Selection is a budget decision against the target lane's context window, surfaced in the agent's reasoning. Nothing in the MCP server injects craft sections — the same position packs/rules takes with nano/mini/full.",
-          "check": "scripts/check-craft-references.mjs asserts every slug named by an od.craft.requires resolves to craft/<slug>.md or appears in craft/FUTURE_SECTIONS.md. Upstream's contract, reimplemented (their `pnpm lint:craft` assumes a pnpm monorepo). NOT yet wired into `npm run verify` — that needs a package.json edit outside this change's scope."
+          "check": "scripts/check-craft-references.mjs asserts every slug named by an od.craft.requires resolves to craft/<slug>.md or appears in craft/FUTURE_SECTIONS.md. Upstream's contract, reimplemented (their `pnpm lint:craft` assumes a pnpm monorepo). Wired as `npm run design:craft-refs` in `verify` and CI."
         },
         "shelfWare": "None among the 11 vendored rulebooks — all are required by at least one skill, including laws-of-ux (5 skills) and form-validation (1), which Task 30 flagged as candidates to skip if unrequired. One shipped section IS unrequired and that is deliberate: design-intent.md, authored here, is bound to no skill for the reason recorded in its `requirability` field. check-craft-references.mjs therefore reports `craft sections shipped: 12` with design-intent named in the not-required NOTE. That NOTE is the expected steady state, not drift.",
         "staleUpstreamForwardReference": "FUTURE_SECTIONS.md lists `motion-discipline` as a planned forward reference, but the shipped equivalent is animation-discipline and upstream's own README says so. That slug will never resolve to a file and check-craft-references.mjs will accept it indefinitely. NOT removed: FUTURE_SECTIONS.md is one of the 13 vendored files, and deleting one line would open an Apache-2.0 4(b) modified set that is currently empty in order to fix a stale entry that costs nothing at runtime. Recorded here and in craft/XX-STACK-NOTES.md instead. The other two entries, pixel-discipline and typographic-rhythm, are genuinely unshipped and unaffected."

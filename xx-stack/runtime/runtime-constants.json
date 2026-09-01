@@ -8,7 +8,6 @@
   "hosts": {
     "localWorkstation": "local-workstation",
     "exampleGpuBox": "example-gpu-box",
-    "testBenchArchlinux": "test-bench-archlinux",
     "localOpenAiCompatible": "local-openai-compatible",
     "tailscaleOpenAiCompatiblePrimary": "tailscale-openai-compatible-primary",
     "hermesProxy": "hermes-proxy"
@@ -16,7 +15,6 @@
   "providers": {
     "ollamaLocal": "ollama-local",
     "ollamaRemote": "ollama",
-    "ollama5090": "ollama-5090",
     "llamaCppLocal": "llama-cpp-local",
     "sglangRemote": "sglang-remote",
     "localAiLocal": "localai-local",

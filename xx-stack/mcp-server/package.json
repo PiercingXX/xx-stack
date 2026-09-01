@@ -1,6 +1,6 @@
 {
   "name": "@xx-stack/mcp-server",
-  "version": "1.64.0",
+  "version": "1.65.0",
   "description": "MCP server for xx-stack platform routing — multi-provider inventory, health checks, task routing, and supervision",
   "main": "dist/index.js",
   "bin": {
@@ -63,7 +63,10 @@
     "typescript": "^6.0.3"
   },
   "files": [
-    "dist/",
+    "dist/*.js",
+    "dist/*.d.ts",
+    "!dist/*.test.js",
+    "!dist/*.test.d.ts",
     "runtime-constants.json",
     "README.md"
   ]

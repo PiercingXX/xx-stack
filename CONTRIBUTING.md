@@ -62,8 +62,8 @@ authority.
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook runs `npm run agents:check` to verify the VS Code agent
-mirrors have not drifted from the canonical contracts.
+The pre-commit hook runs `npm run drift:check` to verify the OpenCode copies
+have not drifted from `xx-stack/runtime/`.
 
 ## Repository Structure
 
@@ -106,12 +106,11 @@ you add a CLI entrypoint, add it to that list explicitly.
 
 `npm run lint` covers `.ts`, `.mjs`, and `.js`. The scripts under
 `xx-stack/scripts/` are a deliberate mix of ESM (`.mjs`) and CommonJS (`.js`) —
-see the `//type` note in the root `package.json` — so `.eslintrc.json` gives
+see the `//type` note in the root `package.json` — so `eslint.config.mjs` gives
 them their own overrides: the default parser (they are not in `tsconfig.json`'s
-program), `sourceType` split by extension, and `no-require-imports` off for the
-CommonJS half. The vendored design pack (`xx-stack/packs/**`) is in
-`ignorePatterns` alongside the OpenCode pack copy; it is upstream content, not
-ours to restyle.
+program), `sourceType` split by extension. The vendored design pack
+(`xx-stack/packs/**`) is ignored alongside the OpenCode pack copy; it is
+upstream content, not ours to restyle.
 
 Lint must be **clean of errors**. Warnings are allowed but should not grow.
 `npm run lint` currently reports **0 errors and 0 warnings**.
@@ -145,53 +144,28 @@ Full procedure in MANUAL §4 and §12. Two rules a PR is rejected for missing:
 
 ### Agent Development
 
-Canonical agent contracts live in `xx-stack/runtime/agents/` (and, for the
-OpenCode-specialized surface, `opencode-orchestration/opencode/agents/`). Both
-editor mirrors are **generated — never hand-edit them**:
-
-| Canonical source | Generated mirror |
-|---|---|
-| `xx-stack/runtime/agents/` | `xx-stack/adapters/agents/` |
-| `opencode-orchestration/opencode/agents/` | `opencode-orchestration/vscode/agents/` |
+Canonical agent contracts live in `xx-stack/runtime/agents/`. The
+OpenCode-specialized copies live in `opencode-orchestration/opencode/agents/`
+and are gated by `npm run drift:check`.
 
 1. Update the canonical agent `<name>.md`
-2. Register the agent in that component's `config.json`
-3. Run `npm run agents:sync` to regenerate the mirrors
-4. Test with your MCP-compatible host
-
-`npm run agents:check` derives the expected mirror set for **each component** by
-reading its agent directory, so a new agent fails the check until step 3 is
-done. If the agent deliberately gets no editor mirror — a health probe, a
-compatibility alias — add it to that component's `NOT_MIRRORED` in
-`xx-stack/scripts/sync-vscode-agents.mjs` **with a reason**. There is no third
-option: the check will not quietly skip it. `*.nano.md` variants are derived
-tiers, not agents, and are covered by `npm run nano:check` instead.
-
-The generated mirror carries the canonical body verbatim plus `name`,
-`description`, and `tools`. It deliberately drops the source's `model:` pin:
-those are OpenCode provider ids that the VS Code / Copilot surface cannot
-resolve.
-
-Tool lists for a new mirror are derived from the agent's `permission` block
-(`edit: deny` drops `editFiles`, `bash: deny` drops `runCommands`). Add an entry
-to `TOOL_OVERRIDES` in the same script only if the agent needs something the
-permissions do not imply, such as `findTestFailures`.
+2. Register the agent in `xx-stack/runtime/config.json`
+3. Mirror it into `opencode-orchestration/opencode/agents/` and register it
+   there too
+4. `npm run drift:check` then `npm run nano:check` if you touched a nano tier
 
 ### Skill Development
 
 1. Create `xx-stack/runtime/skills/<name>/SKILL.md`
 2. Register it in `xx-stack/runtime/SKILLS.md`
 3. Mirror it into `opencode-orchestration/opencode/skills/<name>/SKILL.md`
-4. Add adapter surfaces only when a downstream host requires them
+4. Add a `packs/rules/coverage.json` entry
 
 Skill mirrors are copies, not symlinks, and are **not** generated — so
 `npm run drift:check` gates them. It compares names *and content*, normalizing
 only the deliberate deltas (`compatibility:`, `model:` pins and the pinned-lane
-`description:` tail, `runtime/`→`opencode/` and `adapters/`→`vscode/` path
-rewrites, and OpenCode's nested `skill:` permission syntax). The same check
-covers `xx-stack/adapters/skills/` against
-`opencode-orchestration/vscode/skills/`, which are hand-maintained on both
-sides.
+`description:` tail, `runtime/`→`opencode/` path rewrites, and OpenCode's nested
+`skill:` permission syntax).
 
 Anything else that differs is drift, and canonical wins: resync the mirror.
 Only if a divergence is genuinely deliberate, add it to `KNOWN_DELTAS` in

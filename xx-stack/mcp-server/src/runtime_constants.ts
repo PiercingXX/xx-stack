@@ -12,7 +12,6 @@ type RuntimeConstants = {
   hosts: {
     localWorkstation: string;
     exampleGpuBox: string;
-    testBenchArchlinux: string;
     localOpenAiCompatible: string;
     tailscaleOpenAiCompatiblePrimary: string;
     hermesProxy: string;
@@ -20,7 +19,6 @@ type RuntimeConstants = {
   providers: {
     ollamaLocal: string;
     ollamaRemote: string;
-    ollama5090: string;
     llamaCppLocal: string;
     sglangRemote: string;
     localAiLocal: string;

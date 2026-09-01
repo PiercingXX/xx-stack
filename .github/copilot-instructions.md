@@ -11,12 +11,15 @@ Three components at the top level:
   (`runtime/agents/`), skills (`runtime/skills/`), the routing MCP server
   (`mcp-server/`), shared tooling (`scripts/`), and the design content pack
   (`packs/design/`). Host-agnostic.
-- **`opencode-orchestration/`** — the OpenCode / VS Code install layer. Its
-  `mcp-server/`, `scripts/`, and `packs/` are **symlinks into `../xx-stack/`**,
-  not copies. Edit at the real path.
+- **`opencode-orchestration/`** — the OpenCode install layer. Its
+  `mcp-server/`, `scripts/`, `packs/`, and `hooks/` are **symlinks into
+  `../xx-stack/`**, not copies. Edit at the real path. `opencode/agents` and
+  `opencode/skills` are specialized copies gated by `npm run drift:check`.
 - **`hermes-orchestration/`** — standalone Python control plane for routing
   inference across self-hosted lanes over Tailscale. No dependency on the
   TypeScript stack.
+
+There is no shipped VS Code / Copilot product surface.
 
 ## Key Files
 
@@ -38,24 +41,22 @@ off. Never add a cloud code path that bypasses it.
 ## Commands
 
 ```bash
-npm run verify          # full gate: layout + agent sync + all tests
-npm test                # MCP server suite (58 tests)
-npm run hermes:test     # Hermes control plane (25 tests)
+npm run verify          # full gate: layout, drift, lint, tests
+npm test                # MCP server suite
+npm run hermes:test     # Hermes control plane
 npm run layout:verify   # component layout and compatibility symlinks
-npm run lint            # ESLint over TypeScript sources
-npm run agents:sync     # regenerate VS Code agent mirrors
+npm run lint            # ESLint over TypeScript and scripts
 npm run design:catalog  # regenerate the design system catalog
 ```
 
 ## Conventions
 
-- Canonical agent contracts live in `xx-stack/runtime/agents/`;
-  `xx-stack/adapters/agents/` are **generated** — edit the runtime files and run
-  `npm run agents:sync`
+- Canonical agent contracts live in `xx-stack/runtime/agents/`. The OpenCode
+  copies under `opencode-orchestration/opencode/agents/` are specialized, not
+  generated — `npm run drift:check` is the gate.
 - Prettier is not applied to `xx-stack/packs/` (vendored upstream content)
 - Keep hostnames, IPs, and absolute paths out of committed files; use
   placeholders and document the substitution
-- Generated files stay out of git
 - Respect `.xxignore` for repo-local context exclusions
 
 ## Requirements

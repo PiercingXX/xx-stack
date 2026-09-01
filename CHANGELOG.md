@@ -7,6 +7,38 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.65.0] — 2026-09-01
+
+- **Removed the shipped VS Code product surface.** `adapters/`,
+  `opencode-orchestration/vscode/`, both `setup-vscode.sh` scripts, component
+  `.vscode/mcp.json` files, nested Copilot instruction files, and
+  `sync-vscode-agents.mjs` are gone. OpenCode remains the install layer.
+  Canonical agent/skill source is still `xx-stack/runtime/`;
+  `npm run drift:check` is the mirror gate. Pre-commit now runs that check.
+
+- **MCP tool surface folded.** Specialized routing
+  (`watchdog` / `architect-editor` / `competitive` / `review`) is `route_task`
+  with a `mode` argument. Live model catalogs, hardware detection, and
+  compatibility probes are optional `include` flags on `check_health`.
+  `agent_list_profiles` now returns validation findings;
+  `agent_preflight` filters a tool set; `agent_memory_get` reports snapshot
+  drift. Removed as tools: `score_candidates`, `supervisor_run_self_test`,
+  `build_coordinator_contract`, `agent_filter_tools`,
+  `agent_validate_profiles`, `agent_memory_snapshot_status`, and the old
+  specialized routing/observability names. The `xx` CLI is clone-only
+  (`node …/dist/index.js`); the package is not published.
+
+- **Dropped `planning` and `researcher` compatibility aliases.** Use `plan`
+  and `research`. `ping` remains.
+
+- **Hermes orchestrator split** into `scripts/hermes_lib/` (`lanes`,
+  `inventory`, `routing`, `safety`, `bench`, `proxy`, `commands`).
+  `import hermes_orchestrator as ho` is unchanged.
+
+- **ESLint 9** flat config. Example topology leftover `ollama-5090` /
+  `test-bench-archlinux` constants removed. Design-skills and workflow-skills
+  pinned. Duplicate LICENSE/hooks copies collapsed.
+
 - **Evidence lanes, generations, canaries, and QD-lite.** A finding store
   (`finding_record`, `finding_list`, `generation_open`, `generation_close`,
   `generation_status`) records results as confirmed / incubator / diagnostic.
@@ -273,5 +305,6 @@ components and the routing server was made publishable.
 - No private network addresses, tailnet names, or absolute home paths in the
   repository.
 
+[1.65.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.65.0
 [1.64.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.64.0
 [1.63.0]: https://github.com/piercingxx/xx-stack/releases/tag/v1.63.0

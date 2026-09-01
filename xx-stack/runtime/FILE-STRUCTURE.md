@@ -30,9 +30,6 @@ This file is a navigation map, not a full product overview.
 `scripts/opencode-stdin-runner.mjs`
 - bridge that turns stdin prompts into a single `opencode run [message]` invocation
 
-`adapters/`
-- adapter-specific agent and prompt mirrors
-
 `mcp-server/`
 - TypeScript MCP server source, tests, and package scripts
 - finding store (confirmed / incubator / diagnostic lanes, generation close) lives beside the task and supervisor stores under `~/.config/opencode/`
@@ -42,9 +39,6 @@ This file is a navigation map, not a full product overview.
 
 `setup-opencode.sh`
 - optional host adapter setup script
-
-`setup-vscode.sh`
-- optional editor adapter setup and MCP wiring
 
 ## Design Content Pack
 

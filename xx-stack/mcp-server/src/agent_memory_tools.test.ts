@@ -105,7 +105,6 @@ test("every filesystem-reaching memory tool enforces the same boundary", async (
       const base = { agentId: "boundary-agent", scope: "project", cwd: outside };
       for (const [tool, args] of [
         ["agent_memory_get", base],
-        ["agent_memory_snapshot_status", base],
         ["agent_memory_compaction_prompt", { ...base, maxEntries: 3 }],
         ["agent_memory_snapshot_sync", base],
         ["agent_memory_mark_superseded", { ...base, entryIds: ["e1"], supersededBy: "rule-1" }],

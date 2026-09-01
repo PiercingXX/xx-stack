@@ -376,17 +376,7 @@
         }
       ]
     },
-    {
-      "id": "planning",
-      "kind": "agent",
-      "books": [
-        {
-          "id": "the-pragmatic-programmer",
-          "defaultTier": "mini",
-          "why": "Compatibility alias for plan; mirrors plan's mapping."
-        }
-      ]
-    },
+
     {
       "id": "qa-lead",
       "kind": "agent",
@@ -431,17 +421,7 @@
         }
       ]
     },
-    {
-      "id": "researcher",
-      "kind": "agent",
-      "books": [
-        {
-          "id": "working-effectively-with-legacy-code",
-          "defaultTier": "mini",
-          "why": "Compatibility alias for research; mirrors research's mapping."
-        }
-      ]
-    },
+
     {
       "id": "reviewer",
       "kind": "agent",

@@ -64,21 +64,8 @@ The shipped registry and model recommendations are examples. Replace endpoints, 
 
 ## Setup
 
-The repository keeps both integration helper scripts requested for downstream use:
-
-- `./setup-opencode.sh`
-- `./setup-vscode.sh`
-
-They remain optional adapters. The repo itself should be treated as host-agnostic source material rather than tied to a single editor or local model runtime.
-
-For VS Code specifically, this repo now ships the workspace surfaces directly:
-
-- `.vscode/mcp.json` wires the local `xx-stack-platform-routing` MCP server for this workspace
-- `.github/copilot-instructions.md` gives Copilot the canonical runtime guidance for this repo
-
-For downstream repositories, run `./setup-vscode.sh <target-project>` from this repo to install the same MCP wiring, VS Code prompt mirrors, and Copilot instructions into that workspace.
-
-The VS Code agent mirrors under `adapters/agents/` are generated from `runtime/agents/` by `scripts/sync-vscode-agents.mjs`. Treat the runtime files as the canonical source and regenerate the mirrors instead of hand-editing them.
+`./setup-opencode.sh` is an optional OpenCode host adapter. The repo itself
+should be treated as host-agnostic source material.
 
 By default, xx-stack should execute on whatever host model or lane invoked it. Routing and platform inventory are override mechanisms for capability gaps, reliability problems, or explicit delegation, not the default execution path.
 
@@ -101,16 +88,10 @@ check as an argument, so there is one invocation per component:
 npm run layout:verify
 ```
 
-Verify VS Code agent mirrors are in sync with canonical runtime agents:
+Verify the OpenCode copies have not drifted from `runtime/`:
 
 ```bash
-npm run agents:check
-```
-
-Regenerate VS Code agent mirrors from canonical runtime agents:
-
-```bash
-npm run agents:sync
+npm run drift:check
 ```
 
 Regenerate the design catalog:
@@ -196,22 +177,14 @@ To add an agent:
 ## Host Model Inheritance
 
 - Canonical agent contracts should not hardcode a provider or model unless a host truly requires one.
-- VS Code adapter prompts should inherit the current chat model.
 - OpenCode installs should clear legacy repo-managed per-agent model pins so host-native inheritance actually takes effect.
 - Use routing or explicit model overrides only when the active caller model cannot satisfy the task.
-
-## VS Code Status
-
-- Preferred host for interactive xx-stack use: VS Code + Copilot Chat
-- Required workspace surfaces: `.vscode/mcp.json` and `.github/copilot-instructions.md`
-- Downstream install path: `./setup-vscode.sh <target-project>`
-- Headless OpenCode remains fail-fast only unless `xx-stack/scripts/run-opencode-loop.mjs` preflight passes
 
 To add a skill:
 
 1. Create `runtime/skills/<name>/SKILL.md`.
 2. Register it in `runtime/SKILLS.md`.
-3. Add adapter surfaces only when required by a downstream host.
+3. Mirror it into `opencode-orchestration/opencode/skills/<name>/SKILL.md`.
 
 To add content-pack material:
 

@@ -3,10 +3,10 @@
 Local-first routing and supervision for AI coding agents, exposed over
 [MCP](https://modelcontextprotocol.io).
 
-50 tools covering platform inventory, health checks, task routing, agent
-profiles, supervision of long-running work, and evidence lanes, plus 2
+Routing, supervision, tasks, memory, and evidence tools, plus 2
 lifecycle hook tools (`_Stop`, `_PostCompact`) registered only when
-`XX_STACK_HOOK_TOOLS=1`.
+`XX_STACK_HOOK_TOOLS=1`. Specialized routing (watchdog, architect/editor,
+competitive, review) is `route_task` with a `mode` argument.
 
 **Cloud is off by default.** Routing never selects a cloud host unless you set
 `selectionPolicy.cloudEscalation.optIn` in your registry or export
@@ -20,8 +20,8 @@ Add to your MCP host config:
 {
   "mcpServers": {
     "xx-stack-platform-routing": {
-      "command": "npx",
-      "args": ["-y", "@xx-stack/mcp-server"]
+      "command": "node",
+      "args": ["/absolute/path/to/xx-stack/xx-stack/mcp-server/dist/index.js"]
     }
   }
 }
