@@ -196,7 +196,7 @@ const KNOWN_DELTAS = [
   // The one `open: true` entry this list carried — the design-system-pick
   // prompts disagreeing about `ollama` / `opencode` — was adjudicated rather
   // than waived. `git log --follow -p` showed d458c02 edited both copies in the
- / same commit: it removed `` from both (that was the de-branding) and
+  // same commit: it removed an AI-assistant brand slug from both (that was the de-branding) and
   // added `ollama`/`opencode` to the OpenCode copy only. The xx-stack copy was
   // simply missed, so it was a rotted list, not a deliberate omission — and
   // since both components resolve `packs/design` to the same directory, there

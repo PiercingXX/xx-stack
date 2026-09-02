@@ -1,6 +1,6 @@
 ---
 name: design-prototype
-description: AI-driven design artifact workflow. Builds web prototypes, mobile screens, decks, dashboards, and office docs using open-design skills and 151 brand design systems.
+description: AI-driven design artifact workflow. Builds web prototypes, mobile screens, decks, dashboards, and office docs using open-design skills and 149 brand design systems.
 compatibility: opencode
 metadata:
   source: open-design
@@ -110,7 +110,7 @@ Anything under 3/5: fix and rescore. Two passes is normal.
 ## Asset map
 
 ```
-packs/design/design-systems/  ← design content pack: 151 brand DESIGN.md files
+packs/design/design-systems/  ← design content pack: 149 brand DESIGN.md files
 packs/design/design-skills/   ← design content pack: 57 aesthetic SKILL.md + DESIGN.md pairs
 packs/design/workflow-skills/  ← canonical workflow skills (prototype/deck/document)
 opencode/skills/design/               ← compatibility shim for legacy consumers

@@ -7,6 +7,6 @@
     "gpt-4o": { "costPer1kInputTokens": 0.0025, "costPer1kOutputTokens": 0.01, "lane": "cloud" },
     "gpt-4o-mini": { "costPer1kInputTokens": 0.00015, "costPer1kOutputTokens": 0.0006, "lane": "cloud" },
     "gpt-4-turbo": { "costPer1kInputTokens": 0.01, "costPer1kOutputTokens": 0.03, "lane": "cloud" },
-    "gpt-3.5-turbo": { "costPer1kInputTokens": 0.0005, "costPer1kOutputTokens": 0.0015, "lane": "cloud" },
+    "gpt-3.5-turbo": { "costPer1kInputTokens": 0.0005, "costPer1kOutputTokens": 0.0015, "lane": "cloud" }
   }
 }

@@ -7,6 +7,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Dropped third-party editor, assistant, and chatbot brand files from
+  the design pack.** The pack no longer ships those product design systems,
+  placeholder ads, or cloud rate-table rows. Skippy stays.
+
 - **OpenCode host is a complete product surface.** `default_agent` is `build`,
   `shared_instructions.md` is loaded as host instructions, and
   `xx-stack-platform-routing` is declared in the shipped OpenCode config.

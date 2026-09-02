@@ -8,9 +8,9 @@ has to be true of them before they ship, and when the answer is not a chart.
 > Contrast); OKLab/OKLCH (Björn Ottosson, 2020) for perceptual ΔE;
 > Brettel/Viénot/Mollon CVD simulation; Cleveland & McGill 1984 (JASA 79)
 > on elementary perceptual tasks; Tufte's data-ink ratio. Threshold values
-> and the six-check procedure are the method used by a bundled coding-agent's bundled
-> `dataviz` skill, re-derived here rather than copied — see "Provenance"
-> at the foot of this file.
+> and the six-check procedure are the method used by a third-party
+> coding-agent's bundled `dataviz` skill, re-derived here rather than
+> copied — see "Provenance" at the foot of this file.
 
 ## Why this file exists: the pack contradicted itself
 
@@ -162,8 +162,8 @@ Related axis rules:
 ## Provenance
 
 The six-check procedure, the ΔE thresholds, the eight-slot ceiling and
-the three-slot all-pairs cap are the method used by the `dataviz` skill
-bundled with a bundled coding-agent (Anthropic), read at bundle version `2.1.232`.
+the three-slot all-pairs cap are the method used by a third-party
+coding-agent's bundled `dataviz` skill, read at bundle version `2.1.232`.
 
 That skill's **reference palette is deliberately not reproduced here.**
 Its hex values were run through its own validator during this file's

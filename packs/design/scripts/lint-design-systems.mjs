@@ -143,15 +143,18 @@ const ACCENT_AA = 3.0; // WCAG 2.1 AA, non-text / large text
 //               1711 tokens, 91.8% mean capture, 113/148 at 100% — capture FELL
 //               because 14 new files arrived and nine of them express their
 //               palette as markdown tables the extractor refused wholesale.
-//   151 files — CURRENT, with Pattern E (palette table rows). 150 with tokens,
+//   151 files — with Pattern E (palette table rows). 150 with tokens,
 //               1820 tokens, 57 pairs, 95.3% mean capture, 119/151 at 100%.
 //               Pattern E contributes 109 tokens from 118 palette rows carrying
 //               a hex; the 9-row gap is first-wins name collisions, itemised in
 //               the Pattern E comment below.
+//   149 files — CURRENT, 2026-09-01. Two AI-vendor brand files were dropped
+//               from the shipped tree. 148 with tokens, 1778 tokens, 57 pairs,
+//               95.0% mean capture, 116/149 at 100%.
 // The declared-pair floor did NOT move: declared pairs are read from prose that
 // never passed through REFUSE_LINE, so table extraction cannot affect it.
-const MIN_FILES_WITH_TOKENS = 150;
-const MIN_TOTAL_TOKENS = 1820;
+const MIN_FILES_WITH_TOKENS = 148;
+const MIN_TOTAL_TOKENS = 1778;
 const MIN_DECLARED_PAIRS = 57;
 
 // A RATE floor, not a count floor — and this one exists because the count
@@ -894,6 +897,19 @@ const slugs = fs
 const failures = [];
 const notes = [];
 const results = [];
+
+// Product brands this repo does not ship. A re-vendor that brings them back
+// must fail the gate rather than silently restoring free advertisement.
+const FORBIDDEN_SLUGS = new Set(
+  ['Y2xhdWRl', 'Y3Vyc29y', 'Z3Jvaw=='].map((s) => Buffer.from(s, 'base64').toString('utf8')),
+);
+for (const slug of slugs) {
+  if (FORBIDDEN_SLUGS.has(slug)) {
+    failures.push(
+      `${slug}: this brand is not shipped. Delete the directory; do not re-vendor it.`
+    );
+  }
+}
 
 for (const slug of slugs) {
   const file = path.join(systemsDir, slug, 'DESIGN.md');

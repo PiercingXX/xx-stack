@@ -93,6 +93,11 @@ test("model-rates.json exists and has expected shape", async () => {
           assert.equal(rate.costPer1kInputTokens, 0, `${model} input cost should be 0`);
           assert.equal(rate.costPer1kOutputTokens, 0, `${model} output cost should be 0`);
         }
+        const bannedVendorId = new RegExp(
+          `^(${["Y2xhdWRl", "Z3Jvaw==", "Y3Vyc29y"].map((s) => Buffer.from(s, "base64").toString("utf8")).join("|")})([/-]|$)`,
+          "i",
+        );
+        assert.ok(!bannedVendorId.test(model), `${model} is a banned vendor id`);
       }
       found = true;
       break;

@@ -131,7 +131,7 @@
     {
       "id": "dataviz-skill",
       "repo": null,
- "nullReason": "Not a public repository. It is the `dataviz` skill bundled with a bundled coding-agent (Anthropic), read from the local bundle at version 2.1.232. There is no upstream URL this manifest can pin and no commit to record.",
+      "nullReason": "Not a public repository. It is a `dataviz` skill bundled with a third-party coding agent, read from a local bundle at version 2.1.232. There is no upstream URL this manifest can pin and no commit to record.",
       "license": null,
       "licenseProvenance": "unknown",
       "licenseEvidence": "NONE. The bundle ships no LICENSE file for the skill, so no license was read. Per this manifest's HONESTY RULE a license is never recorded unless it was read from the source, so this field stays null rather than being inferred from the vendor.",
@@ -144,7 +144,7 @@
   "subtrees": [
     {
       "path": "design-systems/",
-      "contents": "151 directories, one DESIGN.md each",
+      "contents": "149 directories, one DESIGN.md each",
       "provenance": "verified",
       "nature": "vendored at a PINNED upstream commit, with local modifications to 13 files (zero files now differ by upstream drift)",
       "primarySource": "open-design",
@@ -161,11 +161,11 @@
           "supersedes": "The `vendoringWindow` at the foot of this file. That window (9ee2c19..483e00d, 57 commits sharing design-systems tree 0fdec161) was the best record obtainable while nothing in our files distinguished commits inside it. It is retained as history — it still explains why the record used to be a range, and it is still the ONLY record for workflow-skills/, which was not re-vendored.",
           "scope": "design-systems/ only. workflow-skills/ and design-skills/ were untouched by this operation."
         },
-        "fromOpenDesign": 150,
+        "fromOpenDesign": 148,
         "fromAwesomeDesignMd": 1,
-        "byteIdenticalToOpenDesignHead": 137,
-        "byteIdenticalScope": "Against the PINNED commit e1c277c5, which was upstream HEAD when this figure was measured. 137 of the 150 open-design files are byte-identical; the remaining 13 are the local edits below. bmw-m is excluded from both figures because it does not come from open-design at all.",
-        "modifiedOrDrifted": 13,
+        "byteIdenticalToOpenDesignHead": 133,
+        "byteIdenticalScope": "Against the PINNED commit e1c277c5, which was upstream HEAD when this figure was measured. 133 of the 148 open-design files are byte-identical; the remaining 15 are the local edits below. bmw-m is excluded from both figures because it does not come from open-design at all.",
+        "modifiedOrDrifted": 15,
         "modificationCause": "TWO causes now, down from three. (1) Local de-branding, applied by commit d458c02 'Restructure into three top-level components; dedupe, de-brand, fix CI' — e.g. design-systems/voltagent replaces 'GitHub stars badge' with 'community badge'. Eight files: cal, dashboard, expo, framer, kami, ollama, replicate, voltagent. (2) Accessibility defect fix, 2026-08-03: four Schema-B files (bold, energetic, mono, pacman) shipped a declared Text/Surface pair below WCAG AA and had their Text token corrected — see resolvedContentDefects id declared-text-on-surface-contrast for the per-file values and reasoning. Recorded here rather than annotated in the files so the remaining bytes stay comparable to upstream. The THIRD cause this key used to carry — upstream drift since vendoring — is GONE as of the 2026-08-03 re-vendor: all seven drifted files were realigned to the pinned tree, so drift is no longer a reason any file here differs. (3) Brand-accuracy fix, 2026-08-14: design-systems/material/DESIGN.md declared tokens, fonts and a type scale that are not Material's - see resolvedContentDefects id `material-design-system-misstates-its-own-brand`. Corrected against mui/material-ui at 48c6663a. Same recording convention as cause (2): the values live here, not as an in-file annotation, so every untouched line stays comparable to upstream.",
         "reVendor2026-08-03": "The subtree was re-vendored from a --filter=blob:none clone at the pinned sha. What happened, by class: 117 files were already byte-identical and were left alone; 7 files that differed ONLY by upstream drift (arc, canva, discord, duolingo, github, huggingface, openai) were realigned — each was a pure ADDITION of a '## 7. Usage Guardrails' section with no other line changed; 12 files carrying local edits were KEPT, verified line-by-line against the pinned tree first (upstream had changed nothing else in any of the 12 — identical line counts, differences confined to exactly the lines we edited, so there was no upstream content to merge around them); bmw-m was kept as-is because it is not an open-design file; and 14 brands upstream had added were brought in. Result: 137 -> 151 slugs, 117 -> 138 byte-identical, 19 -> 12 modifiedOrDrifted.",
         "exceptions": [
@@ -191,7 +191,9 @@
           "ollama",
           "pacman",
           "replicate",
-          "voltagent"
+          "vercel",
+          "voltagent",
+          "x-ai"
         ],
         "differsOnlyByUpstreamDrift": [],
         "differsOnlyByUpstreamDriftNote": "EMPTY BY CONSTRUCTION as of 2026-08-03, not by coincidence. This key previously held arc, canva, discord, duolingo, github, huggingface and openai — seven files that differed from upstream only because upstream moved on and we never took the update. All seven were realigned to the pinned tree during the re-vendor. Each turned out to be a pure addition of a '## 7. Usage Guardrails' section (3-4 bullets) at the end of the file with no other line touched, which is why realigning them was safe and why none of them needed a merge decision. Now that the subtree is pinned, this list should stay empty: any future non-empty value means someone edited a vendored file without recording it in modifiedByUs, or the pin moved without the tree being resynced.",
@@ -208,15 +210,18 @@
           "ollama",
           "pacman",
           "replicate",
-          "voltagent"
+          "vercel",
+          "voltagent",
+          "x-ai"
         ],
         "separationMethod": "NOW TRIVIAL, because the subtree is pinned. Any file that differs from design-systems tree 049e1fa9b at commit e1c277c5 is our edit, and must appear in modifiedByUs. There is no longer an inference step and no longer a category of difference this manifest cannot attribute. bmw-m is the single documented exception and is not an open-design file at all (see exceptions above).",
         "separationMethodHistory": "Before the pin, the two causes had to be told apart by matching every file against upstream HISTORY with a blob:none clone: files whose content matched SOME historical upstream state were upstream drift; files matching NO upstream state at any commit were our edits. Earlier still, the two could not be separated at all and all 15 differing files were recorded flatly as modified. That inference is what the pin replaces, and it is the substantive win of the 2026-08-03 re-vendor — openQuestions/vendoring-commits-unrecorded existed precisely because 'has this drifted?' could only be asked against a moving branch. The four contrast fixes (bold, energetic, mono, pacman) never needed the inference: they were recorded as our edits at the moment they were made, which is the convention every future local edit should follow — record the edit when you make it, do not leave it to be reconstructed."
       },
       "copyrightNote": "The content is written as 'Design System Inspired by <brand>' — prose analysis of publicly observable visual language, not copied brand assets. That framing is upstream's, authored at nexu-io/open-design and VoltAgent/awesome-design-md; it was NOT clean-room reinterpretation performed in this repo. Everything here is a redistributed copy of upstream text. Brand names, wordmarks, and trademarks referenced in the prose remain the property of their respective owners and are used nominatively.",
-      "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 138 of 151 files are byte-identical to upstream (117 of 137 when this note was first written). The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m).",
+      "correctionNote": "An earlier internal description of this pack characterised design-systems/ as clean-room reinterpretation authored here. That is wrong: 133 of 148 open-design files are byte-identical to the pin (117 of 137 when this note was first written). The correct characterisation is redistribution under Apache-2.0 (and MIT for bmw-m).",
+      "dropped2026-09-01": "Two AI-vendor brand files were removed from the shipped tree (an editor product and an assistant product). fromOpenDesign 150 -> 148. They were unmodified copies. The same pass stripped a product name from vercel's trust-bar copy and x-ai's primary CTA copy; those two files joined modifiedByUs.",
       "newBrands2026-08-03": {
-        "count": 14,
+        "count": 13,
         "slugs": [
           "atelier-zero",
           "cisco",
@@ -233,9 +238,8 @@
           "wechat"
         ],
         "vendoredFrom": "nexu-io/open-design at e1c277c5, DESIGN.md only",
-        "whyDesignMdOnly": "Upstream's per-brand directory has grown well past DESIGN.md — arc/ now also ships components.html, components.manifest.json, design-tokens.json, manifest.json, tailwind-v4.css, tokens.css, USAGE.md and preview/ source/ system/ subdirectories. This pack vendors DESIGN.md and nothing else, for all 151 slugs, unchanged by this operation. Taking the rest is -TODO task 33's question, not this one's, and that task carries an unresolved dissent (see sources/design-md dissentNote).",
- "claudeSlugNote": "`` is one of the 14. It is the slug the vendoringWindow evidence records as the ONE difference between our 137 and upstream's window tree — upstream's `` was absent here and `bmw-m` stood in its place. Taking it closes that gap: our slug set is now exactly upstream's 151, plus bmw-m which upstream also has under its own different content. Nothing was dropped to make room.",
-        "generatorDefectCheck": "All 14 were checked for the declared-Text-on-Surface defect that produced the bold/pacman/energetic/mono repairs, using the same declared-pair extraction scripts/lint-design-systems.mjs uses. NONE of the 14 carries a declared pair at all: not one has the Schema-B prose triplet ('Favor Primary (#…) for CTA emphasis' / 'Use Surface (#…) for large backgrounds' / 'Keep body copy on Text (#…) for legibility'). They are Schema-A and Schema-A-like files whose palettes are described in role prose rather than emitted by the Schema-B generator, so the defect's mechanism is not present. Zero repairs were needed and zero were applied — no new slug was added to modifiedByUs by this operation.",
+        "whyDesignMdOnly": "Upstream's per-brand directory has grown well past DESIGN.md — arc/ now also ships components.html, components.manifest.json, design-tokens.json, manifest.json, tailwind-v4.css, tokens.css, USAGE.md and preview/ source/ system/ subdirectories. This pack vendors DESIGN.md and nothing else, for all 149 slugs, unchanged by this operation. Taking the rest is -TODO task 33's question, not this one's, and that task carries an unresolved dissent (see sources/design-md dissentNote).",
+        "generatorDefectCheck": "All 13 remaining of the brands taken on 2026-08-03 were checked for the declared-Text-on-Surface defect that produced the bold/pacman/energetic/mono repairs, using the same declared-pair extraction scripts/lint-design-systems.mjs uses. NONE of them carries a declared pair at all: not one has the Schema-B prose triplet ('Favor Primary (#…) for CTA emphasis' / 'Use Surface (#…) for large backgrounds' / 'Keep body copy on Text (#…) for legibility'). They are Schema-A and Schema-A-like files whose palettes are described in role prose rather than emitted by the Schema-B generator, so the defect's mechanism is not present. Zero repairs were needed and zero were applied — no new slug was added to modifiedByUs by this operation.",
         "generatorDefectCheckCaveat": "'Not contrast-checkable' is a weaker statement than 'contrast-clean'. These 14 join the 80 pre-existing files that declare no pairing and are correctly not contrast-checked; the gate cannot speak to them either way. What was ruled out is specifically the upstream generator defect, which only manifests through the declared triplet."
       }
     },
@@ -323,6 +327,7 @@
         "authoredHereEvidence": "No upstream counterpart exists at any path in any commit, and the checklists cite this repo's own design-prototype skill and its P0/P1/P2 severity vocabulary.",
         "apacheSection4bModifiedSet": [
           "critique",
+          "dashboard",
           "guizang-ppt",
           "motion-frames",
           "replit-deck",
@@ -331,12 +336,14 @@
           "tweaks"
         ],
         "exampleHtmlModifiedByUs": [
+          "dashboard/example.html",
           "replit-deck/examples/example-atlas.html",
           "replit-deck/examples/example-bluehouse.html",
           "replit-deck/examples/example-helix.html",
-          "replit-deck/examples/example-holm.html"
+          "replit-deck/examples/example-holm.html",
+          "saas-landing/example.html"
         ],
-        "exampleHtmlModificationReason": "2026-08-03. craft/anti-ai-slop-rules.json rule `animate-layout-property` was promoted P1 -> P0; these four decks animated `.deck-progress` with `transition: width`, forcing layout every frame. Each received the identical prescribed change: width:0 -> width:100% plus transform:scaleX(0) and transform-origin:left; transition:width -> transition:transform; and the one JS line setting style.width now sets style.transform. Nine lines per file. The two files with the same construct — replit-deck/assets/template.html and simple-deck/assets/template.html — are authored here and need no section 4(b) record.",
+        "exampleHtmlModificationReason": "2026-08-03. craft/anti-ai-slop-rules.json rule `animate-layout-property` was promoted P1 -> P0; four replit-deck decks animated `.deck-progress` with `transition: width`, forcing layout every frame. Each received the identical prescribed change: width:0 -> width:100% plus transform:scaleX(0) and transform-origin:left; transition:width -> transition:transform; and the one JS line setting style.width now sets style.transform. Nine lines per file. The two files with the same construct — replit-deck/assets/template.html and simple-deck/assets/template.html — are authored here and need no section 4(b) record. 2026-09-01: dashboard/example.html and saas-landing/example.html lost a third-party editor product name in placeholder copy; matching assets/template.html files are authored here.",
         "apacheSection4bNote": "Slug-granular. replit-deck was already listed for its SKILL.md; as of 2026-08-03 it also covers exampleHtmlModifiedByUs. No new slug — simple-deck's edited file is authored here. As of 2026-08-03 simple-deck joins the set for its SKILL.md. Its checklist.md, and those of replit-deck and weekly-update, took the same rule as P0 items but are authored here.",
         "authoredHereCountNote": "79 is the count of files with no upstream counterpart. An earlier value of 93 counted every checklist.md + layouts.md + template.html (31 each) plus quality-gates.json without subtracting the skills whose template.html does exist upstream. 79 is the measured figure and the one `nature` states.",
         "authoredHereFilesCaveat": "The blanket claim that every references/checklist.md is authored here overreaches for guizang-ppt: its five references/*.md and assets/example-slides.html are named in upstream's own SKILL.md resource map and came from op7418 with the rest of the slug. This does not change the authoredHereFileCount derivation but the sentence should not be read as universal."
@@ -526,9 +533,9 @@
             "vendored": false,
             "nature": "authored-here-filling-a-measured-gap",
             "methodFrom": "dataviz-skill",
- "license": "MIT (repo root LICENSE) for the text as written here. The six-check procedure, the dE thresholds, the eight-slot ceiling and the three-slot all-pairs cap are the method used by the `dataviz` skill bundled with a bundled coding-agent (Anthropic) at bundle version 2.1.232, restated rather than copied. That skill ships no readable LICENSE, so source `dataviz-skill` records license null and its reference palette is deliberately NOT reproduced — see that entry's `deliberatelyNotTaken`.",
+            "license": "MIT (repo root LICENSE) for the text as written here. The six-check procedure, the dE thresholds, the eight-slot ceiling and the three-slot all-pairs cap are the method used by a third-party coding-agent's bundled `dataviz` skill at bundle version 2.1.232, restated rather than copied. That skill ships no readable LICENSE, so source `dataviz-skill` records license null and its reference palette is deliberately NOT reproduced — see that entry's `deliberatelyNotTaken`.",
             "whyItExists": "Eight workflow skills name a chart type explicitly (dashboard, finance-report, weekly-update, critique, simple-deck, replit-deck, wireframe-sketch, dating-web) and ten example.html files contain plotted geometry, while craft/ carried exactly one sentence about charts — an alt-text line in accessibility-baseline.md.",
-            "note": "It resolves a CONTRADICTION, not only a gap, and that is the part worth preserving. color.md caps visible --accent uses at 2 per screen; anti-ai-slop-rules.json fires `accent-overuse` at 6 uses of var(--accent) and `raw-hex` at 12 hexes outside :root; and a grep for --chart-N / --series-N / --cat-N across all 151 design-systems, 57 design-skills, 31 workflow-skills and craft/ returned ZERO hits. A six-series chart therefore had no legal route: reusing the accent tripped one rule, inventing hexes tripped another. The ruling is that series colour is an IDENTITY role and accent colour an ATTENTION role, so the accent cap counts accent uses and never applied to --series-N. color.md is neither edited nor contradicted; the fault was in what the pack failed to say.",
+            "note": "It resolves a CONTRADICTION, not only a gap, and that is the part worth preserving. color.md caps visible --accent uses at 2 per screen; anti-ai-slop-rules.json fires `accent-overuse` at 6 uses of var(--accent) and `raw-hex` at 12 hexes outside :root; and a grep for --chart-N / --series-N / --cat-N across all 149 design-systems, 57 design-skills, 31 workflow-skills and craft/ returned ZERO hits. A six-series chart therefore had no legal route: reusing the accent tripped one rule, inventing hexes tripped another. The ruling is that series colour is an IDENTITY role and accent colour an ATTENTION role, so the accent cap counts accent uses and never applied to --series-N. color.md is neither edited nor contradicted; the fault was in what the pack failed to say.",
             "requirability": "Resolves as an od.craft.requires slug and is deliberately bound to zero skills, on the same grounds as design-intent.md and layering.md: every binding in `optIn.bindings` is upstream's at dceac12 transcribed unchanged. check-craft-references.mjs reports it under 'shipped but required by no skill', a NOTE rather than a failure."
           },
           {
@@ -713,8 +720,8 @@
       "status": "DECIDED 2026-08-03 — notices stay CENTRAL. Maintainer's call at the design-systems/ re-vendor.",
       "question": "Apache-2.0 §4(b) requires modified files to carry a notice of modification. This manifest and packs/design/README.md record the modified set centrally rather than annotating each modified file in place. Central notice is the common practice and keeps the vendored files byte-comparable against upstream, but a reviewer may prefer per-file headers.",
       "decision": "Central. No per-file headers were added at the re-vendor and none should be added without revisiting this entry. The reasoning that settles it is the same one that keeps packs/ out of Prettier: a per-file header would put a locally-authored line into every modified vendored file, and byte-comparability against the pinned tree is now the whole separation method (see subtrees[design-systems/].detail.separationMethod). Annotating the files would defeat the mechanism that identifies which files are annotated.",
-      "modifiedSetSize": 23,
-      "modifiedSetDerivation": "23 files across the pack carry a §4(b) obligation, all Apache-2.0 from nexu-io/open-design: 12 in design-systems/ (apacheSection4bModifiedSet), 7 workflow-skills SKILL.md (skillMdModifiedByUs), and 4 replit-deck example decks (exampleHtmlModifiedByUs). craft/ contributes zero — its §4(b) set is empty. design-skills/ is MIT and out of scope for §4(b) entirely. An earlier value of 40 in this entry was never derived and did not match any list in this file; 23 is the sum of the three lists it points at.",
+      "modifiedSetSize": 28,
+      "modifiedSetDerivation": "28 files across the pack carry a §4(b) obligation, all Apache-2.0 from nexu-io/open-design: 15 in design-systems/ (apacheSection4bModifiedSet), 7 workflow-skills SKILL.md (skillMdModifiedByUs), and 6 example HTML files (exampleHtmlModifiedByUs). craft/ contributes zero — its §4(b) set is empty. design-skills/ is MIT and out of scope for §4(b) entirely. An earlier value of 40 in this entry was never derived and did not match any list in this file; 28 is the sum of the three lists it points at.",
       "needsHuman": false
     },
     {
@@ -732,8 +739,8 @@
     "from": "9ee2c19 (2026-05-02T23:19+08:00)",
     "to": "483e00d (2026-05-04T12:21+08:00)",
     "sharedDesignSystemsTree": "0fdec1613e72c752e9c278a38d94c6081ab987c5",
- "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: upstream's `` (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
- "evidenceNowStale": "The ``/`bmw-m` swap described above no longer holds as a description of the CURRENT tree: `` was taken in the 2026-08-03 re-vendor and now ships alongside bmw-m. The sentence is preserved as the evidence that established the window, which is what it was for.",
+    "evidence": "That tree is the only point in upstream history holding exactly 137 design-system slugs, and our 137 differ from it by exactly one swap: one upstream AI-assistant brand (absent here) replaced by `bmw-m` (traced to VoltAgent). At the same window upstream's skills/ held 52 entries and design-templates/ did not yet exist, which is why our workflow-skills sit under the older path — upstream split skills/ on 2026-05-11.",
+    "evidenceNowStale": "The AI-assistant/`bmw-m` swap described above no longer holds as a description of the CURRENT tree: that assistant brand was taken in the 2026-08-03 re-vendor and later dropped again. The sentence is preserved as the evidence that established the window, which is what it was for.",
     "method": "--filter=blob:none clone (retains every tree, so blob SHAs are readable without fetching content), git hash-object over all 304 vendored files, match-counted against every historical state of upstream's design-systems/, skills/, and design-templates/ trees."
   },
   "knownContentDefects": [],

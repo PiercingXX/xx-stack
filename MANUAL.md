@@ -67,7 +67,7 @@ OpenCode is the install layer. There is no shipped VS Code product surface.
 | Runtime skills | 29 |
 | Runtime agents | 21 (+2 nano variants) |
 | Build/check scripts | 23 in `scripts`, 6 in `packs/design/scripts` |
-| Brand design systems | 151 (vendored, pinned to `e1c277c`) |
+| Brand design systems | 149 (vendored, pinned to `e1c277c`) |
 
 These counts drift. Regenerate them rather than trusting them:
 `perl -0777 -ne 'print "$1\n" while /server\.registerTool\(\s*"([^"]+)"/g' mcp-server/src/*.ts | sort -u | wc -l`
@@ -478,7 +478,7 @@ commands, and registers the MCP server in `~/.config/opencode/config.json`.
 
 ### `packs/design`
 
-151 brand design systems, 57 aesthetic skill/design pairs, 31 workflow skills,
+149 brand design systems, 57 aesthetic skill/design pairs, 31 workflow skills,
 plus evals and its own gates. `DESIGN-CATALOG.md` is generated
 (`npm run design:catalog`) and in sync.
 
@@ -486,8 +486,8 @@ Gates: `npm run design:golden` (5/5) and `npm run design:html-gate` (67/67, in
 CI). Both green.
 
 **This pack is vendored third-party content, not engineering authored here.**
-That distinction matters for how you treat it. A byte-level audit found 138 of
-151 `design-systems/` files identical to their source at the pinned commit
+That distinction matters for how you treat it. A byte-level audit found 133 of
+148 open-design `design-systems/` files identical to their source at the pinned commit
 `e1c277c5`; the "Design System Inspired by Apple" framing in those files is the
 source project's, not a description of work done here. Because the pack
 redistributes that content, Apache-2.0's requirement to ship the license text
@@ -495,7 +495,7 @@ applies:
 
 | Source project | License | Supplies |
 |---|---|---|
-| `nexu-io/open-design` | Apache-2.0 | 150 of 151 design systems, all 31 workflow skills |
+| `nexu-io/open-design` | Apache-2.0 | 148 of 149 design systems, all 31 workflow skills |
 | `bergside/awesome-design-skills` | MIT | all 57 design skills |
 | `VoltAgent/awesome-design-md` | MIT | one file (`bmw-m`) |
 | op7418 (歸藏) | MIT | `workflow-skills/guizang-ppt/` |
@@ -505,7 +505,7 @@ including what could **not** be established — is in
 `packs/design/manifest.json`. Open licensing questions are in §11.1.
 
 **The gates over this pack, and the fixes to its content, are ours.**
-`design:systems-lint` (§9) parses all 151 systems and found four shipping
+`design:systems-lint` (§9) parses all 149 systems and found four shipping
 illegible body text; those repairs, the `craft/` rule engine, and the HTML
 quality gate were built here.
 
@@ -538,7 +538,7 @@ MIT engine written here — no third-party code is compiled in, which keeps the
 licence boundary at the pack boundary. Two sources feed the values, tagged per rule
 (open-design and `google-labs-code/stitch-skills`), and 15 refusals are recorded
 with reasons. Two worth knowing: the pure-black ban was refused because 59 of
-our 151 design systems name `#000000` as deliberate brand vocabulary, and the
+our 149 design systems name `#000000` as deliberate brand vocabulary, and the
 the two sources flatly disagree about `picsum.photos` — one bans it, the other
 recommends it. The ban was kept and the disagreement recorded, so it does not
 read as an oversight.
@@ -683,7 +683,7 @@ layout:verify → agents:check → drift:check → rules:check → nano:check
 | `design:golden` / `design:html-gate` | design pack evals; 67 generated HTML artifacts against 18 attributed anti-slop rules | rules the two rule sources disagree on, and 15 refused rules — both recorded in `craft/anti-ai-slop-rules.json` |
 | `design:craft-refs` | every `od.craft.requires` slug resolves to a rulebook | — |
 | `design:anti-slop-test` | each rule fires at its declared severity on slop fixtures and not on clean ones | — |
-| `design:systems-lint` | all 151 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
+| `design:systems-lint` | all 149 design systems parse, order their sections, and pair text with surface at AA | accent-on-surface is reported, never failed — 14 sit below 3:1 and those are upstream design choices, not defects |
 | `test` | MCP suite | see §11 for the classes it historically missed |
 | `hermes:test` | Python suite, against the *shipped* allowlist | — |
 

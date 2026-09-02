@@ -211,7 +211,7 @@ Most people only need the first one.
 
 | Folder | What it is |
 |---|---|
-| **git root** (`mcp-server/`, `runtime/`, `scripts/`, `packs/`, `hooks/`) | The core: the MCP server, agent contracts, skills, a design pack with 151 design systems, and a rules pack of context-tiered rule books. |
+| **git root** (`mcp-server/`, `runtime/`, `scripts/`, `packs/`, `hooks/`) | The core: the MCP server, agent contracts, skills, a design pack with 149 design systems, and a rules pack of context-tiered rule books. |
 | **[`opencode-orchestration/`](opencode-orchestration/)** | Installs the stack into OpenCode. Only needed if you use OpenCode. |
 | **[`hermes-orchestration/`](hermes-orchestration/)** | Standalone Python service for routing raw inference across GPU boxes. Optional. |
 
@@ -232,7 +232,7 @@ copies, deliberately specialised for OpenCode and kept structurally in step by
 | `npm run inventory:list` | Show machines and which are enabled |
 | `npm run inventory:sync` | Apply inventory changes |
 | `npm test` | MCP server tests (547) |
-| `npm run design:systems-lint` | Check the 151 design systems parse and meet contrast |
+| `npm run design:systems-lint` | Check the 149 design systems parse and meet contrast |
 
 ---
 

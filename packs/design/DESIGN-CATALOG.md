@@ -10,7 +10,7 @@ Legacy stack-core paths remain compatibility shims where required.
 
 ## Inventory Summary
 
-- Design systems: 151
+- Design systems: 149
 - Aesthetic design skills: 57
 - Workflow skills: 31
 
@@ -49,8 +49,8 @@ Source directory: packs/design/design-systems
 - colorful
 - composio
 - contemporary
-
 - corporate
+
 - cosmic
 - creative
 - dashboard
@@ -59,9 +59,9 @@ Source directory: packs/design/design-systems
 - dithered
 - doodle
 - dramatic
-
 - duolingo
 - editorial
+
 - elegant
 - elevenlabs
 - energetic
@@ -70,9 +70,9 @@ Source directory: packs/design/design-systems
 - expressive
 - fantasy
 - ferrari
-
 - figma
 - flat
+
 - framer
 - friendly
 - futuristic
@@ -81,9 +81,9 @@ Source directory: packs/design/design-systems
 - gradient
 - hashicorp
 - hud
-
 - huggingface
 - ibm
+
 - intercom
 - kami
 - kraken
@@ -92,9 +92,9 @@ Source directory: packs/design/design-systems
 - linear-app
 - lingo
 - loom
-
 - lovable
 - luxury
+
 - mastercard
 - material
 - meta
@@ -103,9 +103,9 @@ Source directory: packs/design/design-systems
 - mintlify
 - miro
 - mission-control
-
 - mistral-ai
 - modern
+
 - mongodb
 - mono
 - neobrutalism
@@ -114,9 +114,9 @@ Source directory: packs/design/design-systems
 - nike
 - notion
 - nvidia
-
 - ollama
 - openai
+
 - opencode-ai
 - pacman
 - paper
@@ -125,9 +125,9 @@ Source directory: packs/design/design-systems
 - pinterest
 - playstation
 - posthog
-
 - premium
 - professional
+
 - publication
 - raycast
 - refined
@@ -136,9 +136,9 @@ Source directory: packs/design/design-systems
 - resend
 - retro
 - revolut
-
 - runwayml
 - sanity
+
 - sentry
 - shadcn
 - shopify
@@ -147,9 +147,9 @@ Source directory: packs/design/design-systems
 - slack
 - sleek
 - spacex
-
 - spacious
 - spotify
+
 - starbucks
 - storytelling
 - stripe
@@ -158,9 +158,9 @@ Source directory: packs/design/design-systems
 - tesla
 - tetris
 - theverge
-
 - together-ai
 - tom-modern
+
 - totality-festival
 - trading-terminal
 - uber
@@ -169,9 +169,9 @@ Source directory: packs/design/design-systems
 - vibrant
 - vintage
 - vodafone
-
 - voltagent
 - warm-editorial
+
 - warp
 - webex
 - webflow
@@ -180,7 +180,6 @@ Source directory: packs/design/design-systems
 - wise
 - x-ai
 - xiaohongshu
-
 - zapier
 
 ## Aesthetic Design Skills

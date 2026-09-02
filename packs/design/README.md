@@ -9,7 +9,7 @@ that these files stay byte-comparable against their upstreams.
 
 | Path | What it is | Origin |
 |---|---|---|
-| `design-systems/` | 151 brand design systems, one `DESIGN.md` each | vendored |
+| `design-systems/` | 149 brand design systems, one `DESIGN.md` each | vendored |
 | `design-skills/` | 57 aesthetic styles, `SKILL.md` + `DESIGN.md` each | vendored |
 | `workflow-skills/` | 31 artifact workflow skills | vendored |
 | `craft/` | 11 brand-agnostic craft rulebooks + the anti-slop rule table + one doctrine note + four rulebooks authored here | vendored (7 files authored here) |
@@ -57,7 +57,7 @@ itself carves out.
 
 | Upstream | License | Text | Supplies |
 |---|---|---|---|
-| [nexu-io/open-design](https://github.com/nexu-io/open-design) | Apache-2.0 | [`licenses/nexu-io-open-design-Apache-2.0.txt`](licenses/nexu-io-open-design-Apache-2.0.txt) | 150 of 151 `design-systems/`, all 31 `workflow-skills/`, all 13 vendored `craft/` files |
+| [nexu-io/open-design](https://github.com/nexu-io/open-design) | Apache-2.0 | [`licenses/nexu-io-open-design-Apache-2.0.txt`](licenses/nexu-io-open-design-Apache-2.0.txt) | 148 of 149 `design-systems/`, all 31 `workflow-skills/`, all 13 vendored `craft/` files |
 | [bergside/awesome-design-skills](https://github.com/bergside/awesome-design-skills) | MIT, © 2026 Bergside | [`licenses/bergside-awesome-design-skills-MIT.txt`](licenses/bergside-awesome-design-skills-MIT.txt) | all 57 `design-skills/` |
 | [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | MIT, © 2026 VoltAgent | [`licenses/voltagent-awesome-design-md-MIT.txt`](licenses/voltagent-awesome-design-md-MIT.txt) | `design-systems/bmw-m/` only |
 | [referodesign/refero_skill](https://github.com/referodesign/refero_skill) | MIT, © 2026 Refero | [`licenses/referodesign-refero_skill-MIT.txt`](licenses/referodesign-refero_skill-MIT.txt) | nothing directly — second hop of the `craft/` chain (see below) |
@@ -93,8 +93,8 @@ rather than copies — see below),
 #### `data-visualization.md` credits a source it does not copy
 
 Its six-check procedure, ΔE thresholds, eight-slot ceiling and three-slot
-all-pairs cap are the method used by the `dataviz` skill bundled with the assistant
-Code (Anthropic), read at bundle version `2.1.232`. That skill's reference
+all-pairs cap are the method used by a third-party coding-agent's bundled
+`dataviz` skill, read at bundle version `2.1.232`. That skill's reference
 palette **is not reproduced**. Its values were run through its own validator
 while the craft file was written and they do pass — worst adjacent CVD ΔE 9.1
 light / 8.4 dark, worst adjacent normal-vision ΔE 19.6 light / 19.3 dark — but
@@ -127,8 +127,8 @@ upstream `LICENSE` files directly. No license was inferred from a README, from
 a project's general reputation, or from memory.
 
 - **`design-systems/`** — re-vendored 2026-08-03 at a **pinned** commit,
-  `nexu-io/open-design` `e1c277c5` (subtree `049e1fa9b`). 138 of the 150
-  open-design files are byte-identical to that pin. Only **12** differ, and
+  `nexu-io/open-design` `e1c277c5` (subtree `049e1fa9b`). 133 of the 148
+  open-design files are byte-identical to that pin. Only **15** differ, and
   now for exactly two reasons: local de-branding applied by commit `d458c02`
   (e.g. `voltagent/DESIGN.md`: "GitHub stars badge" → "community badge"), and
   the 2026-08-03 contrast fix to four files whose declared Text/Surface pair
@@ -137,7 +137,7 @@ a project's general reputation, or from memory.
   this list used to carry — upstream drift — is gone: the seven drifted files
   (`arc`, `canva`, `discord`, `duolingo`, `github`, `huggingface`, `openai`)
   were realigned to the pin, each having differed only by a "Usage Guardrails"
-  section upstream added after our snapshot. The 151st, `bmw-m`, is
+  section upstream added after our snapshot. The remaining file, `bmw-m`, is
   byte-identical to `VoltAgent/awesome-design-md` apart from one renamed
   frontmatter `name:` field, and is deliberately **not** realigned to
   open-design's own unrelated `bmw-m`.
@@ -205,8 +205,8 @@ a project's general reputation, or from memory.
 
 An earlier internal description characterised `design-systems/` as clean-room
 reinterpretation authored here, on the strength of its "Design System Inspired
-by X" framing. That is wrong. The framing is upstream's, and 138 of 151 files
-are byte-identical copies. This pack **redistributes** that content under
+by X" framing. That is wrong. The framing is upstream's, and 133 of 148
+open-design files are byte-identical copies. This pack **redistributes** that content under
 Apache-2.0 and MIT; it did not originate it.
 
 ## Gates
@@ -214,7 +214,7 @@ Apache-2.0 and MIT; it did not originate it.
 - `npm run design:catalog` — regenerate `DESIGN-CATALOG.md` (deterministic)
 - `npm run design:golden` — grade the golden-task response fixtures
 - `npm run design:html-gate` — HTML quality gate over pack templates and examples
-- `npm run design:systems-lint` — read-only lint over all 151 `design-systems/`
+- `npm run design:systems-lint` — read-only lint over all 149 `design-systems/`
   files: colour-token extraction, WCAG AA on the text/surface pair each file's
   own prose declares, and section order against the two schemas this pack ships
 
@@ -225,7 +225,7 @@ tokens by role and cross-producing them was measured at 52.4% false positives
 on this corpus and must not be reintroduced; the reasoning is in the script's
 header comment. It runs four fixtures in `evals/design-system-lint/` on every
 invocation, because a structural check calibrated to its own corpus passes
-151/151 on day one and would otherwise be proving nothing.
+149/149 on day one and would otherwise be proving nothing.
 
 The HTML gate now reports anti-slop findings on a **P0/P1/P2 ladder** — the
 same vocabulary every `workflow-skills/*/references/checklist.md` already uses.

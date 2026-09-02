@@ -105,7 +105,7 @@ fix is a *ruling*, not new material. An agent asked for a six-series chart
 faced `color.md`'s cap of two visible `--accent` uses per screen, the
 `accent-overuse` rule firing at six, and the `raw-hex` rule firing at twelve
 hexes outside `:root` — with no categorical tokens anywhere in the pack to
-use instead. A grep for `--chart-N` / `--series-N` / `--cat-N` across all 151
+use instead. A grep for `--chart-N` / `--series-N` / `--cat-N` across all 149
 design systems, 57 design skills, 31 workflow skills and `craft/` returned
 nothing. Every available route tripped a rule.
 
