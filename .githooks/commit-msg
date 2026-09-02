@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Strip third-party Co-authored-by trailers before the commit object is written.
+# GitHub paints those names on the repo as contributors — that is an ad.
+# Skippy-Agent is kept; every other Co-authored-by is dropped.
+[ -f "$1" ] || exit 0
+sed -i -E \
+  '/^Co-authored-by:[[:space:]]*Skippy-Agent\b/I!{ /^Co-authored-by:/Id; }
+   /^Made-with:/Id
+   /^Generated-By:/Id
+   /^Made with \[/Id
+   /^[A-Za-z0-9._-]+-Session:/Id' \
+  "$1"
