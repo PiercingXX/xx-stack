@@ -21,7 +21,7 @@ Use the runtime-status model from `shared_instructions.md`: check the actual act
 ### 1. MCP server
 
 ```
- Run `npm run design-pack:verify-layout` from mcp-server/ and confirm all layout checks pass.
+ Run `npm run layout:verify` from the repository root and confirm all layout checks pass.
 ```
 
 ### 2. Agent definitions

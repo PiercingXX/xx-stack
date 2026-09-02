@@ -1,7 +1,7 @@
 ---
 name: research
 description: Read-heavy exploration specialist. Maps codebase, risks, and dependency impact using the sglang-backed OpenAI-compatible lanes and validated fallbacks.
-mode: subagent
+mode: all
 model: sglang-remote/qwen3-coder-next
 temperature: 0.1
 steps: 12

@@ -107,6 +107,20 @@ function checkExecutable(relPath) {
 const { sourceDir } = detectLayout(repoRoot);
 
 checkDir(sourceDir);
+if (sourceDir === "opencode") {
+  checkDir("opencode/command");
+  for (const command of [
+    "review.md",
+    "plan.md",
+    "debug.md",
+    "ship.md",
+    "explore.md",
+    "route.md",
+    "judge.md",
+  ]) {
+    checkFile(`opencode/command/${command}`);
+  }
+}
 checkDir("mcp-server");
 checkDir("evals");
 checkDir("scripts");

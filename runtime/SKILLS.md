@@ -259,9 +259,10 @@ Telemetry:
 
 ## Agent Pairing
 
-- build: primary execution lane
+- build: primary execution lane (OpenCode default)
 - fast-build: fast implementation lane on the primary alias or local fallback when needed
 - plan: primary-first direct planning lane
+- research: read-only explore — Tab or spawn (`mode: all`)
 - architect: reasoning specialist planning lane for delegated subagent work
 - execution-orchestrator: primary-first controller with local fallback when primary hosts are unavailable
 - performance-engineer: remote performance analysis

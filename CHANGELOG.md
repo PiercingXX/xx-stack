@@ -7,6 +7,20 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **OpenCode host is a complete product surface.** `default_agent` is `build`,
+  `shared_instructions.md` is loaded as host instructions, and
+  `xx-stack-platform-routing` is declared in the shipped OpenCode config.
+  `execution-orchestrator` can use supervisor and task tools again (it had
+  been denying the loop it documents). `research` is Tab-able (`mode: all`).
+  `ping` is mirrored and hidden. Slash commands: `/review`, `/plan`, `/debug`,
+  `/ship`, `/explore`, `/route`, `/judge`. `setup-opencode.sh` installs those
+  commands and registers the MCP server on both global and workspace installs.
+
+- **Lease write-back is always fenced.** A replacement lease no longer skips
+  the fence when the same request lands `status` / `lastCheckpoint` /
+  `lastError`. `supervisor_complete_session` no longer rewrites a terminal
+  session.
+
 ## [1.66.0] — 2026-09-01
 
 - **Flattened the nested `xx-stack/` core** to the git root (`mcp-server/`,

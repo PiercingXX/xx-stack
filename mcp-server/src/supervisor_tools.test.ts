@@ -164,6 +164,27 @@ async function seedSession(session: SupervisorSessionState): Promise<void> {
   await writeSupervisorStore(store);
 }
 
+test("supervisor_complete_session does not rewrite a terminal session", async () => {
+  await withTempHome(async () => {
+    const { handlers } = captureTools();
+    for (const status of ["completed", "interrupted", "exhausted", "force_synthesized"] as const) {
+      await seedSession(makeSession({ sessionId: `sx-${status}`, status }));
+      const payload = await call(handlers.supervisor_complete_session!, {
+        sessionId: `sx-${status}`,
+        forceComplete: true,
+        note: "should not land",
+      });
+      assert.equal(payload.status, "already_terminal", `${status} must not report a new outcome`);
+      assert.equal(payload.reasonCode, "session_terminal");
+      assert.equal(payload.priorStatus, status);
+
+      const stored = (await readSupervisorStore()).sessions[`sx-${status}`]!;
+      assert.equal(stored.status, status, "the terminal outcome survives the complete attempt");
+      assert.equal(stored.events.length, 0, "no session.completed event on a finished record");
+    }
+  });
+});
+
 // --- MCP-11: observed progress must clear the cooldown --------------------
 
 test("progress observed after a fallback reports running, not cooldown", async () => {

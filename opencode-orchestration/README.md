@@ -7,12 +7,18 @@
 > [root README](../README.md) if you haven't already — it covers the quickstart
 > and how the components fit together.
 >
-> `mcp-server/`, `scripts/`, and `packs/` here are **symlinks into
-> `../xx-stack/`**, not copies. Edit files at their real path under `xx-stack/`.
+> `mcp-server/`, `scripts/`, and `packs/` here are **symlinks into the git
+> root**, not copies. Edit files at their real path (`mcp-server/`, `runtime/`,
+> `scripts/`, `packs/`).
 
-This component takes the host-agnostic stack in [`../xx-stack/`](../xx-stack/)
-and installs it into a working OpenCode environment:
-agent definitions, skills, MCP server registration, and a live platform registry.
+This component takes the host-agnostic stack at the git root
+(`runtime/`, `mcp-server/`) and installs it into a working OpenCode
+environment: agent modes you can Tab, skills the `skill` tool can load,
+slash commands, MCP registration, and a live platform registry.
+
+After setup, OpenCode's default agent is `build`. Tab to `plan`, `research`,
+`fast-build`, or `execution-orchestrator`. Slash commands: `/review`, `/plan`,
+`/debug`, `/ship`, `/explore`, `/route`, `/judge`.
 
 The goal is to replace cloud AI usage with self-hosted inference — your
 workstation as the primary control plane, Tailscale-reachable hosts as the

@@ -197,16 +197,31 @@ Telemetry:
 - Recommended only for ops/eval workflows where trend data is actionable.
 - Extended to selected orchestration workflows when run metrics improve planning or delivery automation.
 
+## Slash Commands
+
+OpenCode loads `.opencode/command/*.md` (this directory when the workspace is linked).
+
+| Command | Starts |
+|---|---|
+| `/review` | `reviewer` + `review-code` |
+| `/plan` | `plan` |
+| `/debug` | `debug-investigate` |
+| `/ship` | `release-manager` + `deploy-ship` |
+| `/explore` | `research` (+ `build_repo_map` when MCP is up) |
+| `/route` | `orchestrate-platform-routing` + `route_task` |
+| `/judge` | `completion-judge` |
+
 ## Agent Pairing
 
-- build: local fast execution
-- fast-build: local fast lane for small obvious tasks
-- plan: local-first direct planning lane
-- architect: remote-preferred specialist planning lane for delegated subagent work
-- execution-orchestrator: default local controller for routing, staged execution, and verification
-- performance-engineer: remote perf analysis
-- release-manager: release gates and stabilization
-- incident-commander: incident triage and recovery
+- build: default Tab agent — implement and gate
+- plan: Tab — no edits, executable plan package
+- research: Tab or spawn — read-only explore
+- fast-build: Tab — one obvious slice
+- execution-orchestrator: Tab — supervised multi-slice loop (needs supervisor MCP tools)
+- parallel-execution-orchestrator: Tab — farm independent slices across machines
+- architect / reviewer / qa-lead / completion-judge: spawn only
+- release-manager / incident-commander: spawn for ship and fire
+- ping: hidden health probe, not a Tab lane
 
 ## Delegation Source Of Truth
 

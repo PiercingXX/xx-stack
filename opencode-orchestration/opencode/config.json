@@ -1,5 +1,14 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+  "instructions": ["shared_instructions.md"],
+  "mcp": {
+    "xx-stack-platform-routing": {
+      "type": "local",
+      "enabled": true,
+      "command": ["node", "../mcp-server/dist/index.js"]
+    }
+  },
   "provider": {
     "llama-cpp-local": {
       "npm": "@ai-sdk/openai-compatible",
@@ -34,6 +43,7 @@
     "build": {
       "description": "Primary execution agent. Implements features fast on local GPUs, then runs quality gates before handoff.",
       "mode": "primary",
+      "color": "#3b82f6",
       "model": "sglang-remote/qwen3-coder-next",
       "temperature": 0.2,
       "steps": 18,
@@ -57,12 +67,18 @@
         "bash": "allow",
         "skill": {
           "*": "allow"
+        },
+        "task": {
+          "*": "allow",
+          "ping": "deny",
+          "parallel-execution-orchestrator": "deny"
         }
       }
     },
     "plan": {
       "description": "Primary planning agent. Deep analysis and architecture trade-offs on the strongest available local reasoning tier first, with remote/cloud escalation only when explicitly justified.",
       "mode": "primary",
+      "color": "#8b5cf6",
       "model": "sglang-remote/qwen3-coder-next",
       "temperature": 0.1,
       "steps": 14,
@@ -93,12 +109,21 @@
         "bash": "ask",
         "skill": {
           "*": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "research": "allow",
+          "architect": "allow",
+          "deep-thinker": "allow",
+          "reasoning-fast": "allow",
+          "reviewer": "allow"
         }
       }
     },
     "fast-build": {
       "description": "Primary fast lane for small, obvious implementation tasks on local inventory. Use when routing is obvious and speed matters more than orchestration depth.",
       "mode": "primary",
+      "color": "#22c55e",
       "model": "llama-cpp-local/qwen3-coder:30b-a3b-tq2_0",
       "temperature": 0.25,
       "steps": 12,
@@ -107,6 +132,11 @@
         "bash": "allow",
         "skill": {
           "*": "allow"
+        },
+        "task": {
+          "*": "deny",
+          "reviewer": "allow",
+          "qa-lead": "allow"
         }
       }
     },
@@ -191,7 +221,8 @@
     },
     "research": {
       "description": "Read-heavy exploration specialist. Maps codebase, risks, and dependency impact while preferring lower-cost self-hosted reasoning lanes before escalating to enabled cloud providers.",
-      "mode": "subagent",
+      "mode": "all",
+      "color": "#06b6d4",
       "model": "sglang-remote/qwen3-coder-next",
       "temperature": 0.1,
       "steps": 12,
@@ -220,6 +251,9 @@
         "bash": "allow",
         "skill": {
           "*": "allow"
+        },
+        "task": {
+          "*": "deny"
         }
       }
     },
@@ -254,9 +288,10 @@
     "execution-orchestrator": {
       "description": "Deterministic plan-exec wrapper. Handles bounded review/update workflows directly and executes complex orchestration in the same lane with bounded reliability checks.",
       "mode": "primary",
+      "color": "#f59e0b",
       "model": "llama-cpp-local/qwen3.5:27b-tq2_0",
       "temperature": 0.05,
-      "steps": 20,
+      "steps": 28,
       "requiredMcpServers": [
         "xx-stack-platform-routing"
       ],
@@ -265,21 +300,33 @@
           "*"
         ],
         "deny": [
-          "task_create",
-          "supervisor_start_session",
-          "supervisor_tick",
-          "supervisor_complete_session",
           "supervisor_abort_session"
         ]
       },
       "memory": {
         "enabled": true,
         "scope": "project"
+      },
+      "coordinator": {
+        "strictWorkerContract": true,
+        "requireStructuredResults": true
+      },
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        },
+        "task": {
+          "*": "allow",
+          "ping": "deny"
+        }
       }
     },
     "parallel-execution-orchestrator": {
       "description": "Parallelized deterministic wrapper. Keeps orchestration on the pinned local llama.cpp lane while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
       "mode": "primary",
+      "color": "#ef4444",
       "model": "llama-cpp-local/qwen3-coder:30b-a3b-tq2_0",
       "temperature": 0.0,
       "steps": 20,
@@ -301,6 +348,17 @@
       "memory": {
         "enabled": true,
         "scope": "project"
+      },
+      "permission": {
+        "edit": "allow",
+        "bash": "allow",
+        "skill": {
+          "*": "allow"
+        },
+        "task": {
+          "*": "allow",
+          "ping": "deny"
+        }
       }
     },
     "performance-engineer": {
@@ -386,11 +444,26 @@
           "*": "allow"
         }
       }
+    },
+    "ping": {
+      "description": "Minimal OpenCode runner health probe. Returns the requested text exactly and performs no other work.",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "llama-cpp-local/qwen3-coder:30b-a3b-tq2_0",
+      "temperature": 0,
+      "steps": 2,
+      "permission": {
+        "read": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "skill": "deny"
+      }
     }
   },
   "permission": {
     "skill": {
       "*": "allow"
-    }
+    },
+    "webfetch": "ask"
   }
 }

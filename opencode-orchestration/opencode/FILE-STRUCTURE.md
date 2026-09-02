@@ -13,7 +13,8 @@ authority. To see what exists, list the directory.
 
 - `README.md` for install and high-level usage
 - `REPO-LAYERS.md` for stack-core vs content-pack boundaries
-- `opencode/config.json` for the agent registry and policy
+- `opencode/config.json` for the agent registry, `default_agent`, MCP, and policy
+- `opencode/command/` for slash commands
 - `opencode/shared_instructions.md` for shared runtime behavior
 - `opencode/SKILLS.md` for skill conventions and the skill inventory
 - `opencode/platforms.json` for the shipped platform registry
@@ -34,8 +35,8 @@ authority. To see what exists, list the directory.
 - one `<skill-name>/SKILL.md` per skill; `SKILL.nano.md` beside a skill is its
   tight-context variant
 
-`vscode/`
-- VS Code adapter agent and prompt mirrors
+`opencode/command/`
+- OpenCode slash commands (`/review`, `/plan`, `/debug`, `/ship`, `/explore`, `/route`, `/judge`)
 
 `scripts/run-agent-loop.mjs`
 - generic outer-loop runner for unattended todo or plan execution

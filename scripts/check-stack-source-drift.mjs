@@ -63,8 +63,6 @@ const EXPECTED_ONLY = {
     "AUTONOMOUS_TODO_LOOP_PROMPT.md",
     "config.md",
     "runtime-constants.json",
-    // Minimal runner health probe used by the host-agnostic loop preflight.
-    "ping.md",
   ]),
   "opencode-orchestration/opencode": new Set(["package-lock.json", "runtime-constants.json"]),
 };

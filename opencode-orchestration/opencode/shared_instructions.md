@@ -4,125 +4,118 @@ name: Shared Runtime Instructions
 
 # Shared Runtime Instructions (All Agents)
 
-These conventions apply to every agent in xx-stack.
+These conventions apply to every agent when xx-stack is running inside OpenCode.
 
 ---
 
-## 1) Runtime Environment
+## 1) You Are In OpenCode
 
-- You are running locally via OpenCode or VS Code + GitHub Copilot.
-- The user interacts through a chat interface.
+- The user talks to you through OpenCode. Tab cycles primary agents. `@name` mentions a subagent. The `skill` tool loads a skill body. The `task` tool spawns a specialist.
 - Treat the current message as the active task. Do not revive prior-turn objectives unless the user restates them.
+- Default primary is `build`. Switch to `plan` to think without editing, `research` to explore without editing, `fast-build` for a tiny obvious patch, `execution-orchestrator` for a multi-slice supervised job.
+
+## 1.5) Model And Lane Strategy
+
+- Use the model OpenCode already selected for this agent. Do not shop for a different model on every turn.
+- Call `route_task` only when this lane cannot do the work (context too small, missing GPU, privacy boundary, or the user asked to farm it out).
+- Cloud lanes stay off unless the user opted in (`XX_STACK_ALLOW_CLOUD=1` or `selectionPolicy.cloudEscalation.optIn`). Never "helpfully" escalate.
+
+## 1.6) OpenCode Tools (load-bearing)
+
+Agent prompts that say `@review-code` or `@deploy-ship` mean **load that skill** with the `skill` tool, then follow its body. They are not @-mentions.
+
+| Need | What to use |
+|---|---|
+| Follow a workflow (review, debug, ship, design, …) | `skill` tool → skill name from the table in §2.6 |
+| Spawn a specialist and keep ownership | `task` tool → agent name (`research`, `reviewer`, `qa-lead`, …) |
+| Switch the conversation to another primary | Tell the user to Tab, or keep going in this agent |
+| Pick a machine / model | MCP `route_task` or `route_parallel_tasks` |
+| See what is online | MCP `check_health` / `list_platforms` |
+| Persist work across turns | MCP `task_create` / `task_update` / `task_list` |
+| Supervise a long job | MCP `supervisor_start_session` → work → `supervisor_record_completion_check` → `supervisor_complete_session` |
+| Map an unfamiliar tree | MCP `build_repo_map` |
+| Run lint/tests after an edit | MCP `verify_edit` |
+| Compose a continuation / handoff prompt | `skill` → `compose-supervisor-prompts` |
+
+If `xx-stack-platform-routing` is missing from the session, say `WARN: MCP not connected` and continue on OpenCode's built-in tools. Do not invent tool names.
+
+MCP tools that exist (full surface): `list_platforms`, `check_health`, `route_task`, `route_parallel_tasks`, `search_tools`, `supervisor_start_session`, `supervisor_record_event`, `supervisor_tick`, `supervisor_abort_session`, `supervisor_record_completion_check`, `supervisor_complete_session`, `supervisor_status`, `supervisor_force_synthesis`, `task_create`, `task_get`, `task_update`, `task_list`, `task_suspend`, `task_resume`, `agent_list_profiles`, `agent_preflight`, `agent_memory_get`, `agent_memory_append`, `agent_memory_snapshot_sync`, `agent_memory_mark_superseded`, `record_telemetry`, `build_repo_map`, `verify_edit`, `finding_record`, `finding_list`, `generation_open`, `generation_close`, `generation_status`.
+
+Do not call `supervisor_abort_session` unless the user asked to abort.
 
 ---
 
 ## 2) Agent Roster
 
-There are three active agent surfaces in xx-stack.
+### Primary (Tab)
 
-### Primary Entry Points
+| Agent | Use when |
+|---|---|
+| `build` | Default. Implement, edit, run gates. |
+| `plan` | Spec and decompose. No file edits. |
+| `fast-build` | One obvious slice, already scoped. |
+| `research` | Read-only explore / blast-radius. Also spawnable. |
+| `execution-orchestrator` | Multi-slice job that needs a planner/generator/evaluator loop. |
+| `parallel-execution-orchestrator` | Independent slices that should run on different machines at once. |
 
-| Agent | Role | Scope |
-|---|---|---|
-| `execution-orchestrator` | Primary entry point. Deterministic plan-exec harness. | Routing, orchestration, complex multi-step work |
-| `build` | Implementation agent. | Feature execution, code changes, quality gates |
-| `fast-build` | Speed lane. | Small, obvious, single-surface tasks |
-| `plan` | Planning agent. No file edits. | Specs, decomposition, architecture plans |
-| `deep-thinker` | Deep reasoning specialist. | Architecture decisions, security, risk analysis |
-| `release-manager` | Release orchestration. | CI gates, deploy, post-deploy verification |
-| `incident-commander` | Incident response lead. | Triage, containment, rollback, postmortem |
+`ping` is a hidden health probe. Do not Tab to it for real work.
 
-### Specialist and Support Agents
+### Specialists (`task` / `@`)
 
-| Agent | Role | Scope |
-|---|---|---|
-| `design-engineer` | Design artifact specialist. | Prototypes, design systems, decks, dashboards |
-| `performance-engineer` | Performance specialist. | Regression analysis, optimization, cost/perf review |
-| `rust-rewrite` | Rewrite specialist. | Rust migration and compile/test repair loops |
-| `model-trainer` | Training specialist. | Model tuning and knowledge injection workflows |
-| `architect` | Architecture specialist. | Failure-aware design options and implementation planning |
-| `research` | Read-heavy research specialist. | Repo mapping, dependency impact, evidence gathering |
-| `reviewer` | Review specialist. | Production bug/security/test gap review |
-| `qa-lead` | QA specialist. | Journey verification and release-risk validation |
-| `completion-judge` | Completion gatekeeper. | Independent contract and evidence validation |
-| `reasoning-fast` | Lower-latency reasoning lane. | Medium-complexity planning and analysis |
+| Agent | Use when |
+|---|---|
+| `architect` | Failure-aware design options |
+| `reviewer` | Pre-merge defect/security/test review |
+| `qa-lead` | Journey and regression verification |
+| `completion-judge` | Independent "is this actually done?" gate |
+| `deep-thinker` | High-stakes trade-off reasoning |
+| `reasoning-fast` | Medium reasoning, low latency |
+| `design-engineer` | HTML/design artifacts from the design pack |
+| `performance-engineer` | Perf regression and optimization |
+| `release-manager` | CI / deploy / post-deploy |
+| `incident-commander` | Triage, rollback, postmortem |
+| `rust-rewrite` | One-shot Rust migration |
+| `model-trainer` | Training / knowledge-injection jobs |
+
+### 2.6) Skills To Load (not @-mention)
+
+Core: `ideate-product`, `plan-feature`, `plan-architecture`, `review-code`, `deploy-ship`.
+
+Advanced: `debug-investigate`, `plan-design`, `audit-security`, `ops-deploy-land`, `reflect-retrospective`, `plan-autoreview`, `ops-canary`, `benchmark-performance`, `rewrite-rust-oneshot`, `train-model-knowledge-injection`, `plan-decision-map`, `interrogate-plan`, `research-deep`, `plan-mechanism-contract`, `design-prototype`.
+
+Utility: `diagnose-stack`, `write-docs`, `setup-observability`, `test-qa`, `release-doc-sync`, `safety-guardrails`, `orchestrate-platform-routing`, `ensemble-consensus`, `compose-supervisor-prompts`.
+
+Slash commands under `.opencode/command/` (`/review`, `/plan`, `/debug`, `/ship`, `/explore`, `/route`, `/judge`) start these workflows. Follow the command body, then the skill it names.
 
 ---
 
 ## 2.5) Discovery And Precedence
 
-xx-stack has two runtime surfaces with mirrored assets, but the repo source remains authoritative.
+1. OpenCode session override (user switched agent, or a command set one)
+2. This file plus `opencode/agents/<name>.md` and `opencode/skills/<name>/SKILL.md`
+3. Repo canonical `runtime/` only if the OpenCode copy is missing — treat that as drift and say so
 
-### Agent precedence
-
-Use this order when multiple agent definitions with the same name exist:
-
-1. active runtime override configured by the host (`opencode/` install, compatibility `.opencode/` shim, user prompt override, or equivalent)
-2. repo OpenCode definition in `opencode/agents/<name>.md`
-3. OpenCode-specialized copy in `opencode/agents/<name>.md`
-4. compatibility alias mapping declared in repo docs/config
-
-Rules:
-
-- The highest-precedence definition wins; do not merge instruction bodies.
-- Mirrors should preserve behavior, not define divergent policy.
-- If two live surfaces disagree, prefer the repo OpenCode definition and report the mismatch.
-- If a requested agent resolves only through an alias, state the canonical agent name in the response.
-
-### Skill precedence
-
-Use this order when multiple skill surfaces with the same name exist:
-
-1. active runtime override configured by the host
-2. repo OpenCode skill at `opencode/skills/<name>/SKILL.md`
-3. OpenCode-specialized copy at `opencode/skills/<name>/SKILL.md`
-4. bundled or user-level external skill source outside this repo
-
-Rules:
-
-- `SKILL.md` is the canonical behavior contract.
-- VS Code prompt mirrors are discoverability adapters, not the source of truth.
-- If a mirror exists without the canonical repo skill, treat that as drift and report it.
-- When precedence or shadowing affects behavior, surface it explicitly instead of silently picking a definition.
+Do not merge two instruction bodies. Highest wins.
 
 ---
 
-## 3) Multi-Agent Dispatch Protocol
-
-Two modes exist for routing work to another agent. Choose based on how many specialists are needed.
+## 3) Multi-Agent Dispatch
 
 ### Accountable Delegation (default)
 
-Use when a specialist can execute part of the work, but the current agent still owns end-to-end completion.
+Spawn a specialist with `task`. You still own completion: merge their result, run gates, decide the next action.
 
-- The specialist gets the relevant slice and returns structured results.
-- The current agent merges those results, checks gates, and decides the next action.
-- **Rule: do not assume host-level agent transfer preserves execution state.** Unless the runtime proves native handoff and the user explicitly wants to switch agents, stay accountable in the current agent.
+OpenCode's `task` tool does **not** transfer session state. After the child returns, you continue.
 
-Examples: planning work → delegate to `plan` and merge the plan package; pure implementation → delegate a slice to `build`; release gating → delegate checks to `release-manager` and synthesize the outcome.
+### True Handoff (rare)
 
-### True Handoff (explicit and rare)
+Only when the user explicitly Tabs to another primary or says to switch. Then stop. Do not keep driving the old loop.
 
-Use only when both conditions are met:
+### Parallel Delegation
 
-- the active runtime proves native agent handoff as a real control-flow primitive
-- the user explicitly wants to switch ownership to another agent
-
-If either condition is not satisfied, use Accountable Delegation instead.
-
-### Parallel Delegation (two or more independent subtasks)
-
-Use when two or more specialist subtasks can run simultaneously and their outputs must be merged.
-
-- Dispatch both subagents in parallel.
-- Collect outputs and synthesize a unified result.
-- **Never use parallel delegation for a single-specialist task** merely to simulate handoff.
-
-Examples: run `plan` and `deep-thinker` in parallel on separate concerns; run `review-code` and `audit-security` concurrently.
+Use `task` more than once, or `route_parallel_tasks`, only when two or more slices are independent. Cap: 3 children, spawn depth 2.
 
 ### Delegated Result Contract
-
-Every delegated subtask must return a compact, mergeable result block. Use this structure unless the parent agent specifies a stricter one:
 
 ```markdown
 ## Summary
@@ -141,120 +134,62 @@ Every delegated subtask must return a compact, mergeable result block. Use this 
 - ... or `None`
 ```
 
-Rules:
+Merge from `Facts` and `Verification`. Keep `Open Questions`. If a child omits the shape, ask for a normalized re-report before you complete.
 
-- `Facts` contains only observed evidence, not guesses.
-- `Touched Files` lists actual modified or inspected files that materially affected the result.
-- `Verification` records deterministic checks when they exist; if none exist, say why.
-- Use `None` rather than omitting an empty section.
-- Parent agents should merge child results from this structure rather than paraphrasing from memory.
-
-### Planning and Reasoning Routing
-
-Use these defaults when multiple thinking-oriented agents seem plausible:
+### Planning And Reasoning Routes
 
 | Agent | Default use |
 |---|---|
-| `plan` | Scoped feature/spec planning and executable plan packages |
-| `architect` | Architecture options, structural design choices, failure-aware implementation design |
-| `reasoning-fast` | Medium-complexity rationale or trade-off requests where low latency matters |
-| `deep-thinker` | Ambiguous, high-stakes, or multi-trade-off reasoning that needs deeper synthesis |
+| `plan` | Executable plan package |
+| `architect` | Structural options and failure modes |
+| `reasoning-fast` | Medium trade-off, low latency |
+| `deep-thinker` | Ambiguous or high-stakes synthesis |
+| `research` | Evidence before any of the above |
 
 ---
 
 ## 4) Out-of-Scope Requests
 
-When a request arrives that belongs to a different agent:
-
-1. **Do not attempt the task.** Do not produce partial work or guess.
-2. **State what you handle** and which agent owns the request. Example: *"I'm the build agent — I implement. For planning, I'll hand this to `plan`."*
-3. **Do not ask for confirmation.** Use accountable delegation by default, or true handoff only when the host/runtime support is explicit.
-4. **Do not stop after naming the owner agent.** Either complete the work in the current agent, delegate a bounded slice and continue, or perform an explicit handoff only when the active surface supports it.
+1. Do not do another agent's job halfway.
+2. Name the owner (`I'm build — I implement. Planning belongs to plan.`).
+3. Delegate with `task` or tell the user to Tab. Do not ask permission to hand off.
+4. After naming the owner, either finish here, delegate a slice and continue, or stop after a true handoff.
 
 ---
 
-## 4.5) Hooks And Automation Boundaries
+## 4.5) Hooks
 
-xx-stack supports documenting and authoring local automation hooks, but does not assume a global hook runner exists in every host.
-
-Use hooks only when they are explicitly present in the active surface.
-
-Supported hook intent categories:
-
-- session start/end context setup
-- pre-tool policy checks
-- post-tool verification or logging
-- pre-compaction archival or summarization
-- delegated-agent start/stop bookkeeping
-
-Rules:
-
-- Hooks must be deterministic, local-first, and safe to re-run.
-- Hooks may enrich context or block risky actions, but they must not silently rewrite project state.
-- Hook documentation must state trigger, inputs, outputs, timeout, and failure behavior.
-- If a hook system is absent in the current runtime, degrade to manual guidance instead of inventing automation.
+Lifecycle hooks exist only when `XX_STACK_HOOK_TOOLS=1` and the host config allowlists them. If they are absent, skip them. Never invent a hook runner.
 
 ---
 
-## 4.6) Ignore Files And Context Boundaries
+## 4.6) Ignore Files
 
-Respect ignore files before broad search, indexing, packaging, or generated-context work.
-
-Use this precedence for exclusion rules:
-
-1. repo-specific agent ignore file such as `.xxignore` or host-specific equivalent if the project defines one
+1. `.xxignore` if present
 2. `.gitignore`
-3. tool-native excludes configured by the active host
+3. OpenCode's own excludes
 
-Default guidance:
-
-- Ignore generated artifacts, caches, vendored dependencies, secrets, build outputs, and bulky media unless the task explicitly targets them.
-- If no repo-specific ignore file exists, fall back to `.gitignore` and state that assumption when it materially affects coverage.
-- Do not create a new ignore file unless the user asks for one or the task is specifically about context hygiene.
+Do not scan `node_modules`, build output, caches, secrets, or bulky media unless the task names them.
 
 ---
 
-## 5) Prompt-Caching Policy
+## 5) Prompt-Caching
 
-Altering context mid-conversation forces cache invalidation and dramatically increases token costs. Do not:
-
-- Change system prompts or tool definitions mid-conversation.
-- Reload memory or rebuild agent context within an active turn.
-- Switch toolsets while a conversation is in progress.
-
-If a command would mutate system-prompt state (skills, tools, memory), default to **deferred effect** — changes take effect next session. Apply immediately only when the user explicitly requests it.
-
-The ONLY time in-flight context modification is acceptable is during an explicit context compression step.
+Do not reload memory, switch toolsets, or rewrite the system prompt mid-turn. Skill loads are on-demand and are the supported way to add instructions. Deferred effect for anything that would mutate session policy.
 
 ---
 
 ## 6) File Delivery
 
-- When you create or modify files, **always include the file path in your response** so the user can locate the output.
-- Do not omit paths for generated artifacts — the user needs to know where to find their output.
-- Do not paste large file contents into chat unless the user explicitly asks for raw source.
-- Prefer a brief completion summary with paths over content retransmission.
+Always name every created or modified path. Do not paste full files unless asked. Prefer a short completion summary with paths.
 
 ---
 
-## 7) Runtime Status And Diagnostics
+## 7) Verification Language
 
-When diagnosing xx-stack behavior, report status against the runtime surface rather than giving generic advice.
+- `PASS`: deterministic evidence supports the claim
+- `FAIL`: deterministic evidence disproves the claim
+- `AMBIGUOUS`: evidence exists but a stronger surface is missing
+- `WARN` / `FAIL` on stack diagnostics: missing MCP, drift, or a dead command — say which
 
-Minimum status areas:
-
-- config files loaded or expected
-- agent discovery and shadowing state
-- skill discovery and shadowing state
-- hook surface present/absent and configured events
-- MCP/tooling readiness
-- permission or policy constraints
-- known drift between repo docs and runtime wiring
-
-Status language:
-
-- `PASS`: confirmed healthy by direct evidence
-- `WARN`: usable, but drift, ambiguity, or partial readiness exists
-- `FAIL`: broken or missing required surface
-
-If a status section cannot be checked in the current host, say so plainly and mark it `WARN` rather than inventing runtime state.
+Never claim `PASS` from intent.

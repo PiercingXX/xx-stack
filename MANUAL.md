@@ -463,6 +463,15 @@ Canonical: `runtime/agents/<name>.md`, registered in
 `opencode-orchestration/opencode/agents/` and are gated by
 `npm run drift:check` — never treat the copies as canonical.
 
+Inside OpenCode the shipped host contract is
+`opencode/config.json`: `default_agent` is `build`,
+`instructions` loads `shared_instructions.md`, and
+`mcp.xx-stack-platform-routing` starts the routing server. Tab primaries
+are `build`, `plan`, `research`, `fast-build`, `execution-orchestrator`,
+and `parallel-execution-orchestrator`. Slash commands live in
+`opencode/command/`. `setup-opencode.sh` installs agents, skills,
+commands, and registers the MCP server in `~/.config/opencode/config.json`.
+
 ---
 
 ## 7. Content packs

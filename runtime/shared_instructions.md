@@ -24,6 +24,15 @@ xx-stack is host-agnostic by default.
 - Host adapters should preserve host-wide defaults, but clear legacy repo-managed per-agent model pins when the stack no longer declares one.
 - When reporting runtime status, distinguish between caller-native execution and routed execution.
 
+## 1.6) Host Tools
+
+Use the tools the host actually exposes. Do not invent slash syntax or @-skill names as a substitute for loading a skill.
+
+- **Skills.** Load a skill by name (`review-code`, `debug-investigate`, `deploy-ship`, …) through the host skill tool before following its body. An `@review-code` line in an agent prompt means "load the `review-code` skill", not a mention.
+- **Subagents.** Spawn a specialist through the host task/delegate tool. Stay accountable: merge the child's result, do not assume a host agent switch preserves state.
+- **xx-stack MCP** (`xx-stack-platform-routing`), when connected: `route_task` / `route_parallel_tasks` to pick a lane; `check_health` / `list_platforms` before delegating off-box; `task_*` for persistent work; `supervisor_*` for long jobs; `build_repo_map` before a large unfamiliar edit; `verify_edit` after an edit. If the server is missing, say so and continue on the caller model.
+- **Routing.** Stay on the caller model unless the task needs a capability this lane does not have. Cloud is off unless the user or registry opted in.
+
 ---
 
 ## 2) Agent Roster

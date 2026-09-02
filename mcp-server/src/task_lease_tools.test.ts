@@ -186,7 +186,7 @@ test("write-back against an expired lease is rejected against the server's own c
     assert.notEqual(store.tasks[taskId]!.status, "done");
 
     // Re-leasing is the supervisor handing the task to a live lane; that
-    // request carries a replacement lease and is not a result write-back.
+    // request carries a replacement lease and no result fields.
     const released = await call(tools.task_update!, {
       taskId,
       lease: { expiresAt: FUTURE },
@@ -200,6 +200,40 @@ test("write-back against an expired lease is rejected against the server's own c
     });
     assert.equal(afterRelease.status, "updated");
     assert.equal(afterRelease.task.lastCheckpoint, "fresh lane result");
+  });
+});
+
+test("a replacement lease cannot smuggle a write-back past a dead lease", async () => {
+  await withTempHome(async () => {
+    const tools = captureTaskTools();
+    const created = await call(tools.task_create!, {
+      title: "Revoked lane",
+      lease: { expiresAt: FUTURE },
+    });
+    const taskId = created.task.taskId as string;
+    await call(tools.task_update!, { taskId, lease: { expiresAt: FUTURE, revoked: true } });
+
+    const rejected = await call(tools.task_update!, {
+      taskId,
+      lease: { expiresAt: FUTURE },
+      status: "done",
+      lastCheckpoint: "stale result smuggled with a new lease",
+    });
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.reasonCode, "lease_revoked");
+
+    const stored = (await readTaskStore()).tasks[taskId]!;
+    assert.notEqual(stored.status, "done", "a bundled write-back must not change status");
+    assert.equal(stored.lastCheckpoint, undefined, "a bundled write-back must not land a result");
+    assert.deepEqual(
+      stored.lease,
+      { expiresAt: FUTURE, revoked: true },
+      "a rejected write-back must not replace the revoked lease"
+    );
+
+    const released = await call(tools.task_update!, { taskId, lease: { expiresAt: FUTURE } });
+    assert.equal(released.status, "updated");
+    assert.deepEqual(released.task.lease, { expiresAt: FUTURE });
   });
 });
 

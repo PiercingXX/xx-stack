@@ -13,6 +13,7 @@ What it does:
      $HOME/.config/opencode/skills/
      $HOME/.config/opencode/config.json
      $HOME/.config/opencode/platforms.json
+     $HOME/.config/opencode/command/
   2. In workspace mode, symlinks .opencode/ -> this xx-stack/opencode/ directory
      so OpenCode discovers agents, skills, and config from the stack directly.
   3. In workspace mode, symlinks design pack content at the target project root:
@@ -144,8 +145,59 @@ if (typeof next.$schema !== "string" && typeof repoConfig.$schema === "string") 
   next.$schema = repoConfig.$schema;
 }
 
+if (typeof next.default_agent !== "string" && typeof repoConfig.default_agent === "string") {
+  next.default_agent = repoConfig.default_agent;
+}
+
+const repoInstructions = Array.isArray(repoConfig.instructions) ? repoConfig.instructions : [];
+const userInstructions = Array.isArray(next.instructions) ? next.instructions : [];
+next.instructions = [...new Set([...userInstructions, ...repoInstructions])];
+
+const repoMcp = typeof repoConfig.mcp === "object" && repoConfig.mcp !== null ? repoConfig.mcp : {};
+const userMcp = typeof next.mcp === "object" && next.mcp !== null ? next.mcp : {};
+next.mcp = { ...repoMcp, ...userMcp };
+
+const repoPermission =
+  typeof repoConfig.permission === "object" && repoConfig.permission !== null ? repoConfig.permission : {};
+const userPermission =
+  typeof next.permission === "object" && next.permission !== null ? next.permission : {};
+next.permission = { ...repoPermission, ...userPermission };
+
 fs.writeFileSync(userConfigPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
 NODE
+}
+
+register_mcp_into_user_config() {
+  local helper="$STACK_DIR/../scripts/ensure-xx-stack-mcp-server-registration.js"
+  local entrypoint="$STACK_DIR/mcp-server/dist/index.js"
+  local user_config="$USER_OPENCODE_DIR/config.json"
+
+  if [[ ! -f "$helper" ]]; then
+    echo "[xx-stack] Warning: MCP registration helper missing at $helper"
+    return 0
+  fi
+
+  mkdir -p "$USER_OPENCODE_DIR"
+  if [[ ! -f "$user_config" ]]; then
+    cp "$OPENCODE_DIR/config.json" "$user_config"
+  fi
+
+  if [[ ! -f "$entrypoint" ]]; then
+    echo "[xx-stack] Building MCP server so OpenCode can start it..."
+    if [[ -f "$STACK_DIR/mcp-server/package-lock.json" ]]; then
+      (cd "$STACK_DIR/mcp-server" && npm ci --no-audit --no-fund)
+    else
+      (cd "$STACK_DIR/mcp-server" && npm install --no-audit --no-fund)
+    fi
+    (cd "$STACK_DIR/mcp-server" && npm run build)
+  fi
+
+  if [[ ! -f "$entrypoint" ]]; then
+    echo "[xx-stack] Warning: MCP server build did not produce $entrypoint — routing tools will be missing"
+    return 0
+  fi
+
+  TARGET_CONFIG="$user_config" MCP_ENTRYPOINT="$entrypoint" node "$helper"
 }
 
 if [[ $GLOBAL -eq 1 ]]; then
@@ -178,6 +230,14 @@ if [[ $GLOBAL -eq 1 ]]; then
     rm -rf "$dest"
     cp -R -L "$skill_dir" "$dest"
   done
+
+  if [[ -d "$OPENCODE_DIR/command" ]]; then
+    echo "[xx-stack] Installing slash commands to user-level OpenCode config..."
+    mkdir -p "$USER_OPENCODE_DIR/command"
+    cp -f "$OPENCODE_DIR"/command/*.md "$USER_OPENCODE_DIR/command"/
+  fi
+
+  register_mcp_into_user_config
 
   echo "[xx-stack] Installation complete."
   echo "[xx-stack] Installed to: $USER_OPENCODE_DIR"
@@ -231,6 +291,10 @@ for entry in design-systems design-skills DESIGN-CATALOG.md; do
   echo "[xx-stack] Linked: $dst -> $src"
 done
 
+register_mcp_into_user_config
+
 echo "[xx-stack] OpenCode workspace ready: $TARGET_DIR"
-echo "[xx-stack] Agents and skills discoverable via .opencode -> $OPENCODE_DIR"
+echo "[xx-stack] Agents, skills, and /commands discoverable via .opencode -> $OPENCODE_DIR"
+echo "[xx-stack] MCP registered in $USER_OPENCODE_DIR/config.json"
 echo "[xx-stack] Design pack symlinked at project root."
+echo "[xx-stack] Default agent is build. Tab to plan, research, fast-build, or execution-orchestrator."

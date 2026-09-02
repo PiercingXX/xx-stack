@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { CompletionMemorySyncGuard, getCompletionMemorySyncStatus } from "./memory_runtime.js";
 import type { SupervisorSessionState } from "./supervisor_runtime.js";
 import { evaluateForceSynthesisTrigger } from "./supervisor_runtime.js";
-import { guardStoreAccess } from "./supervisor_store_runtime.js";
+import { guardStoreAccess, SUPERVISOR_TERMINAL_STATUSES } from "./supervisor_store_runtime.js";
 import type { SupervisorToolDeps } from "./supervisor_tool_deps.js";
 import {
   applyForceSynthesisOutcome,
@@ -1105,7 +1105,12 @@ export function registerSupervisorCompletionTools(
   server.registerTool(
     "supervisor_complete_session",
     {
-      description: "Mark a supervised session with a final terminal outcome",
+      description:
+        "Mark a supervised session with a final terminal outcome. Terminal is terminal: a " +
+        "session that already ended (completed, interrupted, exhausted, force_synthesized) is a " +
+        "no-op — nothing is written, no event is pushed, and the result reports already_terminal " +
+        "with the status the session actually holds. forceComplete skips live-session gates; it " +
+        "does not reopen a finished record",
       inputSchema: {
         sessionId: z.string().describe("Supervisor session ID"),
         outcome: z
@@ -1174,6 +1179,23 @@ export function registerSupervisorCompletionTools(
           const state = store.sessions[sessionId];
           if (!state) {
             return jsonContent({ status: "missing", sessionId });
+          }
+
+          // Same contract as supervisor_abort_session: terminal is terminal.
+          // Completing a session that finished (or was force-synthesized) used
+          // to rewrite its status, push another session.completed event, and
+          // re-revoke leases. forceComplete is an escape hatch for *live*
+          // gates, not a license to reopen a finished record.
+          if (SUPERVISOR_TERMINAL_STATUSES.has(state.status)) {
+            return jsonContent({
+              status: "already_terminal",
+              reasonCode: "session_terminal",
+              sessionId,
+              priorStatus: state.status,
+              detail:
+                `Session already ended as "${state.status}". Nothing was written, no event was ` +
+                "pushed, and no lease was touched — its terminal record is unchanged.",
+            });
           }
 
           const now = Date.now();
@@ -1391,11 +1413,9 @@ export function registerSupervisorCompletionTools(
             return jsonContent({ status: "missing", sessionId });
           }
 
-          if (
-            state.status === "completed" ||
-            state.status === "interrupted" ||
-            state.status === "force_synthesized"
-          ) {
+          // exhausted is the reason to force-synthesize; the other three
+          // terminals are finished records and must not be rewritten.
+          if (SUPERVISOR_TERMINAL_STATUSES.has(state.status) && state.status !== "exhausted") {
             return jsonContent({
               status: state.status,
               reasonCode: "already_terminal",

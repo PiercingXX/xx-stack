@@ -402,10 +402,11 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
     "task_update",
     {
       description:
-        "Update persistent task fields including status and blockers. This is the task-result " +
-        "write-back path: when the task carries a lease that is revoked or expired against the " +
-        "server clock, the write is rejected (reasonCode lease_revoked / lease_expired) rather " +
-        "than landing on top of the lane that took over",
+        "Update persistent task fields including status and blockers. Result write-back " +
+        "(status, lastCheckpoint, lastError) is always fenced: a revoked or expired lease " +
+        "rejects those fields (reasonCode lease_revoked / lease_expired) even when the same " +
+        "request carries a replacement lease. A lease-only update is supervisor re-assignment " +
+        "and is not fenced",
       inputSchema: {
         taskId: z.string().min(1).describe("Task ID"),
         title: z.string().min(1).max(200).optional().describe("Updated title"),
@@ -472,16 +473,19 @@ export function registerTaskTools(server: McpServer, deps: TaskToolDeps): void {
             return { kind: "result", result: missingTask(taskId) };
           }
 
-          // Self-enforced lease invariant. The
-          // task-result write-back path: a lane whose lease was revoked by
-          // failover — or whose deadline passed against the server's own clock —
-          // is rejected instead of silently overwriting the lane that took over.
-          // A request that carries a replacement lease is the supervisor
-          // re-leasing the task for a new lane, not a result write-back, so it is
-          // deliberately not fenced. task_suspend and task_resume carry the same
-          // fence without this carve-out (MCP-4).
+          // Self-enforced lease invariant. Result write-back (status,
+          // lastCheckpoint, lastError) is always fenced against the *current*
+          // lease: a lane whose claim was revoked by failover — or whose
+          // deadline passed against the server's own clock — cannot land a
+          // result by also supplying a new lease. A lease-only request is
+          // supervisor re-assignment and stays unfenced. task_suspend and
+          // task_resume carry the same fence with no carve-out (MCP-4).
           const replacementLease = sanitizeTaskLease(lease);
-          if (!replacementLease) {
+          const isWriteBack =
+            status !== undefined ||
+            typeof lastCheckpoint === "string" ||
+            typeof lastError === "string";
+          if (isWriteBack) {
             const leaseCheck = evaluateTaskLease(task.lease, Date.now());
             if (!leaseCheck.ok) {
               return {
