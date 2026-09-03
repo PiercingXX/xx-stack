@@ -47,3 +47,7 @@ config.local.json
 # NEVER commit — this is private user data, not build output. Do not delete
 # the directory either; it is the agent's working state.
 .skippy/
+
+# Estate mill/audit scratch — never tracked
+.nagatha/
+.bilby/
