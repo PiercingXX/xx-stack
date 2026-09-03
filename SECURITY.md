@@ -45,14 +45,14 @@ against them is worth filing:
 
 ## Dependency posture
 
-CI runs `npm audit --omit=dev --audit-level=high` on every push and pull
-request, so a high or critical advisory against a **shipped** dependency breaks
-the build. The runtime dependency surface is deliberately small — the MCP
-server ships two direct dependencies, `@modelcontextprotocol/sdk` and `zod`.
+A high or critical advisory against a **shipped** dependency is a gate:
+`npm audit --omit=dev --audit-level=high`. Hosted Actions does not run that
+for you; run it locally, or as part of whatever you use instead of GitHub.
+The runtime dependency surface is deliberately small — the MCP server ships
+two direct dependencies, `@modelcontextprotocol/sdk` and `zod`.
 
-Dev dependencies are updated by Dependabot but are **not** a build gate, for the
-reason given under "out of scope". Dev-only linting uses ESLint 10. High/critical advisories against shipped
-dependencies still fail CI.
+Dev-only linting uses ESLint 10. Dev dependencies are **not** a build gate,
+for the reason given under "out of scope".
 
 ## Threat model in one paragraph
 

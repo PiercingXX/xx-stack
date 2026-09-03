@@ -1,7 +1,9 @@
 # Contributing to xx-stack
 
 Thanks for your interest in contributing. This document covers the development
-setup and the conventions that CI enforces.
+setup and the conventions `npm run verify` enforces. Hosted GitHub Actions
+is off; the workflow file is the spec `ci:parity` checks against, not a
+runner.
 
 ## Getting Started
 
@@ -52,9 +54,9 @@ evidence but not proof:
   it needs the network and should stay runnable offline. Dev-only advisories are
   deliberately not a gate; [SECURITY.md](SECURITY.md) says why.
 
-Nothing runs in `verify` that CI skips. If you touched the design pack, run
-`npm run design:catalog` and commit the result. Otherwise, treat CI as the
-authority.
+Nothing runs in `verify` that the workflow spec skips. If you touched the
+design pack, run `npm run design:catalog` and commit the result. Treat
+`npm run verify` as the authority.
 
 ### Git Hooks
 

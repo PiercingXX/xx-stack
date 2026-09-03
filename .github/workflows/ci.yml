@@ -1,10 +1,9 @@
 name: xx-stack CI
 
+# Hosted Actions is off for this repository. The workflow file stays so
+# `npm run ci:parity` and a local `npm run verify` still have a spec to
+# check against. It does not run on push or pull_request.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

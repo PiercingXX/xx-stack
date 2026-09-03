@@ -7,6 +7,10 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Hosted GitHub Actions is off.** The workflow file remains as the
+  `ci:parity` spec; it does not run on push or pull request. Dependabot
+  version-update PRs are stopped.
+
 - **Dropped third-party editor, assistant, and chatbot brand files from
   the design pack.** The pack no longer ships those product design systems,
   placeholder ads, or cloud rate-table rows. Skippy stays.

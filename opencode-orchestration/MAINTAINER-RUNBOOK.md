@@ -28,7 +28,8 @@ cd mcp-server && npm run harness:ci
 
 If one of these fails, fix that surface before assuming the router or supervisor is wrong.
 
-The shell-syntax, JSON-validity, `npm test`, and repo-layout checks also run automatically in CI (`../.github/workflows/ci.yml`) on every push and pull request.
+The shell-syntax, JSON-validity, `npm test`, and repo-layout checks are part of
+`npm run verify`. Hosted GitHub Actions does not run them.
 
 ## Failure Modes
 
