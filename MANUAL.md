@@ -472,6 +472,14 @@ and `parallel-execution-orchestrator`. Slash commands live in
 `opencode/command/`. `setup-opencode.sh` installs agents, skills,
 commands, and registers the MCP server in `~/.config/opencode/config.json`.
 
+`execution-orchestrator` and `parallel-execution-orchestrator` are the
+long-running **unattended** primaries: they omit the OpenCode `steps` key
+entirely (a `steps` cap shuts the loop down at the tool-call limit), own the
+loop in-session, and keep going until the request is done or a hard blocker
+stops them. `scripts/check-no-orchestrator-steps.mjs` (run via
+`npm run orchestrator-steps:check`) fails CI if either agent regains a
+`steps` key. See `runtime/agents/` for the unattended loop rules.
+
 ---
 
 ## 7. Content packs
