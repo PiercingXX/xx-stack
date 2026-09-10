@@ -217,8 +217,8 @@ OpenCode loads `.opencode/command/*.md` (this directory when the workspace is li
 - plan: Tab — no edits, executable plan package
 - research: Tab or spawn — read-only explore
 - fast-build: Tab — one obvious slice
-- execution-orchestrator: Tab — supervised multi-slice loop (needs supervisor MCP tools)
-- parallel-execution-orchestrator: Tab — farm independent slices across machines
+- execution-orchestrator: Tab — unattended multi-slice loop that owns state on disk (degrades gracefully if supervisor MCP is down)
+- parallel-execution-orchestrator: Tab — farm independent slices in parallel, healthy non-GPU lanes first
 - architect / reviewer / qa-lead / completion-judge: spawn only
 - release-manager / incident-commander: spawn for ship and fire
 - ping: hidden health probe, not a Tab lane

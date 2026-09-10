@@ -286,12 +286,11 @@
       }
     },
     "execution-orchestrator": {
-      "description": "Deterministic plan-exec wrapper. Handles bounded review/update workflows directly and executes complex orchestration in the same lane with bounded reliability checks.",
+      "description": "Unattended primary builder for long-running plan-exec workflows. Owns the loop in-session, delegates slices, writes todo/contract state to disk, and continues until the request is done or a hard blocker stops it. Runs on the pinned local lane by default.",
       "mode": "primary",
       "color": "#f59e0b",
       "model": "llama-cpp-local/qwen3.5:27b-tq2_0",
       "temperature": 0.05,
-      "steps": 28,
       "requiredMcpServers": [
         "xx-stack-platform-routing"
       ],
@@ -324,12 +323,11 @@
       }
     },
     "parallel-execution-orchestrator": {
-      "description": "Parallelized deterministic wrapper. Keeps orchestration on the pinned local llama.cpp lane while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
+      "description": "Unattended primary builder that fans out independent slices in parallel. Uses whatever healthy lanes exist (non-GPU first, self-hosted last) and still runs if MCP is down. Runs on the pinned local lane by default.",
       "mode": "primary",
       "color": "#ef4444",
       "model": "llama-cpp-local/qwen3-coder:30b-a3b-tq2_0",
       "temperature": 0.0,
-      "steps": 20,
       "requiredMcpServers": [
         "xx-stack-platform-routing"
       ],

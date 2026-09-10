@@ -221,6 +221,14 @@ one copy, not two — but `opencode/agents/` and `opencode/skills/` are full
 copies, deliberately specialised for OpenCode and kept structurally in step by
 `npm run drift:check`. See [CONTRIBUTING.md](CONTRIBUTING.md) for how that works.
 
+### The unattended builders
+
+`execution-orchestrator` and `parallel-execution-orchestrator` are the
+long-running **unattended** primary builders. They omit OpenCode `steps`
+entirely (a `steps` key caps tool calls and ends the loop) and instead run
+until the request is done or a hard blocker stops them. See their agent
+contracts in `runtime/agents/` for the unattended loop rules.
+
 ---
 
 ## Commands

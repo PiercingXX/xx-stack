@@ -180,12 +180,6 @@ const KNOWN_DELTAS = [
     mirror: ["- file-consistency review across README, AGENTS.md, and .opencode docs/prompts"],
   },
   {
-    file: "runtime/agents/parallel-execution-orchestrator.md",
-    why: "Delta 2 in the body: the OpenCode lane pins a local llama.cpp model, so it also names it as a deterministic fallback. The host-agnostic side must not name any local model.",
-    canonical: [],
-    mirror: ["- `llama-cpp-local/qwen3-coder:30b-a3b-tq2_0`"],
-  },
-  {
     file: "runtime/TELEMETRY-POLICY.md",
     why: "The OpenCode install has a workspace-level `.opencode/` compatibility shim the host-agnostic side has no equivalent for.",
     canonical: ["- Config file: `<<source>>/telemetry.json`"],

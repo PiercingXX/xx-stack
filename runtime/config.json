@@ -215,10 +215,9 @@
       }
     },
     "execution-orchestrator": {
-      "description": "Deterministic plan-exec wrapper. Uses the caller's current host model by default and routes only when the task or host requires it.",
+      "description": "Unattended primary builder for long-running plan-exec workflows. Owns the loop in-session, delegates slices, writes todo/contract state to disk, and continues until the request is done or a hard blocker stops it. Uses the caller's current host model by default.",
       "mode": "primary",
       "temperature": 0.05,
-      "steps": 28,
       "requiredMcpServers": [
         "xx-stack-platform-routing"
       ],
@@ -240,10 +239,9 @@
       }
     },
     "parallel-execution-orchestrator": {
-      "description": "Parallelized deterministic wrapper. Keeps orchestration on the caller's host model while distributing delegated subagent slices across healthy remote hosts with watchdog failover.",
+      "description": "Unattended primary builder that fans out independent slices in parallel. Uses whatever healthy lanes exist (non-GPU first, self-hosted last) and still runs if MCP is down. Keeps orchestration on the caller's host model.",
       "mode": "primary",
       "temperature": 0,
-      "steps": 20,
       "requiredMcpServers": [
         "xx-stack-platform-routing"
       ],
