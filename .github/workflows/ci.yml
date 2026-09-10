@@ -29,6 +29,12 @@ jobs:
       - name: Verify canonical and mirrored sources have not drifted
         run: npm run drift:check
 
+      # The two unattended orchestrators must omit the OpenCode `steps` key
+      # (a steps cap shuts the loop down at the tool-call limit). Guarded here,
+      # not just locally, so a reintroduced `steps` cannot reach main silently.
+      - name: Verify no orchestrator carries an OpenCode steps key
+        run: npm run orchestrator-steps:check
+
       # inventory.json is git-ignored (private machine truth), so a fresh clone
       # has only inventory.example.json. Render the registries from whichever
       # inventory answers — the template on CI — before checking them; without
