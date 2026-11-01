@@ -139,6 +139,20 @@
       "supplies": "METHOD ONLY, to craft/data-visualization.md: the six-check validation procedure, the OKLab dE thresholds (adjacent-pair CVD >= 8, normal-vision >= 15), the eight-slot categorical ceiling, and the three-slot cap for all-pairs chart forms. Restated in our own words, in the same posture as source `design-md`.",
       "deliberatelyNotTaken": "The skill's reference palette. Its 8 light + 8 dark hex values were run through its own validator while craft/data-visualization.md was authored and they pass in both modes (worst adjacent CVD dE 9.1 light / 8.4 dark; worst adjacent normal-vision dE 19.6 light / 19.3 dark; first three slots clear the all-pairs floors in both modes). They are still not reproduced here, for two reasons. (1) Provenance: with no readable LICENSE, copying ~16 hex values would put unlicensed content into a pack whose entire value rests on every value being traceable to a license someone actually read. (2) Shape: craft/ states what holds regardless of brand and design-systems/*/DESIGN.md supplies values, so a fixed palette in a craft file is the wrong layer. The craft file carries the thresholds and the --series-N token contract instead, and a brand declares and validates its own palette against them.",
       "verificationNote": "The threshold figures quoted in craft/data-visualization.md were re-derived by running the skill's own validator during authoring rather than copied from its prose, on the same principle the rest of this manifest applies: a number is recorded only when it was measured here."
+    },
+    {
+      "id": "gg-framework",
+      "repo": "https://github.com/KenKaiii/gg-framework",
+      "license": "MIT",
+      "licenseCopyright": "Copyright (c) 2025 KenKai",
+      "licenseFile": "licenses/kenkaiii-gg-framework-MIT.txt",
+      "licenseProvenance": "verified",
+      "licenseEvidence": "LICENSE at repo root, read at the pinned commit on 2026-10-31 and copied verbatim (git blob 416a34dcd7d495a9cbdc6144e0966671a6d5bff3 on both sides) to licenses/kenkaiii-gg-framework-MIT.txt and to motion/motion-video/LICENSE. packages/ggcoder/package.json at the same commit also declares \"license\": \"MIT\".",
+      "headAtAudit": "e57c9c5968cf7cef4648b1fbe6fd9343d2de5924",
+      "headAtAuditDate": "2026-10-31T21:47:12+08:00",
+      "vendoredAtCommit": "e57c9c5968cf7cef4648b1fbe6fd9343d2de5924",
+      "supplies": "Two files, both ADAPTED rather than byte-identical: motion/motion-video/SKILL.md (from packages/ggcoder/assets/motion/skills/motion/SKILL.md, upstream blob c5716a33ef33e2a447f8413964bdc8cabd026634) and scripts/video-flash-analyzer.mjs (from packages/ggcoder/assets/motion/bin/flash-check.mjs, upstream blob 2a2aa3235810c5432426eb88ad8d10ca24bd2dd3). Also the loudness filter chain the skill prescribes (loudnorm I=-14 TP=-1.5 LRA=11, 4x-oversampled alimiter at 0.79), taken from packages/ggcoder/assets/motion/bin/motion-blur.mjs.",
+      "deliberatelyNotTaken": "GG Motion's eight other skills (seven job skills that each need GG's move kit, music library or app tools, plus brand-kit and source-ingest), the move kit and style library, the music and sound files under assets/ (they carry media terms separate from the MIT code), the bundled fonts, the Magic UI pieces, and the HyperFrames reference docs GG adapted from heygen-com/hyperframes (Apache-2.0, a further upstream). This is a first slice to prove the HyperFrames handoff; widen it only after that holds."
     }
   ],
   "subtrees": [
@@ -656,6 +670,32 @@
       "referoScopeNote": "craft/README.md's Attribution section claims all craft content is adapted from refero_skill. Per-file evidence scopes that: exactly 3 of 11 rulebooks carry an inline 'Adapted from refero_skill' line — typography.md, color.md, anti-ai-slop.md — 10,104 of 102,042 rulebook bytes (~10%). Those three landed upstream in 1edab99 alongside that README; the other eight landed 2026-05-05 through 2026-06-14, after it was written, and carry no attribution. The README is vendored byte-for-byte and deliberately not edited, so the scoping is recorded here. Both license texts ship regardless, so the narrower reading costs nothing."
     },
     {
+      "path": "motion/",
+      "contents": "motion-video/ — SKILL.md and LICENSE",
+      "provenance": "verified",
+      "nature": "vendored and ADAPTED: one skill from gg-framework, method and craft rules kept, tooling replaced. Kept out of workflow-skills/ so that subtree's open-design provenance, its 31-slug count and its od: frontmatter claims stay true.",
+      "primarySource": "gg-framework",
+      "license": "MIT (motion/motion-video/LICENSE, Copyright (c) 2025 KenKai)",
+      "detail": {
+        "vendoredAtCommit": "e57c9c5968cf7cef4648b1fbe6fd9343d2de5924",
+        "vendoredOn": "2026-10-31",
+        "files": {
+          "motion-video/LICENSE": "byte-identical to upstream LICENSE (git blob 416a34dcd7d495a9cbdc6144e0966671a6d5bff3)",
+          "motion-video/SKILL.md": "adapted from packages/ggcoder/assets/motion/skills/motion/SKILL.md (upstream blob c5716a33ef33e2a447f8413964bdc8cabd026634; ours f4ed28e886b1a85bada0802ded02aedc7640b0a9)"
+        },
+        "localModifications": [
+          "Renamed motion -> motion-video and rewrote the frontmatter description for this pack; added license and metadata.source fields.",
+          "GG app tooling replaced: the ask_user card becomes one question round; the bundled launcher (hyperframes.mjs) becomes the public CLI pinned at hyperframes@0.8.82 with telemetry and update checks off; motion-blur.mjs's render becomes `hyperframes render --quality delivery` plus an explicit ffmpeg loudness step using GG's own filter chain; the flash screen becomes scripts/quality-gate-video.mjs; reveal.mjs is dropped.",
+          "Removed references to GG's job skills, support skills, move kit, style library, bundled 3D, score synth, built-in music tracks and runtime reference docs, none of which this pack ships. The music question offers a user-supplied track or silence instead.",
+          "Brand guidance points at design-systems/<brand>/DESIGN.md and design-skills/<style>/DESIGN.md; motion craft defers to craft/animation-discipline.md.",
+          "The HyperFrames composition requirements are restated in our own words instead of linking GG's adapted minimal-composition reference.",
+          "Kept upstream's method (ask -> build -> stills -> render once -> deliver), its plain-words questioning rules, the feed safe-zone figures, the phone type sizes and the 'make it move' rules."
+        ],
+        "verification": "HyperFrames flags were checked against GG's runtime references pinned to the same CLI version (0.8.82) and against GG's own skill and launcher, not by running the CLI here: a live render was not performed during vendoring. The gate the skill ends on is tested end to end by scripts/test-video-gate.mjs.",
+        "notInCatalog": "DESIGN-CATALOG.md indexes design-systems/, design-skills/ and workflow-skills/ only; motion/ is not listed there."
+      }
+    },
+    {
       "path": "evals/",
       "contents": "evals/golden-tasks/ — tasks.json, one sample HTML fixture, 5 response fixtures. evals/design-system-lint/ — 4 DESIGN.md fixtures for scripts/lint-design-systems.mjs.",
       "provenance": "verified",
@@ -678,19 +718,25 @@
     },
     {
       "path": "scripts/",
-      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs, lint-design-systems.mjs",
+      "contents": "generate-design-catalog.mjs, evaluate-golden-tasks.mjs, quality-gate-html.mjs, check-craft-references.mjs, test-anti-slop-rules.mjs, lint-design-systems.mjs, quality-gate-video.mjs, test-video-gate.mjs, video-flash-analyzer.mjs",
       "provenance": "verified",
-      "nature": "authored in this repository",
+      "nature": "authored in this repository, except video-flash-analyzer.mjs (vendored from gg-framework, MIT, with two recorded modifications)",
       "primarySource": null,
       "license": "MIT (repo root LICENSE)",
       "detail": {
         "evidence": "Resolve paths relative to this repo's layout and implement this repo's gates; no counterpart in any audited upstream.",
         "licenceBoundary": "quality-gate-html.mjs evaluates the anti-slop rules but holds none of their values — those live in craft/anti-ai-slop-rules.json, which is data derived from two Apache-2.0 upstreams. The engine's rule KINDS (gradientContainsAny, literalAny, emojiInElement, regexAny, countHexOutsideRoot, countLiteralOutsideStyle, …) were written here; no upstream code was transliterated. That is what keeps the script MIT.",
-        "wiredIntoVerify": "All five gates are now in `npm run verify`: design:golden, design:html-gate, design:systems-lint, design:craft-refs, design:anti-slop-test. This key previously said check-craft-references.mjs and test-anti-slop-rules.mjs were unwired; that stopped being true when they were added to the verify chain, and the note is corrected here rather than left to rot (MANUAL §11 CONTENT-12).",
+        "wiredIntoVerify": "All six gates are now in `npm run verify`: design:golden, design:html-gate, design:systems-lint, design:craft-refs, design:anti-slop-test, design:video-gate-test (added 2026-10-31). This key previously said check-craft-references.mjs and test-anti-slop-rules.mjs were unwired; that stopped being true when they were added to the verify chain, and the note is corrected here rather than left to rot (MANUAL §11 CONTENT-12).",
         "lintDesignSystemsChange2026-08-03": "The 2026-08-03 re-vendor required ONE change to lint-design-systems.mjs, recorded here because it was the only edit outside the vendored content and a reviewer should be able to judge it as gate-weakening or not. Three of the 14 incoming brands (totality-festival, urdu, wechat) failed the STRUCTURE check — never the contrast check — purely because they head equivalent sections with wording the synonym table did not know: 'Brand Identity', 'Spacing System', 'Component Styles', 'Motion & Animation', 'Brand Voice & Tone', 'Layout & Spacing', 'Spacing & Layout Grid', \"Do's & Don'ts\". Each was added to HEADING_ALIASES pointing at the slot the equivalent heading already used, and COLOR_H2 was widened to accept 'Color Palette' with an optional trailing parenthetical. NO schema was added, no threshold moved, and no contrast logic was touched. The alias table is the script's documented mechanism for exactly this — it already held 'component stylings', 'motion & interaction' and 'voice & brand' as synonyms of the same slots.",
         "lintDesignSystemsChangeWhyNotAWeakening": "Two independent checks that it did not become a rubber stamp. (1) The three deliberately-malformed fixtures in evals/design-system-lint/ still fail: malformed-order still trips on Components-before-Color, and no-color-section still trips because 'Palette Notes' is deliberately still NOT matched by the widened COLOR_H2. The self-test runs on every invocation and reports 4 fixtures + 11 pattern cases, 0 problems. (2) No new SCHEMA was invented for a one-off file. totality-festival places Depth before Components, which looks like a third lineage but is not: bmw-m already ships that same order and already passed, because tokens absent from the schema being tried are treated as extras and it resolves against Schema B. Once 'Layout & Spacing' was aliased, totality-festival resolved the same way.",
         "lintDesignSystemsPreexistingBugFixed": "Widening COLOR_H2 also fixed a latent inconsistency that predates this change: HEADING_ALIASES already mapped bare 'color palette' to the colour slot while COLOR_H2 did not match it, so a file using that heading would have been reported as having no colour section while its structure check passed. No file in the 137-slug corpus used that heading, so it never fired; two of the incoming 14 do.",
-        "lintDesignSystemsNote": "lint-design-systems.mjs is the only script in this pack that reads design-systems/ content and can fail on it. It is read-only by construction — every mutating fs entry point is replaced with a throwing stub before the first file is opened — because byte-comparability against upstream is what `separationMethod` depends on. It reimplements two rules from google-labs-code/design.md rather than taking that package as a dependency: that linter requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for a single systematic lineage difference. No upstream code was transliterated; the script is MIT like the rest of scripts/."
+        "lintDesignSystemsNote": "lint-design-systems.mjs is the only script in this pack that reads design-systems/ content and can fail on it. It is read-only by construction — every mutating fs entry point is replaced with a throwing stub before the first file is opened — because byte-comparability against upstream is what `separationMethod` depends on. It reimplements two rules from google-labs-code/design.md rather than taking that package as a dependency: that linter requires YAML front matter and returns NO_YAML_FOUND on 136 of our 137 files, and its CANONICAL_ORDER flags 79/137 for a single systematic lineage difference. No upstream code was transliterated; the script is MIT like the rest of scripts/.",
+        "videoGate2026-10-31": {
+          "quality-gate-video.mjs": "Authored here. MIT. Exit 0 pass, 1 fail (do not deliver), 2 unverified (a check could not run). Loudness thresholds: -14 LUFS +/-2, true peak <= -1 dBTP; a file without audio is NOT_APPLICABLE for loudness.",
+          "test-video-gate.mjs": "Authored here. MIT. Pure layer always runs; end-to-end layer needs ffmpeg and is a hard requirement in CI via XX_STACK_REQUIRE_FFMPEG=1. Wired into verify as design:video-gate-test.",
+          "video-flash-analyzer.mjs": "Vendored from gg-framework packages/ggcoder/assets/motion/bin/flash-check.mjs at e57c9c5968cf7cef4648b1fbe6fd9343d2de5924 (upstream blob 2a2aa3235810c5432426eb88ad8d10ca24bd2dd3; ours 97bf560d3f188eed01d12df8a89b4bab0a0feb94). Modifications: (1) analyzeFlashes takes the ffmpeg path as a parameter instead of importing GG's media-binaries.mjs; (2) the CLI entry point and file-hash helper were removed, the gate owns both. Analysis logic is unchanged; the file header records the same.",
+          "licenceBoundary": "The vendored analyzer is MIT (KenKai), the same licence as this repo, so it sits in scripts/ with an in-file attribution header rather than in a separate subtree."
+        }
       }
     },
     {

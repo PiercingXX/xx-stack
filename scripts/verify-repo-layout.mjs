@@ -130,6 +130,7 @@ checkDir("packs/design/design-systems");
 checkDir("packs/design/design-skills");
 checkDir("packs/design/workflow-skills");
 checkDir("packs/design/craft");
+checkDir("packs/design/motion/motion-video");
 checkDir("packs/design/licenses");
 checkDir("packs/design/evals/golden-tasks");
 
@@ -140,6 +141,10 @@ checkFile("packs/design/DESIGN-CATALOG.md");
 checkFile("packs/design/scripts/generate-design-catalog.mjs");
 checkFile("packs/design/scripts/evaluate-golden-tasks.mjs");
 checkFile("packs/design/scripts/quality-gate-html.mjs");
+checkFile("packs/design/scripts/quality-gate-video.mjs");
+checkFile("packs/design/scripts/video-flash-analyzer.mjs");
+checkFile("packs/design/motion/motion-video/SKILL.md");
+checkFile("packs/design/motion/motion-video/LICENSE");
 
 // craft/ and licenses/ are vendored subtrees. A directory check alone would not
 // catch a rulebook or a license text being deleted or renamed — which is the
@@ -173,6 +178,7 @@ for (const license of [
   "bergside-awesome-design-skills-MIT",
   "google-labs-code-design-md-Apache-2.0",
   "google-labs-code-stitch-skills-Apache-2.0",
+  "kenkaiii-gg-framework-MIT",
   "nexu-io-open-design-Apache-2.0",
   "referodesign-refero_skill-MIT",
   "voltagent-awesome-design-md-MIT",

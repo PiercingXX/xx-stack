@@ -7,6 +7,15 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- **Design pack can make videos.** New `packs/design/motion/motion-video`
+  skill, adapted from gg-framework's GG Motion (MIT): ask a few plain
+  questions, build one HyperFrames composition, look at stills, render once.
+  Every file it delivers goes through the new video gate
+  (`npm run design:video-gate -- <file>`): a WCAG 2.3.1 flash screen on
+  decoded pixels plus feed loudness (-14 LUFS ±2, true peak ≤ -1 dBTP). Exit
+  1 means do not deliver, and exit 2 means a check could not run.
+  `design:video-gate-test` is in `verify` and CI.
+
 - **Hosted GitHub Actions is off.** The workflow file remains as the
   `ci:parity` spec; it does not run on push or pull request. Dependabot
   version-update PRs are stopped.

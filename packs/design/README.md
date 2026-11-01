@@ -13,8 +13,9 @@ that these files stay byte-comparable against their upstreams.
 | `design-skills/` | 57 aesthetic styles, `SKILL.md` + `DESIGN.md` each | vendored |
 | `workflow-skills/` | 31 artifact workflow skills | vendored |
 | `craft/` | 11 brand-agnostic craft rulebooks + the anti-slop rule table + one doctrine note + four rulebooks authored here | vendored (7 files authored here) |
+| `motion/` | 1 video skill (`motion-video/`): one HyperFrames composition, rendered once, gated before delivery | vendored and adapted from gg-framework |
 | `evals/golden-tasks/` | agent grading fixtures | authored here |
-| `scripts/` | catalog generator, the two design gates, and two checks | authored here |
+| `scripts/` | catalog generator, the two design gates, the video gate, and three checks | authored here (except `video-flash-analyzer.mjs`, vendored from gg-framework) |
 | `DESIGN-CATALOG.md` | generated index (`npm run design:catalog`) | generated here |
 
 `craft/` is a **fourth axis** and the newest part of this pack.
@@ -46,14 +47,15 @@ below, with a per-subtree `provenance` field.
 
 ## Attribution and licensing
 
-Seven upstream projects supply this pack. Their license texts are copied
+Eight upstream projects supply this pack. Their license texts are copied
 verbatim into [`licenses/`](licenses/), plus one per-skill license that upstream
 itself carves out.
 
 > This count read "Five" until 2026-08-14 while the table below already listed
 > six rows plus the carve-out. The count was stale, not the table; adding
 > `mui/material-ui` made it seven and the discrepancy was corrected in the same
-> pass rather than left to compound.
+> pass rather than left to compound. `KenKaiii/gg-framework` made it eight on
+> 2026-10-31.
 
 | Upstream | License | Text | Supplies |
 |---|---|---|---|
@@ -64,6 +66,7 @@ itself carves out.
 | [google-labs-code/stitch-skills](https://github.com/google-labs-code/stitch-skills) | Apache-2.0 | [`licenses/google-labs-code-stitch-skills-Apache-2.0.txt`](licenses/google-labs-code-stitch-skills-Apache-2.0.txt) | rule values only: 7 of the 18 rules in `craft/anti-ai-slop-rules.json`, plus part of an 8th |
 | [google-labs-code/design.md](https://github.com/google-labs-code/design.md) | Apache-2.0 | [`licenses/google-labs-code-design-md-Apache-2.0.txt`](licenses/google-labs-code-design-md-Apache-2.0.txt) | prose doctrine only — three `PHILOSOPHY.md` arguments restated in our own words in `craft/design-intent.md`; no file redistributed, no code ported |
 | [mui/material-ui](https://github.com/mui/material-ui) | MIT, © 2014 Call-Em-All | [`licenses/mui-material-ui-MIT.txt`](licenses/mui-material-ui-MIT.txt) | token values only — the corrected `design-systems/material/` palette, type scale, spacing, breakpoints and motion, plus the two reference tables in `craft/layering.md`; no file redistributed, no code ported |
+| [KenKaiii/gg-framework](https://github.com/KenKaiii/gg-framework) | MIT, © 2025 KenKai | [`licenses/kenkaiii-gg-framework-MIT.txt`](licenses/kenkaiii-gg-framework-MIT.txt) | `motion/motion-video/SKILL.md` (adapted) and `scripts/video-flash-analyzer.mjs` (adapted), pinned at `e57c9c5`; no music, fonts or other GG Motion skills |
 | op7418 (歸藏) | MIT | [`workflow-skills/guizang-ppt/LICENSE`](workflow-skills/guizang-ppt/LICENSE) | `workflow-skills/guizang-ppt/` |
 
 `workflow-skills/guizang-ppt/LICENSE` is the author's own license, shipped

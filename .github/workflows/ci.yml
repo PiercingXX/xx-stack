@@ -153,6 +153,17 @@ jobs:
       - name: Test anti-slop rules
         run: npm run design:anti-slop-test
 
+      # The video gate's pure layer runs anywhere; its end-to-end layer needs
+      # ffmpeg. XX_STACK_REQUIRE_FFMPEG makes a missing ffmpeg a failure here
+      # instead of a silent skip.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Test video gate
+        run: npm run design:video-gate-test
+        env:
+          XX_STACK_REQUIRE_FFMPEG: '1'
+
   hermes:
     name: Hermes Control Plane
     runs-on: ubuntu-latest
